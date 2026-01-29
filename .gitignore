@@ -1,4 +1,6 @@
 **/target/
+**/out/
+**/cache/
 .anvil.log
 .anvil.pid
 .env
