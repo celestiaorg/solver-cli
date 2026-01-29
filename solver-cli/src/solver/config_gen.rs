@@ -147,7 +147,11 @@ max_gas_price_gwei = 100
 primary = "mock"
 
 [pricing.implementations.mock]
-# Uses default prices
+# Mock prices for testing (stablecoins pegged to $1)
+[pricing.implementations.mock.pair_prices]
+"USDC/USD" = "1.0"
+"USDT/USD" = "1.0"
+"DAI/USD" = "1.0"
 
 # ============================================================================
 # SETTLEMENT

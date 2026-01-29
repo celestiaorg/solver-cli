@@ -21,24 +21,20 @@ make start
 cp .env.example .env
 # Edit .env with your SEPOLIA_PK (must have Sepolia ETH for gas!)
 
-# 3. Build CLI
-cd solver-cli && cargo build --release && cd ..
+# 3. Full setup (build, deploy, configure, fund)
+make setup
 
-# 4. Deploy contracts (both chains)
-./solver-cli/target/release/solver-cli init
-./solver-cli/target/release/solver-cli deploy --force
+# 4. Start solver (in separate terminal)
+make solver
 
-# 5. Configure solver
-./solver-cli/target/release/solver-cli configure
+# 5. Submit intent and verify (in original terminal)
+make intent
+make verify
+```
 
-# 6. Fund solver with USDC tokens
-./solver-cli/target/release/solver-cli fund --amount 10000000
-
-# 7. Start solver (in separate terminal)
-./solver-cli/target/release/solver-cli solver start
-
-# 8. Submit intent (in original terminal)
-./solver-cli/target/release/solver-cli intent submit --amount 1000000 --direction forward
+To stop everything:
+```bash
+make stop
 ```
 
 ## Environment Setup (.env)
@@ -82,7 +78,26 @@ This address needs:
 1. **Sepolia ETH** for gas (~0.1 ETH is plenty)
 2. **USDC tokens** (the `fund` command mints these)
 
+## Make Commands
+
+| Command | Description |
+|---------|-------------|
+| `make start` | Start local Evolve chain (Anvil) |
+| `make stop` | Stop Anvil and solver |
+| `make setup` | Full setup: build + init + deploy + configure + fund |
+| `make solver` | Start the solver |
+| `make intent` | Submit a test intent (1 USDC) |
+| `make verify` | Check balances |
+| `make clean` | Remove generated files |
+| `make reset` | Clean and reinitialize everything |
+
+Use `FORCE=1` to reinitialize or redeploy: `make setup FORCE=1`
+
+Run `make help` to see all available commands.
+
 ## CLI Commands
+
+For more control, use the CLI directly:
 
 | Command | Description |
 |---------|-------------|
