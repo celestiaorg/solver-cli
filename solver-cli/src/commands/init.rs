@@ -1,0 +1,106 @@
+use anyhow::Result;
+use clap::Args;
+use std::env;
+use std::path::PathBuf;
+use tracing::info;
+
+use crate::state::{Environment, StateManager};
+use crate::utils::*;
+use crate::OutputFormat;
+
+#[derive(Args)]
+pub struct InitCommand {
+    /// Environment to initialize (local, sepolia)
+    #[arg(long, short, default_value = "local")]
+    pub env: String,
+
+    /// Project directory (defaults to current directory)
+    #[arg(long)]
+    pub dir: Option<PathBuf>,
+
+    /// Force re-initialization
+    #[arg(long, short)]
+    pub force: bool,
+}
+
+impl InitCommand {
+    pub async fn run(self, output: OutputFormat) -> Result<()> {
+        let out = OutputFormatter::new(output);
+
+        let project_dir = self.dir.unwrap_or_else(|| env::current_dir().unwrap());
+        let state_mgr = StateManager::new(&project_dir);
+
+        out.header("Initializing Solver Project");
+
+        // Check if already initialized
+        if state_mgr.exists().await && !self.force {
+            out.error("Project already initialized. Use --force to reinitialize.");
+            anyhow::bail!("Already initialized");
+        }
+
+        // Parse environment
+        let env: Environment = self.env.parse()?;
+        print_kv("Environment", &env);
+
+        // Create state file
+        let state = state_mgr.init(env.clone()).await?;
+        print_success(&format!("State file created at {:?}", state_mgr.state_dir()));
+
+        // Create directory structure
+        let dirs = [
+            project_dir.join("config"),
+            project_dir.join("config/deployed"),
+        ];
+
+        for dir in &dirs {
+            if !dir.exists() {
+                tokio::fs::create_dir_all(dir).await?;
+                print_info(&format!("Created directory: {:?}", dir));
+            }
+        }
+
+        // Check .env file
+        let env_file = project_dir.join(".env");
+        if !env_file.exists() {
+            print_warning(".env file not found. Create one with required variables.");
+            print_info("Required: EVOLVE_RPC, SEPOLIA_RPC, EVOLVE_PK, SEPOLIA_PK");
+        } else {
+            print_success(".env file found");
+        }
+
+        // Validate wallet keys if available
+        load_dotenv(&project_dir).ok();
+
+        let missing_vars: Vec<&str> = REQUIRED_DEPLOY_VARS
+            .iter()
+            .filter(|v| env::var(v).is_err())
+            .copied()
+            .collect();
+
+        if !missing_vars.is_empty() {
+            print_warning(&format!(
+                "Missing environment variables: {}",
+                missing_vars.join(", ")
+            ));
+        }
+
+        print_summary_start();
+        print_kv("Project directory", project_dir.display());
+        print_kv("Environment", &env);
+        print_kv("State file", state_mgr.state_dir().join("state.json").display());
+        print_summary_end();
+
+        print_success("Initialization complete!");
+        print_info("Next step: solver-cli deploy");
+
+        if out.is_json() {
+            out.json(&serde_json::json!({
+                "status": "initialized",
+                "environment": env.to_string(),
+                "project_dir": project_dir.to_string_lossy(),
+            }))?;
+        }
+
+        Ok(())
+    }
+}
