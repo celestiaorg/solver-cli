@@ -1,0 +1,12 @@
+{
+  "batchClaimWithEIP1271SponsorSignature": "140904",
+  "cancelBatchClaimWithWitness": "82851",
+  "cancelClaim": "74953",
+  "claimAndConvert": "132207",
+  "claimAndTokenWithdrawalFailed": "138945",
+  "claimAndWithdraw": "151222",
+  "claimAndWithdrawWithERC1271": "149817",
+  "claimWithEIP1271SponsorSignature": "159785",
+  "splitBatchClaimWithWitness": "186811",
+  "splitClaimWithWitness": "126921"
+}

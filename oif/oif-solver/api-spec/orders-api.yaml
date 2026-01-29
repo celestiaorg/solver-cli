@@ -1,0 +1,569 @@
+openapi: 3.0.3
+info:
+  title: OIF Solver Orders API
+  description: |
+    API endpoints for submitting and tracking cross-chain intent orders in the OIF Solver.
+    These endpoints handle order submission and status retrieval for EIP-7683 compliant
+    cross-chain intents.
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Local development server
+  - url: https://api.solver.example.com/api/v1
+    description: Production server (replace with actual URL)
+
+paths:
+  /orders:
+    post:
+      summary: Submit an intent order
+      description: |
+        Submits a new cross-chain intent order for execution.
+
+        This endpoint supports two submission modes:
+        1. **Quote Acceptance**: Submit with quoteId and signature from a previously generated quote
+        2. **Direct Submission**: Submit a complete order structure with signature
+
+        The endpoint validates the order, checks signatures (if required), and forwards
+        to the configured discovery service for execution.
+
+        ## Authentication
+
+        If authentication is enabled, this endpoint requires the `create-orders` scope.
+        Include the access token in the Authorization header: `Bearer <access_token>`
+
+        ## Order Types
+
+        Supported order types:
+        - `oif-escrow-v0`: Permit2-based escrow orders
+        - `oif-resource-lock-v0`: TheCompact resource lock orders
+        - `oif-3009-v0`: EIP-3009 gasless transfer orders
+
+        Note: This endpoint requires a configured discovery service (offchain_eip7683).
+      operationId: submitOrder
+      tags:
+        - Orders
+      security:
+        - bearerAuth: []
+        - {} # Optional authentication
+      requestBody:
+        required: true
+        description: Order submission payload following OIF specification
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PostOrderRequest"
+            examples:
+              quoteAcceptance:
+                summary: Accept a quote with signature
+                value:
+                  quoteId: "quote_abc123def456"
+                  signature: "0x1234567890abcdef..."
+              directSubmission:
+                summary: Direct order submission
+                value:
+                  order:
+                    type: "oif-escrow-v0"
+                    payload:
+                      signatureType: "eip712"
+                      domain:
+                        name: "Permit2"
+                        chainId: "1"
+                        verifyingContract: "0x000000000022D473030F116dDEE9F6B43aC78BA3"
+                      primaryType: "PermitBatchWitnessTransferFrom"
+                      message:
+                        permitted:
+                          - token: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+                            amount: "1000000"
+                        spender: "0x1234567890abcdef1234567890abcdef12345678"
+                        nonce: "123456"
+                        deadline: "1700000000"
+                  signature: "0x1234567890abcdef..."
+                  originSubmission:
+                    mode: "user"
+                    schemes: ["permit2"]
+      responses:
+        "200":
+          description: Order successfully submitted to discovery service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostOrderResponse"
+              example:
+                orderId: "1fa518079ecf01372290adf75c55858771efcbcee080594cc8bc24e3309a3a09"
+                status: "received"
+                message: null
+                order: null
+        "400":
+          description: Invalid order format or validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostOrderResponse"
+              examples:
+                validationFailed:
+                  value:
+                    orderId: null
+                    status: "error"
+                    message: "Order validation failed: invalid signature"
+                    order: null
+                missingSignature:
+                  value:
+                    orderId: null
+                    status: "error"
+                    message: "Missing signature for quote acceptance"
+                    order: null
+        "401":
+          description: Authentication required or invalid token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "UNAUTHORIZED"
+                message: "Missing or invalid authentication token"
+        "403":
+          description: Insufficient permissions (missing create-orders scope)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "FORBIDDEN"
+                message: "Insufficient permissions: create-orders scope required"
+        "503":
+          description: Discovery service not configured or unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostOrderResponse"
+              example:
+                orderId: null
+                status: "error"
+                message: "Intent submission service not configured"
+                order: null
+        "502":
+          description: Error forwarding to discovery service
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostOrderResponse"
+              example:
+                orderId: null
+                status: "error"
+                message: "Failed to submit intent: connection timeout"
+                order: null
+
+  /orders/{id}:
+    get:
+      summary: Get order by ID
+      description: |
+        Retrieves the current status and details of a specific order.
+        Use this endpoint to track the progress of submitted intent orders
+        through their lifecycle (created, pending, executed, settled, finalized).
+
+        ## Authentication
+
+        If authentication is enabled, this endpoint requires the `read-orders` scope.
+        Include the access token in the Authorization header: `Bearer <access_token>`
+      operationId: getOrderById
+      tags:
+        - Orders
+      security:
+        - bearerAuth: []
+        - {} # Optional authentication
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Unique identifier of the order
+          schema:
+            type: string
+            example: "abc123def456"
+      responses:
+        "200":
+          description: Order details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetOrderResponse"
+              examples:
+                successfulOrder:
+                  summary: Successfully executed order
+                  value:
+                    order:
+                      id: "abc123def456"
+                      status: "executed"
+                      createdAt: 1699900000
+                      updatedAt: 1699900120
+                      inputAmount:
+                        asset: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+                        amount: "1000000"
+                      outputAmount:
+                        asset: "0xaf88d065e77c8cc2239327c5edb3a432268e5831"
+                        amount: "990000"
+                      settlement:
+                        type: "escrow"
+                        data: {}
+                failedOrder:
+                  summary: Failed order with error details
+                  value:
+                    order:
+                      id: "abc123def456"
+                      status:
+                        failed:
+                          [
+                            "Fill",
+                            "Failed to handle order execution: Service error: Network timeout",
+                          ]
+                      createdAt: 1699900000
+                      updatedAt: 1699900120
+                      inputAmount:
+                        asset: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+                        amount: "1000000"
+                      outputAmount:
+                        asset: "0xaf88d065e77c8cc2239327c5edb3a432268e5831"
+                        amount: "990000"
+                      settlement:
+                        type: "escrow"
+                        data: {}
+        "404":
+          description: Order not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "NotFound"
+                message: "Order not found: abc123def456"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        JWT token obtained from /auth/register or /auth/refresh.
+        Include in requests as: `Authorization: Bearer <access_token>`
+
+  schemas:
+    PostOrderRequest:
+      description: |
+        Order submission request following OIF specification.
+        Supports both quote acceptance and direct submission modes.
+      oneOf:
+        - type: object
+          description: Quote acceptance mode - accepts a previously generated quote
+          required:
+            - quoteId
+            - signature
+          properties:
+            quoteId:
+              type: string
+              description: Quote identifier from a previously generated quote
+              example: "quote_abc123def456"
+            signature:
+              type: string
+              description: Hex-encoded signature bytes
+              pattern: "^0x[a-fA-F0-9]+$"
+              example: "0x1234567890abcdef..."
+        - type: object
+          description: Direct submission mode - submits a complete order structure
+          required:
+            - order
+            - signature
+          properties:
+            order:
+              oneOf:
+                - $ref: "#/components/schemas/OifEscrowV0"
+                - $ref: "#/components/schemas/OifResourceLockV0"
+                - $ref: "#/components/schemas/Oif3009V0"
+              description: Complete order structure with type and payload
+            signature:
+              type: string
+              description: Hex-encoded signature bytes
+              pattern: "^0x[a-fA-F0-9]+$"
+              example: "0x1234567890abcdef..."
+            originSubmission:
+              $ref: "#/components/schemas/OriginSubmission"
+              description: Optional submission mode and schemes information
+
+    OifEscrowV0:
+      type: object
+      description: Permit2-based escrow order (v0)
+      required:
+        - type
+        - payload
+      properties:
+        type:
+          type: string
+          enum: ["oif-escrow-v0"]
+        payload:
+          $ref: "#/components/schemas/OrderPayload"
+
+    OifResourceLockV0:
+      type: object
+      description: Resource lock order via TheCompact (v0)
+      required:
+        - type
+        - payload
+      properties:
+        type:
+          type: string
+          enum: ["oif-resource-lock-v0"]
+        payload:
+          $ref: "#/components/schemas/OrderPayload"
+
+    Oif3009V0:
+      type: object
+      description: EIP-3009 based escrow order (v0)
+      required:
+        - type
+        - payload
+        - metadata
+      properties:
+        type:
+          type: string
+          enum: ["oif-3009-v0"]
+        payload:
+          $ref: "#/components/schemas/OrderPayload"
+        metadata:
+          type: object
+          additionalProperties: true
+
+    OrderPayload:
+      type: object
+      description: EIP-712 compliant order structure
+      required:
+        - signatureType
+        - domain
+        - primaryType
+        - message
+      properties:
+        signatureType:
+          type: string
+          enum: ["eip712"]
+        domain:
+          type: object
+          additionalProperties: true
+        primaryType:
+          type: string
+        message:
+          type: object
+          additionalProperties: true
+        types:
+          type: object
+          additionalProperties: true
+
+    OriginSubmission:
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+          enum: ["user", "protocol"]
+        schemes:
+          type: array
+          items:
+            type: string
+            enum: ["erc4337", "permit2", "erc20-permit", "eip3009"]
+
+    PostOrderResponse:
+      type: object
+      description: Response for order submission
+      required:
+        - status
+      properties:
+        orderId:
+          type: string
+          nullable: true
+          description: Unique identifier for the submitted order
+          example: "1fa518079ecf01372290adf75c55858771efcbcee080594cc8bc24e3309a3a09"
+        status:
+          type: string
+          enum: ["received", "rejected", "error"]
+          description: Submission status
+          example: "received"
+        message:
+          type: string
+          nullable: true
+          description: Optional message providing additional context
+          example: null
+        order:
+          type: object
+          nullable: true
+          description: Optional echo of the submitted order for confirmation
+          additionalProperties: true
+
+    GetOrderResponse:
+      type: object
+      required:
+        - order
+      properties:
+        order:
+          $ref: "#/components/schemas/OrderResponse"
+
+    OrderResponse:
+      type: object
+      description: Detailed information about an order
+      required:
+        - id
+        - status
+        - createdAt
+        - updatedAt
+        - inputAmount
+        - outputAmount
+        - settlement
+      properties:
+        id:
+          type: string
+          description: Unique identifier for this order
+          example: "abc123def456"
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        createdAt:
+          type: integer
+          format: int64
+          description: Unix timestamp when the order was created
+          example: 1699900000
+        updatedAt:
+          type: integer
+          format: int64
+          description: Unix timestamp when the order was last updated
+          example: 1699900120
+        quoteId:
+          type: string
+          nullable: true
+          description: Associated quote ID if order was created from a quote
+          example: "quote_xyz789"
+        inputAmount:
+          $ref: "#/components/schemas/AssetAmount"
+        outputAmount:
+          $ref: "#/components/schemas/AssetAmount"
+        settlement:
+          $ref: "#/components/schemas/Settlement"
+        fillTransaction:
+          type: object
+          nullable: true
+          description: Transaction details if order has been executed
+          properties:
+            hash:
+              type: string
+              pattern: "^0x[a-fA-F0-9]{64}$"
+              description: Transaction hash
+              example: "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"
+            status:
+              type: string
+              enum: [pending, executed, failed]
+              description: Transaction status
+              example: "executed"
+            timestamp:
+              type: integer
+              format: int64
+              description: Unix timestamp of the transaction
+              example: 1699900100
+
+    OrderStatus:
+      oneOf:
+        - type: string
+          enum: [created, pending, executed, settled, finalized]
+          description: Standard order status values
+        - type: object
+          description: Failed status with detailed error information
+          required: [failed]
+          properties:
+            failed:
+              type: array
+              items:
+                type: string
+              minItems: 2
+              maxItems: 2
+              description: |
+                Array containing transaction type and error message for failed orders.
+                - Index 0: Transaction type (Prepare, Fill, PostFill, PreClaim, Claim)
+                - Index 1: Detailed error message explaining the failure
+              example:
+                [
+                  "PostFill",
+                  "Failed to handle PostFillReady: Service error: Network error: Failed to send transaction: Max retries exceeded server returned an error response: error code 3: execution reverted",
+                ]
+              additionalProperties: false
+      example: "executed"
+
+    AssetAmount:
+      type: object
+      description: Asset and amount specification
+      required:
+        - asset
+        - amount
+      properties:
+        asset:
+          type: string
+          description: Asset address in ERC-7930 interoperable format or standard address
+          example: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+        amount:
+          type: string
+          description: Amount as a decimal string (to handle large numbers)
+          example: "1000000"
+
+    Settlement:
+      type: object
+      description: Settlement mechanism information
+      required:
+        - type
+        - data
+      properties:
+        type:
+          type: string
+          enum: [escrow, resourcelock]
+          description: Settlement mechanism type
+          example: "escrow"
+        data:
+          type: object
+          description: Settlement-specific data (varies by settlement type)
+          additionalProperties: true
+          example:
+            raw_order_data:
+              user: "0x0100000314aa37dc487c810990e17594a2caa022a1e132c7b94f832f"
+              nonce: "12345"
+            signature: "0x1234567890abcdef..."
+            expires: 1700000000
+
+    ErrorResponse:
+      type: object
+      description: Standard error response
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error type/code
+          example: "InvalidOrder"
+        message:
+          type: string
+          description: Human-readable error description
+          example: "Order validation failed: insufficient balance"
+        details:
+          type: object
+          nullable: true
+          description: Additional error context
+          additionalProperties: true
+        retryAfter:
+          type: integer
+          nullable: true
+          description: Suggested retry delay in seconds (for 503 errors)
+          example: 30
+
+tags:
+  - name: Orders
+    description: |
+      Endpoints for submitting and tracking cross-chain intent orders.
+      Orders represent validated intents that are being executed by the solver.

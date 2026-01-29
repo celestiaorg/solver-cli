@@ -1,0 +1,14 @@
+{
+  "lib/forge-std": {
+    "rev": "6abf66980050ab03a35b52bdab814f55001d6929"
+  },
+  "lib/permit2": {
+    "rev": "cc56ad0f3439c502c246fc5cfcc3db92bb8b7219"
+  },
+  "lib/solady": {
+    "rev": "4fbee81aaa714f8b5d331e3d2a02ddfb34c26b19"
+  },
+  "lib/soledge": {
+    "rev": "641f4fc39f6ca9b387115985a099b4dfd26135fb"
+  }
+}

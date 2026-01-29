@@ -1,0 +1,730 @@
+//! Conversion utilities for common data transformations.
+//!
+//! This module provides utility functions for converting between different
+//! data formats commonly used in the solver system.
+
+use crate::Address;
+
+use super::formatting::without_0x_prefix;
+use alloy_primitives::{
+	hex,
+	utils::{format_ether, parse_ether},
+	Address as AlloyAddress, U256,
+};
+use rust_decimal::{Decimal, RoundingStrategy};
+
+/// 10^dp as Decimal
+pub fn pow10(dp: u32) -> Decimal {
+	let mut f = Decimal::ONE;
+	for _ in 0..dp {
+		f *= Decimal::from(10);
+	}
+	f
+}
+
+/// Ceiling to `dp` decimal places.
+///
+/// Rounds a decimal number up to the specified number of decimal places.
+/// This is useful for protecting margins during conversions, ensuring
+/// we always collect enough to cover costs.
+///
+/// # Arguments
+/// * `x` - The decimal value to round
+/// * `dp` - Number of decimal places to round to
+///
+/// # Example
+/// ```text
+/// use rust_decimal::Decimal;
+/// use solver_types::utils::conversion::ceil_dp;
+///
+/// let value = Decimal::from_str("1.234").unwrap();
+/// let rounded = ceil_dp(value, 2);
+/// assert_eq!(rounded.to_string(), "1.24");
+/// ```
+pub fn ceil_dp(x: Decimal, dp: u32) -> Decimal {
+	let f = pow10(dp);
+	(x * f).round_dp_with_strategy(0, RoundingStrategy::ToPositiveInfinity) / f
+}
+
+/// Normalize a bytes32 that is expected to embed an `address` into
+/// a canonical left-padded form: 12 zero bytes followed by 20 address bytes.
+///
+/// If the input looks right-padded (address in the first 20 bytes and 12 zero
+/// bytes at the end), it will be converted to left-padded. Otherwise it is
+/// returned unchanged.
+pub fn normalize_bytes32_address(bytes32_value: [u8; 32]) -> [u8; 32] {
+	// Detect right-padded shape: [address(20)][zeros(12)]
+	let is_trailing_zeros = bytes32_value[20..32].iter().all(|&b| b == 0);
+	let has_nonzero_prefix = bytes32_value[0..20].iter().any(|&b| b != 0);
+	if is_trailing_zeros && has_nonzero_prefix {
+		let mut normalized = [0u8; 32];
+		normalized[12..32].copy_from_slice(&bytes32_value[0..20]);
+		normalized
+	} else {
+		bytes32_value
+	}
+}
+
+/// Converts a bytes32 value to an Ethereum address string without "0x" prefix.
+///
+/// This function extracts the last 20 bytes (40 hex characters) from a bytes32
+/// value and returns it as a lowercase hex string without prefix.
+///
+/// # Arguments
+///
+/// * `bytes32` - A 32-byte array, typically from EIP-7683 token/recipient fields
+///
+/// # Returns
+///
+/// A formatted Ethereum address string without "0x" prefix.
+pub fn bytes32_to_address(bytes32: &[u8; 32]) -> String {
+	let hex_string = hex::encode(bytes32);
+
+	// Extract last 40 characters (20 bytes) for the address
+	// Ethereum addresses are 20 bytes, but often stored as bytes32 with leading zeros
+	let address = if hex_string.len() >= 40 {
+		hex_string[hex_string.len() - 40..].to_string()
+	} else {
+		hex_string
+	};
+
+	// Ensure the result never has "0x" prefix
+	without_0x_prefix(&address).to_string()
+}
+
+/// Converts a 20-byte slice to an Alloy `Address`.
+///
+/// Returns an error string if the slice is not exactly 20 bytes.
+pub fn bytes20_to_alloy_address(bytes: &[u8]) -> Result<AlloyAddress, String> {
+	if bytes.len() != 20 {
+		return Err(format!("Expected 20-byte address, got {}", bytes.len()));
+	}
+	let mut arr = [0u8; 20];
+	arr.copy_from_slice(bytes);
+	Ok(AlloyAddress::from(arr))
+}
+
+/// Parse a hex string to a 32-byte array.
+///
+/// This function parses a hex string (with or without "0x" prefix) into
+/// a 32-byte array, commonly used for bytes32 values in Ethereum.
+///
+/// # Arguments
+/// * `hex_str` - A hex string representing a 32-byte value (64 hex characters)
+///
+/// # Returns
+/// * `Ok([u8; 32])` if the string is a valid 32-byte hex string
+/// * `Err(Box<dyn std::error::Error>)` with error description if parsing fails
+pub fn parse_bytes32_from_hex(hex_str: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
+	let hex_clean = hex_str.trim_start_matches("0x");
+	if hex_clean.len() != 64 {
+		return Err("Hex string must be exactly 64 characters (32 bytes)".into());
+	}
+	let mut bytes = [0u8; 32];
+	hex::decode_to_slice(hex_clean, &mut bytes)?;
+	Ok(bytes)
+}
+
+/// Parse a hex string address to solver Address type.
+///
+/// This function parses a hex string (with or without "0x" prefix) into
+/// a 20-byte Address type used throughout the solver system.
+///
+/// Handles both regular 20-byte Ethereum addresses and 32-byte representations
+/// (as used in EIP-7683 where addresses are stored as bytes32).
+///
+/// # Arguments
+/// * `hex_str` - A hex string representing an Ethereum address (20 or 32 bytes)
+///
+/// # Returns
+/// * `Ok(Address)` if the string is a valid address
+/// * `Err(String)` with error description if parsing fails
+pub fn parse_address(hex_str: &str) -> Result<Address, String> {
+	let hex_clean = without_0x_prefix(hex_str);
+
+	// Handle U256 hex that's missing leading zeros (common with EIP-7683 inputs)
+	// U256 serialization drops leading zeros, so "0x8ad..." (31 bytes) should be "0x08ad..." (32 bytes)
+	let padded_hex = match hex_clean.len() {
+		40 => hex_clean.to_string(),      // Standard 20-byte address
+		62 => format!("00{}", hex_clean), // 31 bytes -> pad to 32
+		64 => hex_clean.to_string(),      // Already 32 bytes
+		_ if hex_clean.len() < 64 && hex_clean.len() > 40 => {
+			// Other missing zeros cases - pad to 64 chars (32 bytes)
+			format!("{:0>64}", hex_clean)
+		},
+		_ => hex_clean.to_string(),
+	};
+
+	hex::decode(&padded_hex)
+		.map_err(|e| format!("Invalid hex: {}", e))
+		.and_then(|bytes| {
+			match bytes.len() {
+				20 => {
+					// Standard 20-byte Ethereum address
+					Ok(Address(bytes))
+				},
+				32 => {
+					// bytes32 representation - extract last 20 bytes as address
+					let mut addr_bytes = vec![0u8; 20];
+					addr_bytes.copy_from_slice(&bytes[12..32]);
+					Ok(Address(addr_bytes))
+				},
+				_ => Err(format!(
+					"Invalid address length: expected 20 or 32 bytes, got {}",
+					bytes.len()
+				)),
+			}
+		})
+}
+
+/// Convert wei (U256) to ETH string using Alloy's format_ether helper.
+///
+/// This function provides a convenient wrapper around Alloy's format_ether
+/// utility for converting wei amounts to human-readable ETH strings.
+///
+/// # Arguments
+/// * `wei_amount` - The amount in wei as a U256
+///
+/// # Returns
+/// A string representation of the ETH amount (e.g., "1.5" for 1.5 ETH)
+///
+/// # Example
+/// ```text
+/// use alloy_primitives::U256;
+/// use solver_types::utils::conversion::wei_to_eth_string;
+///
+/// let wei = U256::from(1500000000000000000u64); // 1.5 ETH in wei
+/// let eth_str = wei_to_eth_string(wei);
+/// assert_eq!(eth_str, "1.5");
+/// ```
+pub fn wei_to_eth_string(wei_amount: U256) -> String {
+	format_ether(wei_amount)
+}
+
+/// Convert ETH string to wei (U256) using Alloy's parse_ether helper.
+///
+/// This function provides a convenient wrapper around Alloy's parse_ether
+/// utility for converting ETH amounts to wei.
+///
+/// # Arguments
+/// * `eth_amount` - The ETH amount as a string (e.g., "1.5")
+///
+/// # Returns
+/// * `Ok(U256)` - The amount in wei
+/// * `Err(String)` - Error message if parsing fails
+///
+/// # Example
+/// ```text
+/// use solver_types::utils::conversion::eth_string_to_wei;
+///
+/// let wei = eth_string_to_wei("1.5").unwrap();
+/// assert_eq!(wei.to_string(), "1500000000000000000");
+/// ```
+pub fn eth_string_to_wei(eth_amount: &str) -> Result<U256, String> {
+	parse_ether(eth_amount)
+		.map_err(|e| format!("Failed to parse ETH amount '{}': {}", eth_amount, e))
+}
+
+/// Convert wei string to ETH string using Alloy utilities.
+///
+/// This function combines string parsing with Alloy's format_ether for
+/// convenient conversion from wei strings to ETH strings.
+///
+/// # Arguments
+/// * `wei_string` - The wei amount as a decimal string
+///
+/// # Returns
+/// * `Ok(String)` - The ETH amount as a string
+/// * `Err(String)` - Error message if parsing fails
+///
+/// # Example
+/// ```text
+/// use solver_types::utils::conversion::wei_string_to_eth_string;
+///
+/// let eth_str = wei_string_to_eth_string("1500000000000000000").unwrap();
+/// assert_eq!(eth_str, "1.5");
+/// ```
+pub fn wei_string_to_eth_string(wei_string: &str) -> Result<String, String> {
+	let wei = U256::from_str_radix(wei_string, 10)
+		.map_err(|e| format!("Invalid wei amount '{}': {}", wei_string, e))?;
+	Ok(format_ether(wei))
+}
+
+/// Converts a 20-byte Alloy Address to a padded 32-byte hex string.
+///
+/// This function pads a 20-byte Ethereum address to 32 bytes by placing it in the
+/// last 20 bytes of a 32-byte array (standard ABI encoding for addresses).
+/// The result is a hex string with "0x" prefix.
+///
+/// # Arguments
+/// * `address` - An Alloy Address (20 bytes)
+///
+/// # Returns
+/// A 66-character hex string (0x + 64 hex chars) representing the padded address
+///
+/// # Example
+/// ```text
+/// use alloy_primitives::Address;
+/// use solver_types::utils::conversion::address_to_bytes32_hex;
+///
+/// let addr = "0xa513e6e4b8f2a923d98304ec87f64353c4d5c853".parse::<Address>().unwrap();
+/// let padded = address_to_bytes32_hex(&addr);
+/// assert_eq!(padded, "0x000000000000000000000000a513e6e4b8f2a923d98304ec87f64353c4d5c853");
+/// ```
+pub fn address_to_bytes32_hex(address: &AlloyAddress) -> String {
+	let mut bytes = [0u8; 32];
+	bytes[12..32].copy_from_slice(address.as_slice());
+	format!("0x{}", hex::encode(bytes))
+}
+
+/// Converts a 20-byte Alloy Address to a padded 32-byte array.
+///
+/// This function pads a 20-byte Ethereum address to 32 bytes by placing it in the
+/// last 20 bytes of a 32-byte array (standard ABI encoding for addresses).
+///
+/// # Arguments
+/// * `address` - An Alloy Address (20 bytes)
+///
+/// # Returns
+/// A 32-byte array with the address in the last 20 bytes
+///
+/// # Example
+/// ```text
+/// use alloy_primitives::Address;
+/// use solver_types::utils::conversion::address_to_bytes32;
+///
+/// let addr = "0xa513e6e4b8f2a923d98304ec87f64353c4d5c853".parse::<Address>().unwrap();
+/// let padded = address_to_bytes32(&addr);
+/// assert_eq!(&padded[12..], addr.as_slice());
+/// assert_eq!(&padded[0..12], &[0u8; 12]);
+/// ```
+pub fn address_to_bytes32(address: &AlloyAddress) -> [u8; 32] {
+	let mut bytes = [0u8; 32];
+	bytes[12..32].copy_from_slice(address.as_slice());
+	bytes
+}
+
+/// Converts a solver-types Address to a padded 32-byte array.
+///
+/// This function pads a 20-byte Ethereum address to 32 bytes by placing it in the
+/// last 20 bytes of a 32-byte array (standard ABI encoding for addresses).
+///
+/// # Arguments
+/// * `address` - A solver-types Address (Vec<u8> containing 20 bytes)
+///
+/// # Returns
+/// A 32-byte array with the address in the last 20 bytes
+///
+/// # Example
+/// ```text
+/// use solver_types::{Address, utils::conversion::solver_address_to_bytes32};
+///
+/// let addr = Address(vec![0xa5, 0x13, /* ... 18 more bytes ... */]);
+/// let padded = solver_address_to_bytes32(&addr);
+/// assert_eq!(&padded[12..], &addr.0[..]);
+/// assert_eq!(&padded[0..12], &[0u8; 12]);
+/// ```
+pub fn solver_address_to_bytes32(address: &crate::Address) -> [u8; 32] {
+	let mut bytes = [0u8; 32];
+	if address.0.len() >= 20 {
+		bytes[12..32].copy_from_slice(&address.0[..20]);
+	}
+	bytes
+}
+
+/// Converts a hex string (20 or 32 bytes) to an Alloy Address.
+///
+/// This function automatically detects whether the input is a 20-byte address
+/// or a 32-byte padded address and converts appropriately using existing utilities.
+/// This ensures consistent handling regardless of the input format.
+///
+/// # Arguments
+/// * `hex_str` - A hex string with or without "0x" prefix (40 or 64 hex chars)
+///
+/// # Returns
+/// * `Ok(AlloyAddress)` - The 20-byte address
+/// * `Err(String)` - Error message if parsing fails
+///
+/// # Example
+/// ```text
+/// use alloy_primitives::Address;
+/// use solver_types::utils::conversion::hex_to_alloy_address;
+///
+/// // 20-byte address
+/// let addr1 = hex_to_alloy_address("0xa513e6e4b8f2a923d98304ec87f64353c4d5c853").unwrap();
+///
+/// // 32-byte padded address (same result)
+/// let addr2 = hex_to_alloy_address("0x000000000000000000000000a513e6e4b8f2a923d98304ec87f64353c4d5c853").unwrap();
+///
+/// assert_eq!(addr1, addr2);
+/// ```
+pub fn hex_to_alloy_address(hex_str: &str) -> Result<AlloyAddress, String> {
+	let hex_clean = hex_str.trim_start_matches("0x");
+	let bytes = hex::decode(hex_clean).map_err(|e| format!("Invalid hex string: {}", e))?;
+
+	match bytes.len() {
+		20 => {
+			// Standard 20-byte address - use existing utility
+			bytes20_to_alloy_address(&bytes)
+		},
+		32 => {
+			// 32-byte padded address - use existing utility to extract address
+			let bytes32_array: [u8; 32] = bytes
+				.try_into()
+				.map_err(|_| "Failed to convert to 32-byte array")?;
+			let address_hex = bytes32_to_address(&bytes32_array);
+			format!("0x{}", address_hex)
+				.parse::<AlloyAddress>()
+				.map_err(|e| format!("Failed to parse extracted address: {}", e))
+		},
+		_ => Err(format!(
+			"Invalid address length: expected 20 or 32 bytes, got {}",
+			bytes.len()
+		)),
+	}
+}
+
+pub fn addresses_equal(addr1: &[u8], addr2: &[u8]) -> bool {
+	// Extract 20-byte address from each input
+	let normalized_addr1 = match addr1.len() {
+		20 => addr1,
+		32 => &addr1[12..32], // Extract last 20 bytes from bytes32
+		_ => return false,    // Invalid address length
+	};
+
+	let normalized_addr2 = match addr2.len() {
+		20 => addr2,
+		32 => &addr2[12..32], // Extract last 20 bytes from bytes32
+		_ => return false,    // Invalid address length
+	};
+
+	// Convert to hex strings and compare case-insensitively
+	let hex1 = hex::encode(normalized_addr1).to_lowercase();
+	let hex2 = hex::encode(normalized_addr2).to_lowercase();
+
+	hex1 == hex2
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[allow(clippy::mixed_case_hex_literals)]
+	#[test]
+	fn test_bytes32_to_address() {
+		// Test with a typical bytes32 value (address padded with zeros)
+		let mut bytes32 = [0u8; 32];
+		// Set last 20 bytes to represent an address
+		bytes32[12..].copy_from_slice(&[
+			0x5F, 0xbD, 0xB2, 0x31, 0x56, 0x78, 0xaf, 0xec, 0xb3, 0x67, 0xf0, 0x32, 0xd9, 0x3F,
+			0x64, 0x2f, 0x64, 0x18, 0x0a, 0xa3,
+		]);
+
+		let address = bytes32_to_address(&bytes32);
+		assert_eq!(address, "5fbdb2315678afecb367f032d93f642f64180aa3");
+	}
+
+	#[allow(clippy::mixed_case_hex_literals)]
+	#[test]
+	fn test_bytes20_to_alloy_address_valid() {
+		// Test with a valid 20-byte address
+		let bytes = [
+			0x5F, 0xbD, 0xB2, 0x31, 0x56, 0x78, 0xaf, 0xec, 0xb3, 0x67, 0xf0, 0x32, 0xd9, 0x3F,
+			0x64, 0x2f, 0x64, 0x18, 0x0a, 0xa3,
+		];
+
+		let result = bytes20_to_alloy_address(&bytes);
+		assert!(result.is_ok());
+
+		let address = result.unwrap();
+		assert_eq!(
+			format!("{:x}", address),
+			"5fbdb2315678afecb367f032d93f642f64180aa3"
+		);
+	}
+
+	#[test]
+	fn test_bytes20_to_alloy_address_zero_address() {
+		// Test with zero address (all zeros)
+		let bytes = [0u8; 20];
+
+		let result = bytes20_to_alloy_address(&bytes);
+		assert!(result.is_ok());
+
+		let address = result.unwrap();
+		assert_eq!(address, AlloyAddress::ZERO);
+		assert_eq!(
+			format!("{:x}", address),
+			"0000000000000000000000000000000000000000"
+		);
+	}
+
+	#[allow(clippy::mixed_case_hex_literals)]
+	#[test]
+	fn test_bytes20_to_alloy_address_too_short() {
+		// Test with less than 20 bytes
+		let bytes = [0x5F, 0xbD, 0xB2, 0x31, 0x56];
+
+		let result = bytes20_to_alloy_address(&bytes);
+		assert!(result.is_err());
+		assert_eq!(result.unwrap_err(), "Expected 20-byte address, got 5");
+	}
+
+	#[allow(clippy::mixed_case_hex_literals)]
+	#[test]
+	fn test_bytes20_to_alloy_address_too_long() {
+		// Test with more than 20 bytes
+		let bytes = [
+			0x5F, 0xbD, 0xB2, 0x31, 0x56, 0x78, 0xaf, 0xec, 0xb3, 0x67, 0xf0, 0x32, 0xd9, 0x3F,
+			0x64, 0x2f, 0x64, 0x18, 0x0a, 0xa3, 0xff, 0xff, 0xff, 0xff, 0xff,
+		];
+
+		let result = bytes20_to_alloy_address(&bytes);
+		assert!(result.is_err());
+		assert_eq!(result.unwrap_err(), "Expected 20-byte address, got 25");
+	}
+
+	#[test]
+	fn test_bytes20_to_alloy_address_empty_slice() {
+		// Test with empty slice
+		let bytes: &[u8] = &[];
+
+		let result = bytes20_to_alloy_address(bytes);
+		assert!(result.is_err());
+		assert_eq!(result.unwrap_err(), "Expected 20-byte address, got 0");
+	}
+
+	#[allow(clippy::mixed_case_hex_literals)]
+	#[test]
+	fn test_bytes20_to_alloy_address_common_addresses() {
+		// Test with common known addresses
+
+		// USDC address on Ethereum: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+		let usdc_bytes = [
+			0xA0, 0xb8, 0x69, 0x91, 0xc6, 0x21, 0x8b, 0x36, 0xc1, 0xd1, 0x9D, 0x4a, 0x2e, 0x9E,
+			0xb0, 0xcE, 0x36, 0x06, 0xeB, 0x48,
+		];
+		let result = bytes20_to_alloy_address(&usdc_bytes);
+		assert!(result.is_ok());
+		let address = result.unwrap();
+		assert_eq!(
+			format!("{:x}", address),
+			"a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+		);
+
+		// WETH address on Ethereum: 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
+		let weth_bytes = [
+			0xC0, 0x2a, 0xaA, 0x39, 0xb2, 0x23, 0xFE, 0x8D, 0x0A, 0x0e, 0x5C, 0x4F, 0x27, 0xeA,
+			0xD9, 0x08, 0x3C, 0x75, 0x6C, 0xc2,
+		];
+		let result = bytes20_to_alloy_address(&weth_bytes);
+		assert!(result.is_ok());
+		let address = result.unwrap();
+		assert_eq!(
+			format!("{:x}", address),
+			"c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+		);
+	}
+
+	#[test]
+	fn test_bytes20_to_alloy_address_roundtrip() {
+		// Test roundtrip conversion: bytes -> Address -> bytes
+		let original_bytes = [
+			0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+			0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc,
+		];
+
+		let address = bytes20_to_alloy_address(&original_bytes).unwrap();
+		let bytes_from_address: [u8; 20] = address.into();
+
+		assert_eq!(original_bytes, bytes_from_address);
+	}
+
+	#[test]
+	fn test_wei_to_eth_string() {
+		// Test 1 ETH
+		let one_eth_wei = U256::from(1_000_000_000_000_000_000u64);
+		assert_eq!(wei_to_eth_string(one_eth_wei), "1.000000000000000000");
+
+		// Test 1.5 ETH
+		let one_and_half_eth_wei = U256::from(1_500_000_000_000_000_000u64);
+		assert_eq!(
+			wei_to_eth_string(one_and_half_eth_wei),
+			"1.500000000000000000"
+		);
+
+		// Test 0.1 ETH
+		let tenth_eth_wei = U256::from(100_000_000_000_000_000u64);
+		assert_eq!(wei_to_eth_string(tenth_eth_wei), "0.100000000000000000");
+
+		// Test 0 ETH
+		let zero_wei = U256::ZERO;
+		assert_eq!(wei_to_eth_string(zero_wei), "0.000000000000000000");
+	}
+
+	#[test]
+	fn test_eth_string_to_wei() {
+		// Test 1 ETH
+		let wei = eth_string_to_wei("1.0").unwrap();
+		assert_eq!(wei, U256::from(1_000_000_000_000_000_000u64));
+
+		// Test 1.5 ETH
+		let wei = eth_string_to_wei("1.5").unwrap();
+		assert_eq!(wei, U256::from(1_500_000_000_000_000_000u64));
+
+		// Test 0.1 ETH
+		let wei = eth_string_to_wei("0.1").unwrap();
+		assert_eq!(wei, U256::from(100_000_000_000_000_000u64));
+
+		// Test 0 ETH
+		let wei = eth_string_to_wei("0").unwrap();
+		assert_eq!(wei, U256::ZERO);
+
+		// Test invalid input
+		let result = eth_string_to_wei("invalid");
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_parse_bytes32_from_hex() {
+		// Test with 0x prefix
+		let hex_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+		let result = parse_bytes32_from_hex(hex_str).unwrap();
+		let expected = [
+			0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab,
+			0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78,
+			0x90, 0xab, 0xcd, 0xef,
+		];
+		assert_eq!(result, expected);
+
+		// Test without 0x prefix
+		let hex_str = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
+		let result = parse_bytes32_from_hex(hex_str).unwrap();
+		assert_eq!(result, expected);
+
+		// Test all zeros
+		let hex_str = "0x0000000000000000000000000000000000000000000000000000000000000000";
+		let result = parse_bytes32_from_hex(hex_str).unwrap();
+		assert_eq!(result, [0u8; 32]);
+
+		// Test all ones
+		let hex_str = "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+		let result = parse_bytes32_from_hex(hex_str).unwrap();
+		assert_eq!(result, [0xff; 32]);
+
+		// Test invalid length (too short)
+		let hex_str = "0x1234567890abcdef";
+		let result = parse_bytes32_from_hex(hex_str);
+		assert!(result.is_err());
+		assert!(result.unwrap_err().to_string().contains("64 characters"));
+
+		// Test invalid length (too long)
+		let hex_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
+		let result = parse_bytes32_from_hex(hex_str);
+		assert!(result.is_err());
+		assert!(result.unwrap_err().to_string().contains("64 characters"));
+
+		// Test invalid hex characters
+		let hex_str = "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdeg";
+		let result = parse_bytes32_from_hex(hex_str);
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_wei_string_to_eth_string() {
+		// Test 1 ETH
+		let eth_str = wei_string_to_eth_string("1000000000000000000").unwrap();
+		assert_eq!(eth_str, "1.000000000000000000");
+
+		// Test 1.5 ETH
+		let eth_str = wei_string_to_eth_string("1500000000000000000").unwrap();
+		assert_eq!(eth_str, "1.500000000000000000");
+
+		// Test 0.1 ETH
+		let eth_str = wei_string_to_eth_string("100000000000000000").unwrap();
+		assert_eq!(eth_str, "0.100000000000000000");
+
+		// Test 0 ETH
+		let eth_str = wei_string_to_eth_string("0").unwrap();
+		assert_eq!(eth_str, "0.000000000000000000");
+
+		// Test invalid input
+		let result = wei_string_to_eth_string("invalid");
+		assert!(result.is_err());
+
+		let result = wei_string_to_eth_string("123.456");
+		assert!(result.is_err());
+	}
+
+	#[test]
+	fn test_pow10() {
+		assert_eq!(pow10(0), Decimal::from(1));
+		assert_eq!(pow10(1), Decimal::from(10));
+		assert_eq!(pow10(2), Decimal::from(100));
+		assert_eq!(pow10(3), Decimal::from(1000));
+		assert_eq!(pow10(6), Decimal::from(1000000));
+	}
+
+	#[test]
+	fn test_ceil_dp() {
+		use std::str::FromStr;
+
+		// Test rounding up to 2 decimal places (cents)
+		let value = Decimal::from_str("1.234").unwrap();
+		assert_eq!(ceil_dp(value, 2).to_string(), "1.24");
+
+		let value = Decimal::from_str("1.231").unwrap();
+		assert_eq!(ceil_dp(value, 2).to_string(), "1.24");
+
+		let value = Decimal::from_str("1.230").unwrap();
+		assert_eq!(ceil_dp(value, 2).to_string(), "1.23");
+
+		// Test with exactly 2 decimal places
+		let value = Decimal::from_str("1.23").unwrap();
+		assert_eq!(ceil_dp(value, 2).to_string(), "1.23");
+
+		// Test with 0 decimal places
+		let value = Decimal::from_str("1.5").unwrap();
+		assert_eq!(ceil_dp(value, 0).to_string(), "2");
+
+		let value = Decimal::from_str("1.1").unwrap();
+		assert_eq!(ceil_dp(value, 0).to_string(), "2");
+
+		// Test with negative numbers (ceiling still goes up/towards positive infinity)
+		let value = Decimal::from_str("-1.234").unwrap();
+		assert_eq!(ceil_dp(value, 2).to_string(), "-1.23");
+
+		// Test with zero
+		let value = Decimal::ZERO;
+		assert_eq!(ceil_dp(value, 2).to_string(), "0");
+
+		// Test with large numbers
+		let value = Decimal::from_str("999999.994").unwrap();
+		assert_eq!(ceil_dp(value, 2).to_string(), "1000000");
+
+		// Test with 3 decimal places
+		let value = Decimal::from_str("1.23456").unwrap();
+		assert_eq!(ceil_dp(value, 3).to_string(), "1.235");
+	}
+
+	#[test]
+	fn test_roundtrip_conversions() {
+		// Test roundtrip: ETH -> wei -> ETH (note: format_ether returns full precision)
+		let original_eth = "2.5";
+		let wei = eth_string_to_wei(original_eth).unwrap();
+		let converted_eth = wei_to_eth_string(wei);
+		assert_eq!(converted_eth, "2.500000000000000000");
+
+		// Test roundtrip: wei string -> ETH -> wei
+		let original_wei_str = "2500000000000000000";
+		let eth_str = wei_string_to_eth_string(original_wei_str).unwrap();
+		let wei = eth_string_to_wei(&eth_str).unwrap();
+		assert_eq!(wei.to_string(), original_wei_str);
+
+		// Test that wei -> ETH -> wei maintains precision
+		let original_wei = U256::from(1_234_567_890_123_456_789u64);
+		let eth_str = wei_to_eth_string(original_wei);
+		let converted_wei = eth_string_to_wei(&eth_str).unwrap();
+		assert_eq!(converted_wei, original_wei);
+	}
+}

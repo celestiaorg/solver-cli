@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  check:
+    strategy:
+      fail-fast: true
+
+    name: Foundry project
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.4.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Show Forge version
+        run: |
+          forge --version
+
+      - name: Run Forge fmt
+        run: |
+          forge fmt --check
+        id: fmt
+
+      - name: Run Forge build
+        run: |
+          forge build --sizes
+        id: build
+
+      - name: Run Forge tests
+        run: |
+          forge test --isolate -vvv
+        id: forge-test
+        env:
+          FORGE_SNAPSHOT_CHECK: true
+
+      - name: Run Hardhat tests
+        run: |
+          npx hardhat test
+        id: hardhat-test
+
+      - name: Run Forge coverage
+        run: |
+          forge coverage --report lcov
+        id: coverage
+        env:
+          COVERAGE: true
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./lcov.info
+          fail_ci_if_error: true

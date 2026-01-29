@@ -1,0 +1,117 @@
+{
+  "quotes": [
+    {
+      "order": {
+        "type": "oif-3009-v0",
+        "payload": {
+          "signatureType": "eip712",
+          "domain": {
+            "chainId": "1234",
+            "name": "Mock ETH",
+            "verifyingContract": "0x68b1d87f95878fe05b998f19b66f4baba5de1aed"
+          },
+          "primaryType": "ReceiveWithAuthorization",
+          "message": {
+            "from": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+            "nonce": "0xb4a23294e91899341f975704c99e8807f80f100cc294507a7453e20615abac61",
+            "to": "0x959922be3caee4b8cd9a407cc3ac1c251c2007b1",
+            "validAfter": 0,
+            "validBefore": 1769721197,
+            "value": "1000000"
+          },
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "ReceiveWithAuthorization": [
+              {
+                "name": "from",
+                "type": "address"
+              },
+              {
+                "name": "to",
+                "type": "address"
+              },
+              {
+                "name": "value",
+                "type": "uint256"
+              },
+              {
+                "name": "validAfter",
+                "type": "uint256"
+              },
+              {
+                "name": "validBefore",
+                "type": "uint256"
+              },
+              {
+                "name": "nonce",
+                "type": "bytes32"
+              }
+            ]
+          }
+        },
+        "metadata": {
+          "domain_separator": "0x73e965807543c275dbe55340da93e52978a4c8c8e581d17586fde752b3d16488",
+          "expires": 1769721497,
+          "fillDeadline": 1769721197,
+          "inputOracle": "0x0b306bf915c4d645ff596e518faf3f9669b97016",
+          "inputs": [
+            {
+              "amount": "1000000",
+              "asset": "0x000100000204d21468b1d87f95878fe05b998f19b66f4baba5de1aed",
+              "chainId": 1234,
+              "user": "0x000100000204d21470997970c51812dc3a010c7d01b50e0d17dc79c8"
+            }
+          ],
+          "nonce": 1769720898349,
+          "originChainId": 1234,
+          "outputs": [
+            {
+              "amount": "999568",
+              "asset": "0x0001000003aa36a714a2ebf1ab3892373c19a35a25027e32e438ef76da",
+              "chainId": 11155111,
+              "oracle": "0x30d1900607da047d94f1630ad77a8d1efadf2a12",
+              "receiver": "0x0001000003aa36a71470997970c51812dc3a010c7d01b50e0d17dc79c8",
+              "settler": "0x122eacff900046d32d6fb484b6f8b9e99e6e4702"
+            }
+          ],
+          "user": "0x000100000204d21470997970c51812dc3a010c7d01b50e0d17dc79c8"
+        }
+      },
+      "failureHandling": "refund-automatic",
+      "partialFill": false,
+      "validUntil": 1769720958,
+      "eta": 96,
+      "quoteId": "50b52214-b571-4e10-a8a6-1645c2caeafa",
+      "provider": "oif-solver",
+      "preview": {
+        "inputs": [
+          {
+            "user": "0x000100000204d21470997970c51812dc3a010c7d01b50e0d17dc79c8",
+            "asset": "0x000100000204d21468b1d87f95878fe05b998f19b66f4baba5de1aed",
+            "amount": "1000000"
+          }
+        ],
+        "outputs": [
+          {
+            "receiver": "0x0001000003aa36a71470997970c51812dc3a010c7d01b50e0d17dc79c8",
+            "asset": "0x0001000003aa36a714a2ebf1ab3892373c19a35a25027e32e438ef76da",
+            "amount": "999568"
+          }
+        ]
+      }
+    }
+  ]
+}

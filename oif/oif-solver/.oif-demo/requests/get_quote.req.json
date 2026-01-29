@@ -1,0 +1,35 @@
+{
+  "user": "0x000100000204d21470997970c51812dc3a010c7d01b50e0d17dc79c8",
+  "intent": {
+    "intentType": "oif-swap",
+    "inputs": [
+      {
+        "user": "0x000100000204d21470997970c51812dc3a010c7d01b50e0d17dc79c8",
+        "asset": "0x000100000204d21468b1d87f95878fe05b998f19b66f4baba5de1aed",
+        "amount": "1000000"
+      }
+    ],
+    "outputs": [
+      {
+        "receiver": "0x0001000003aa36a71470997970c51812dc3a010c7d01b50e0d17dc79c8",
+        "asset": "0x0001000003aa36a714a2ebf1ab3892373c19a35a25027e32e438ef76da"
+      }
+    ],
+    "swapType": "exact-input",
+    "minValidUntil": 1769721197,
+    "preference": "speed",
+    "originSubmission": {
+      "mode": "user",
+      "schemes": [
+        "eip3009"
+      ]
+    },
+    "failureHandling": [
+      "refund-automatic"
+    ],
+    "partialFill": false
+  },
+  "supportedTypes": [
+    "oif-3009-v0"
+  ]
+}

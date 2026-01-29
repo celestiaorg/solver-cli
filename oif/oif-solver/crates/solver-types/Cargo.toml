@@ -1,0 +1,32 @@
+[package]
+name = "solver-types"
+version = "0.1.0"
+edition = "2021"
+rust-version.workspace = true
+
+[features]
+default = ["oif-interfaces"]
+oif-interfaces = ["alloy-sol-types", "alloy-contract"]
+
+[dependencies]
+alloy-consensus = { workspace = true }
+alloy-contract = { workspace = true, optional = true }
+alloy-primitives = { workspace = true, features = ["std", "serde"] }
+alloy-provider = { workspace = true }
+alloy-rpc-client = { workspace = true }
+alloy-rpc-types = { workspace = true }
+alloy-signer = { workspace = true }
+alloy-sol-types = { workspace = true, features = ["std"], optional = true }
+alloy-transport = { workspace = true }
+async-trait = { workspace = true }
+axum = { workspace = true }
+bytes = { workspace = true }
+hex = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
+toml = { workspace = true }
+tracing = "0.1"
+zeroize = { version = "1.8", features = ["derive"] }

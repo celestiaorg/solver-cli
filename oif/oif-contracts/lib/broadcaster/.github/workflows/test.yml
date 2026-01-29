@@ -1,0 +1,32 @@
+name: checks
+
+on:
+  push:
+    branches:
+      - master
+      - next-v*
+      - release-v*
+  pull_request: {}
+  workflow_dispatch: {}
+
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up environment
+        uses: ./.github/actions/setup
+      - name: Run tests and generate gas report
+        run: npm run test
+  
+  tests-foundry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - name: Set up environment
+        uses: ./.github/actions/setup
+      - name: Run tests
+        run: forge test -vv
