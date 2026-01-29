@@ -2,7 +2,6 @@ use anyhow::Result;
 use clap::Args;
 use std::env;
 use std::path::PathBuf;
-use tracing::info;
 
 use crate::deployment::Deployer;
 use crate::state::{Environment, StateManager};
@@ -133,7 +132,7 @@ impl DeployCommand {
 
     fn print_deployment_summary(
         state: &crate::state::SolverState,
-        out: &OutputFormatter,
+        _out: &OutputFormatter,
     ) -> Result<()> {
         print_summary_start();
 

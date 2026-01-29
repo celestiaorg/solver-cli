@@ -2,8 +2,8 @@ use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::Stdio;
 use tokio::fs;
-use tokio::process::{Child, Command};
-use tracing::{debug, info, warn};
+use tokio::process::Command;
+use tracing::info;
 
 /// Manages the solver process lifecycle
 pub struct SolverRunner {
@@ -69,7 +69,9 @@ impl SolverRunner {
             .spawn()
             .context("Failed to spawn solver process")?;
 
-        let pid = child.id().ok_or_else(|| anyhow::anyhow!("Failed to get PID"))?;
+        let pid = child
+            .id()
+            .ok_or_else(|| anyhow::anyhow!("Failed to get PID"))?;
 
         // Write PID file
         fs::write(&self.pid_file, pid.to_string())
@@ -133,9 +135,7 @@ impl SolverRunner {
         }
 
         match self.get_pid().await? {
-            Some(pid) if self.is_process_running(pid).await => {
-                Ok(SolverStatus::Running { pid })
-            }
+            Some(pid) if self.is_process_running(pid).await => Ok(SolverStatus::Running { pid }),
             Some(_) => {
                 // Stale PID file
                 fs::remove_file(&self.pid_file).await.ok();
@@ -155,10 +155,7 @@ impl SolverRunner {
             .await
             .context("Failed to read PID file")?;
 
-        let pid: u32 = content
-            .trim()
-            .parse()
-            .context("Invalid PID in file")?;
+        let pid: u32 = content.trim().parse().context("Invalid PID in file")?;
 
         Ok(Some(pid))
     }

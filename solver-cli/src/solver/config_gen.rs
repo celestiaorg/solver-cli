@@ -179,8 +179,16 @@ output = {{ {source_chain_id} = ["{source_oracle}"], {dest_chain_id} = ["{dest_o
             solver_private_key = solver_private_key,
             source_chain_id = source.chain_id,
             source_rpc = source.rpc,
-            source_input_settler = source.contracts.input_settler_escrow.as_deref().unwrap_or(""),
-            source_output_settler = source.contracts.output_settler_simple.as_deref().unwrap_or(""),
+            source_input_settler = source
+                .contracts
+                .input_settler_escrow
+                .as_deref()
+                .unwrap_or(""),
+            source_output_settler = source
+                .contracts
+                .output_settler_simple
+                .as_deref()
+                .unwrap_or(""),
             source_oracle = source.contracts.oracle.as_deref().unwrap_or(""),
             source_token_addr = source_token.address,
             token_symbol = token_symbol,
@@ -188,7 +196,11 @@ output = {{ {source_chain_id} = ["{source_oracle}"], {dest_chain_id} = ["{dest_o
             dest_chain_id = dest.chain_id,
             dest_rpc = dest.rpc,
             dest_input_settler = dest.contracts.input_settler_escrow.as_deref().unwrap_or(""),
-            dest_output_settler = dest.contracts.output_settler_simple.as_deref().unwrap_or(""),
+            dest_output_settler = dest
+                .contracts
+                .output_settler_simple
+                .as_deref()
+                .unwrap_or(""),
             dest_oracle = dest.contracts.oracle.as_deref().unwrap_or(""),
             dest_token_addr = dest_token.address,
         );

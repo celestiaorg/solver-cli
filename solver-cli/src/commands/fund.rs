@@ -86,7 +86,10 @@ impl FundCommand {
             )
             .await?;
 
-            print_success(&format!("Minted {} {} to solver on {}", self.amount, self.token, source.name));
+            print_success(&format!(
+                "Minted {} {} to solver on {}",
+                self.amount, self.token, source.name
+            ));
         }
 
         // Fund destination chain solver
@@ -112,7 +115,10 @@ impl FundCommand {
             )
             .await?;
 
-            print_success(&format!("Minted {} {} to solver on {}", self.amount, self.token, dest.name));
+            print_success(&format!(
+                "Minted {} {} to solver on {}",
+                self.amount, self.token, dest.name
+            ));
         }
 
         print_summary_start();

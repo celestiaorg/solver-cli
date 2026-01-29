@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use alloy::{
     network::TransactionBuilder,
     primitives::{Address, Bytes, U256},

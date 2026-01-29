@@ -53,7 +53,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config: Config = toml::from_str(&config_str)?;
 
     tracing::info!("Loaded configuration for solver: {}", config.solver.id);
-    tracing::info!("Networks configured: {:?}", config.networks.keys().collect::<Vec<_>>());
+    tracing::info!(
+        "Networks configured: {:?}",
+        config.networks.keys().collect::<Vec<_>>()
+    );
 
     // Build solver engine
     let solver = build_solver_from_config(config.clone()).await?;
@@ -68,7 +71,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let api_config = config.api.as_ref().unwrap().clone();
         let api_solver = Arc::clone(&solver);
 
-        tracing::info!("Starting solver with API server on {}:{}", api_config.host, api_config.port);
+        tracing::info!(
+            "Starting solver with API server on {}:{}",
+            api_config.host,
+            api_config.port
+        );
 
         // Start both the solver and the API server concurrently
         let solver_task = solver.run();

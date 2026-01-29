@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use anyhow::{Context, Result};
 use chrono::Utc;
 use std::path::{Path, PathBuf};
@@ -67,8 +69,7 @@ impl StateManager {
         let mut state = state.clone();
         state.last_updated = Utc::now();
 
-        let content =
-            serde_json::to_string_pretty(&state).context("Failed to serialize state")?;
+        let content = serde_json::to_string_pretty(&state).context("Failed to serialize state")?;
 
         fs::write(&self.state_path, content)
             .await

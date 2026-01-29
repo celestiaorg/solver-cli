@@ -2,7 +2,6 @@ use anyhow::Result;
 use clap::Args;
 use std::env;
 use std::path::PathBuf;
-use tracing::info;
 
 use crate::state::{Environment, StateManager};
 use crate::utils::*;
@@ -43,8 +42,11 @@ impl InitCommand {
         print_kv("Environment", &env);
 
         // Create state file
-        let state = state_mgr.init(env.clone()).await?;
-        print_success(&format!("State file created at {:?}", state_mgr.state_dir()));
+        let _state = state_mgr.init(env.clone()).await?;
+        print_success(&format!(
+            "State file created at {:?}",
+            state_mgr.state_dir()
+        ));
 
         // Create directory structure
         let dirs = [
@@ -87,7 +89,10 @@ impl InitCommand {
         print_summary_start();
         print_kv("Project directory", project_dir.display());
         print_kv("Environment", &env);
-        print_kv("State file", state_mgr.state_dir().join("state.json").display());
+        print_kv(
+            "State file",
+            state_mgr.state_dir().join("state.json").display(),
+        );
         print_summary_end();
 
         print_success("Initialization complete!");
