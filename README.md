@@ -22,9 +22,11 @@ cp .env.example .env
 # Edit .env with your SEPOLIA_PK (must have Sepolia ETH for gas!)
 
 # 3. Full setup (build, deploy, configure, fund)
-make setup
+make clean && make setup
 
-# 4. Start solver (in separate terminal)
+# 4. Start solver (in separate terminal) 
+# Note: wait a few seconds after make setup or else you might
+# get a pending TX error.
 make solver
 
 # 5. Submit intent and verify (in original terminal)

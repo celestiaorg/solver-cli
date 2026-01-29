@@ -51,8 +51,8 @@ impl VerifyCommand {
             .ok_or_else(|| anyhow::anyhow!("USER_PK not set"))?;
 
         let user_address = ChainClient::address_from_pk(&user_pk)?;
-        let solver_source = ChainClient::address_from_pk(&env_config.evolve_pk)?;
-        let solver_dest = ChainClient::address_from_pk(&env_config.sepolia_pk)?;
+        // Solver uses SEPOLIA_PK on BOTH chains (not EVOLVE_PK which is the well-known Anvil key)
+        let solver_address = ChainClient::address_from_pk(&env_config.sepolia_pk)?;
 
         // Get token info
         let source_token = source
@@ -79,7 +79,7 @@ impl VerifyCommand {
             .get_token_balance(source_token_addr, user_address)
             .await?;
         let solver_source_balance = source_client
-            .get_token_balance(source_token_addr, solver_source)
+            .get_token_balance(source_token_addr, solver_address)
             .await?;
 
         print_address("User address", &format!("{:?}", user_address));
@@ -88,7 +88,7 @@ impl VerifyCommand {
             &format_token_amount(user_source_balance, source_token.decimals),
             &self.token,
         );
-        print_address("Solver address", &format!("{:?}", solver_source));
+        print_address("Solver address", &format!("{:?}", solver_address));
         print_balance(
             "Solver balance",
             &format_token_amount(solver_source_balance, source_token.decimals),
@@ -102,7 +102,7 @@ impl VerifyCommand {
             .get_token_balance(dest_token_addr, user_address)
             .await?;
         let solver_dest_balance = dest_client
-            .get_token_balance(dest_token_addr, solver_dest)
+            .get_token_balance(dest_token_addr, solver_address)
             .await?;
 
         print_address("User address", &format!("{:?}", user_address));
@@ -111,7 +111,7 @@ impl VerifyCommand {
             &format_token_amount(user_dest_balance, dest_token.decimals),
             &self.token,
         );
-        print_address("Solver address", &format!("{:?}", solver_dest));
+        print_address("Solver address", &format!("{:?}", solver_address));
         print_balance(
             "Solver balance",
             &format_token_amount(solver_dest_balance, dest_token.decimals),
@@ -176,7 +176,7 @@ impl VerifyCommand {
                         "balance": user_source_balance.to_string(),
                     },
                     "solver": {
-                        "address": format!("{:?}", solver_source),
+                        "address": format!("{:?}", solver_address),
                         "balance": solver_source_balance.to_string(),
                     },
                     "token": source_token.address,
@@ -188,7 +188,7 @@ impl VerifyCommand {
                         "balance": user_dest_balance.to_string(),
                     },
                     "solver": {
-                        "address": format!("{:?}", solver_dest),
+                        "address": format!("{:?}", solver_address),
                         "balance": solver_dest_balance.to_string(),
                     },
                     "token": dest_token.address,

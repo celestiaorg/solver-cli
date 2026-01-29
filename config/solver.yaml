@@ -1,0 +1,80 @@
+# Auto-generated solver configuration
+# DO NOT EDIT MANUALLY
+
+solver:
+  id: "solver-001"
+  min_profitability_pct: 0.0
+  monitoring_timeout_seconds: 28800
+
+storage:
+  primary: memory
+  cleanup_interval_seconds: 60
+  implementations:
+    memory: {}
+
+account:
+  primary: env
+  implementations:
+    env:
+      env_var: SOLVER_PRIVATE_KEY
+
+networks:
+  - chain_id: 1234
+    rpc_url: "http://127.0.0.1:8545"
+    tokens:
+      - symbol: USDC
+        address: "0x1291Be112d480055DaFd8a610b7d1e203891C274"
+        decimals: 6
+
+  - chain_id: 11155111
+    rpc_url: "https://ethereum-sepolia-rpc.publicnode.com"
+    tokens:
+      - symbol: USDC
+        address: "0xdC57e3A24F4b14F1Cda9B56b5dd4f8A19CaB91e1"
+        decimals: 6
+
+delivery:
+  min_confirmations: 1
+  implementations:
+    evm_alloy:
+      network_ids: [1234, 11155111]
+
+discovery:
+  implementations:
+    onchain_eip7683:
+      network_ids: [1234, 11155111]
+      polling_interval_secs: 2
+
+order:
+  simulate_callbacks: false
+  implementations:
+    eip7683: {}
+  strategy:
+    primary: simple
+    implementations:
+      simple:
+        max_gas_price_gwei: 100
+
+pricing:
+  primary: mock
+  implementations:
+    mock: {}
+
+settlement:
+  settlement_poll_interval_seconds: 3
+  implementations:
+    direct:
+      order: eip7683
+      network_ids: [1234, 11155111]
+      dispute_period_seconds: 1
+      oracle_selection_strategy: First
+      oracles:
+        input:
+          1234: ["0x36C02dA8a0983159322a80FFE9F24b1acfF8B570"]
+          11155111: ["0x3a82c1FcD8588c8A4b14610497EB4D33b3eCfA40"]
+        output:
+          1234: ["0x36C02dA8a0983159322a80FFE9F24b1acfF8B570"]
+          11155111: ["0x3a82c1FcD8588c8A4b14610497EB4D33b3eCfA40"]
+      routes:
+        1234: [11155111]
+        11155111: [1234]
