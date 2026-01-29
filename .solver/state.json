@@ -1,0 +1,53 @@
+{
+  "env": "local",
+  "chains": {
+    "source": {
+      "name": "evolve",
+      "chain_id": 1234,
+      "rpc": "http://127.0.0.1:8545",
+      "contracts": {
+        "input_settler_escrow": "0x202CCe504e04bEd6fC0521238dDf04Bc9E8E15aB",
+        "output_settler_simple": "0xf4B146FbA71F41E0592668ffbF264F1D186b2Ca8",
+        "oracle": "0x0355B7B8cb128fA5692729Ab3AAa199C1753f726"
+      },
+      "tokens": {
+        "USDC": {
+          "address": "0x172076E0166D1F9Cc711C77Adf8488051744980C",
+          "symbol": "USDC",
+          "decimals": 6,
+          "token_type": "erc20"
+        }
+      },
+      "deployer": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+    },
+    "destination": {
+      "name": "sepolia",
+      "chain_id": 11155111,
+      "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
+      "contracts": {
+        "input_settler_escrow": "0xCcA60264dA2B789B4aa2B9D4bDC4502cB8C84607",
+        "output_settler_simple": "0x1230B6B6906A10BdD61726cda6967F2862446D1D",
+        "oracle": "0x65e292F3b2E01d9b80bC77E84a5433d9690b01EA"
+      },
+      "tokens": {
+        "USDC": {
+          "address": "0xcEF4992386679fEEE5572a7E2426DD9E7b5Beb60",
+          "symbol": "USDC",
+          "decimals": 6,
+          "token_type": "erc20"
+        }
+      },
+      "deployer": "0x9f2cd91d150236ba9796124f3dcda305c3a2086c"
+    }
+  },
+  "solver": {
+    "address": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+    "private_key_ref": "env",
+    "configured": true,
+    "solver_id": "solver-001"
+  },
+  "users": {},
+  "deployment_version": "f2a9c9e9218bce3f",
+  "last_updated": "2026-01-29T22:45:13.786338Z",
+  "intents": []
+}
