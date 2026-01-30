@@ -6,13 +6,13 @@
       "chain_id": 1234,
       "rpc": "http://127.0.0.1:8545",
       "contracts": {
-        "input_settler_escrow": "0x202CCe504e04bEd6fC0521238dDf04Bc9E8E15aB",
-        "output_settler_simple": "0xf4B146FbA71F41E0592668ffbF264F1D186b2Ca8",
-        "oracle": "0x0355B7B8cb128fA5692729Ab3AAa199C1753f726"
+        "input_settler_escrow": "0x6C2d83262fF84cBaDb3e416D527403135D757892",
+        "output_settler_simple": "0xFD6F7A6a5c21A3f503EBaE7a473639974379c351",
+        "oracle": "0x638A246F0Ec8883eF68280293FFE8Cfbabe61B44"
       },
       "tokens": {
         "USDC": {
-          "address": "0x172076E0166D1F9Cc711C77Adf8488051744980C",
+          "address": "0xa6e99A4ED7498b3cdDCBB61a6A607a4925Faa1B7",
           "symbol": "USDC",
           "decimals": 6,
           "token_type": "erc20"
@@ -25,13 +25,13 @@
       "chain_id": 11155111,
       "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
       "contracts": {
-        "input_settler_escrow": "0xCcA60264dA2B789B4aa2B9D4bDC4502cB8C84607",
-        "output_settler_simple": "0x1230B6B6906A10BdD61726cda6967F2862446D1D",
-        "oracle": "0x65e292F3b2E01d9b80bC77E84a5433d9690b01EA"
+        "input_settler_escrow": "0x3F22E19CBB8CCe42890Ee49613e72DEFE0B25E03",
+        "output_settler_simple": "0x58F265016F349b58921d73767EdC64aA14f4F3E6",
+        "oracle": "0x1b1E19D8F54d226a61486AD6AEE4F499c8687439"
       },
       "tokens": {
         "USDC": {
-          "address": "0xcEF4992386679fEEE5572a7E2426DD9E7b5Beb60",
+          "address": "0x63A4F55F826F10B6935C27994942d7572e39cf6A",
           "symbol": "USDC",
           "decimals": 6,
           "token_type": "erc20"
@@ -47,7 +47,7 @@
     "solver_id": "solver-001"
   },
   "users": {},
-  "deployment_version": "f2a9c9e9218bce3f",
-  "last_updated": "2026-01-29T22:45:13.786338Z",
+  "deployment_version": "8abe7de8f7d9228a",
+  "last_updated": "2026-01-30T14:20:13.681526Z",
   "intents": []
 }
