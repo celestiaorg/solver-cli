@@ -30,6 +30,7 @@ impl Deployer {
         private_key: &str,
         token_symbol: &str,
         token_decimals: u8,
+        operator_address: Option<&str>,
     ) -> Result<ChainConfig> {
         info!("Deploying to {} at {}", chain_name, rpc_url);
 
@@ -49,6 +50,7 @@ impl Deployer {
                 &format!("Mock {}", token_symbol),
                 token_symbol,
                 token_decimals,
+                operator_address,
             )
             .await
             .context("Contract deployment failed")?;
@@ -117,6 +119,13 @@ impl Deployer {
             self.build().await?;
         }
 
+        // Derive operator address from ORACLE_OPERATOR_PK (fallback to dest_pk for compatibility)
+        let operator_pk = std::env::var("ORACLE_OPERATOR_PK")
+            .or_else(|_| std::env::var("SEPOLIA_PK"))
+            .context("ORACLE_OPERATOR_PK or SEPOLIA_PK must be set")?;
+        let operator_address = format!("{:?}", ChainClient::address_from_pk(&operator_pk)?);
+        info!("Using operator address: {} (derived from ORACLE_OPERATOR_PK)", operator_address);
+
         // Deploy to source chain
         let source_config = self
             .deploy_to_chain(
@@ -125,17 +134,28 @@ impl Deployer {
                 source_pk,
                 token_symbol,
                 token_decimals,
+                Some(&operator_address),
             )
             .await?;
 
-        // Deploy to destination chain
+        // Deploy to destination chain with same operator
         let dest_config = self
-            .deploy_to_chain(dest_name, dest_rpc, dest_pk, token_symbol, token_decimals)
+            .deploy_to_chain(
+                dest_name,
+                dest_rpc,
+                dest_pk,
+                token_symbol,
+                token_decimals,
+                Some(&operator_address),
+            )
             .await?;
 
         // Update state
         state.chains.source = Some(source_config);
         state.chains.destination = Some(dest_config);
+
+        // Store operator address in solver config
+        state.solver.operator_address = Some(operator_address);
 
         // Compute deployment version hash
         state.deployment_version = Some(compute_deployment_hash(state));

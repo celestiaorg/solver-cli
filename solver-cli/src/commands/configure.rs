@@ -73,6 +73,11 @@ impl ConfigureCommand {
         tokio::fs::write(&yaml_path, yaml_content).await?;
         print_success(&format!("YAML config written to {:?}", yaml_path));
 
+        // Generate oracle operator config
+        let oracle_config_path = project_dir.join("config/oracle.toml");
+        ConfigGenerator::write_oracle_config(&state, &oracle_config_path).await?;
+        print_success(&format!("Oracle config written to {:?}", oracle_config_path));
+
         // Save state
         state_mgr.save(&state).await?;
 
