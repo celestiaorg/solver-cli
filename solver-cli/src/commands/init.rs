@@ -51,7 +51,6 @@ impl InitCommand {
         // Create directory structure
         let dirs = [
             project_dir.join("config"),
-            project_dir.join("config/deployed"),
         ];
 
         for dir in &dirs {
