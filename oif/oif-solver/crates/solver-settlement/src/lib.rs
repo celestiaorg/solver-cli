@@ -18,6 +18,7 @@ use thiserror::Error;
 
 /// Re-export implementations
 pub mod implementations {
+	pub mod centralized;
 	pub mod direct;
 	pub mod hyperlane;
 }
@@ -258,9 +259,10 @@ pub trait SettlementRegistry: ImplementationRegistry<Factory = SettlementFactory
 /// Returns a vector of (name, factory) tuples for all available settlement implementations.
 /// This is used by the factory registry to automatically register all implementations.
 pub fn get_all_implementations() -> Vec<(&'static str, SettlementFactory)> {
-	use implementations::{direct, hyperlane};
+	use implementations::{centralized, direct, hyperlane};
 
 	vec![
+		(centralized::Registry::NAME, centralized::Registry::factory()),
 		(direct::Registry::NAME, direct::Registry::factory()),
 		(hyperlane::Registry::NAME, hyperlane::Registry::factory()),
 	]

@@ -4619,6 +4619,8 @@ dependencies = [
  "alloy-primitives",
  "alloy-provider",
  "alloy-rpc-types",
+ "alloy-signer",
+ "alloy-signer-local",
  "alloy-sol-types",
  "alloy-transport",
  "alloy-transport-http",

@@ -137,6 +137,9 @@ pub struct SolverConfig {
     /// Solver address
     pub address: Option<String>,
 
+    /// Operator address (used for CentralizedOracle)
+    pub operator_address: Option<String>,
+
     /// Reference to private key (never stored raw)
     pub private_key_ref: PrivateKeyRef,
 

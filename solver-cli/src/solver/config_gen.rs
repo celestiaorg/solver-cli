@@ -159,19 +159,18 @@ primary = "mock"
 [settlement]
 settlement_poll_interval_seconds = 3
 
-[settlement.implementations.direct]
+[settlement.implementations.centralized]
 order = "eip7683"
 network_ids = [{source_chain_id}, {dest_chain_id}]
-dispute_period_seconds = 1
-oracle_selection_strategy = "First"
 
-# Oracle configuration
-[settlement.implementations.direct.oracles]
+# Oracle configuration (CentralizedOracle addresses)
+# Attestations are submitted by the separate oracle operator service
+[settlement.implementations.centralized.oracles]
 input = {{ {source_chain_id} = ["{source_oracle}"], {dest_chain_id} = ["{dest_oracle}"] }}
 output = {{ {source_chain_id} = ["{source_oracle}"], {dest_chain_id} = ["{dest_oracle}"] }}
 
 # Valid routes
-[settlement.implementations.direct.routes]
+[settlement.implementations.centralized.routes]
 {source_chain_id} = [{dest_chain_id}]
 {dest_chain_id} = [{source_chain_id}]
 "#,
@@ -314,11 +313,9 @@ pricing:
 settlement:
   settlement_poll_interval_seconds: 3
   implementations:
-    direct:
+    centralized:
       order: eip7683
       network_ids: [{source_chain_id}, {dest_chain_id}]
-      dispute_period_seconds: 1
-      oracle_selection_strategy: First
       oracles:
         input:
           {source_chain_id}: ["{source_oracle}"]
@@ -344,5 +341,105 @@ settlement:
         );
 
         Ok(config)
+    }
+
+    /// Generate oracle operator configuration
+    pub fn generate_oracle_toml(state: &SolverState) -> Result<String> {
+        // Read operator private key from environment at generation time
+        let operator_private_key = std::env::var("ORACLE_OPERATOR_PK")
+            .or_else(|_| std::env::var("SEPOLIA_PK"))
+            .map_err(|_| {
+                anyhow::anyhow!("ORACLE_OPERATOR_PK or SEPOLIA_PK must be set for oracle operator")
+            })?;
+
+        // Ensure the key has 0x prefix
+        let operator_private_key = if operator_private_key.starts_with("0x") {
+            operator_private_key
+        } else {
+            format!("0x{}", operator_private_key)
+        };
+
+        let operator_address = state
+            .solver
+            .operator_address
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Operator address not configured"))?;
+
+        let source = state
+            .chains
+            .source
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Source chain not configured"))?;
+
+        let dest = state
+            .chains
+            .destination
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Destination chain not configured"))?;
+
+        let config = format!(
+            r#"# Auto-generated oracle operator configuration
+# DO NOT EDIT MANUALLY - regenerate with 'solver-cli configure'
+
+# Operator private key (signs attestations)
+operator_private_key = "{operator_private_key}"
+
+# Operator address (must match CentralizedOracle operator)
+operator_address = "{operator_address}"
+
+# Polling interval in seconds
+poll_interval_seconds = 3
+
+# Chain configurations
+[[chains]]
+chain_id = {source_chain_id}
+rpc_url = "{source_rpc}"
+oracle_address = "{source_oracle}"
+output_settler_address = "{source_output_settler}"
+
+[[chains]]
+chain_id = {dest_chain_id}
+rpc_url = "{dest_rpc}"
+oracle_address = "{dest_oracle}"
+output_settler_address = "{dest_output_settler}"
+"#,
+            operator_private_key = operator_private_key,
+            operator_address = operator_address,
+            source_chain_id = source.chain_id,
+            source_rpc = source.rpc,
+            source_oracle = source.contracts.oracle.as_deref().unwrap_or(""),
+            source_output_settler = source
+                .contracts
+                .output_settler_simple
+                .as_deref()
+                .unwrap_or(""),
+            dest_chain_id = dest.chain_id,
+            dest_rpc = dest.rpc,
+            dest_oracle = dest.contracts.oracle.as_deref().unwrap_or(""),
+            dest_output_settler = dest
+                .contracts
+                .output_settler_simple
+                .as_deref()
+                .unwrap_or(""),
+        );
+
+        Ok(config)
+    }
+
+    /// Write oracle operator configuration to a file
+    pub async fn write_oracle_config(state: &SolverState, path: &Path) -> Result<()> {
+        let content = Self::generate_oracle_toml(state)?;
+
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .await
+                .context("Failed to create config directory")?;
+        }
+
+        fs::write(path, &content)
+            .await
+            .context("Failed to write oracle config file")?;
+
+        Ok(())
     }
 }

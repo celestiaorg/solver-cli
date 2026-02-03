@@ -24,12 +24,20 @@ cp .env.example .env
 # 3. Full setup (build, deploy, configure, fund)
 make clean && make setup
 
-# 4. Start solver (in separate terminal) 
+# 4. Start solver (in separate terminal)
 # Note: wait a few seconds after make setup or else you might
 # get a pending TX error.
+make solver-start
+# or use the alias:
 make solver
 
-# 5. Submit intent and verify (in original terminal)
+# 5. Start oracle operator (in another separate terminal)
+# CRITICAL: This must be running for the full flow to work
+make operator-start
+# or use the alias:
+make operator
+
+# 6. Submit intent and verify (in original terminal)
 make intent
 make verify
 ```
@@ -87,7 +95,10 @@ This address needs:
 | `make start` | Start local EVM chain (Anvil) |
 | `make stop` | Stop Anvil and solver |
 | `make setup` | Full setup: build + init + deploy + configure + fund |
-| `make solver` | Start the solver |
+| `make solver-start` | Start the solver service |
+| `make solver` | Alias for `make solver-start` |
+| `make operator-start` | Start the oracle operator service |
+| `make operator` | Alias for `make operator-start` |
 | `make intent` | Submit a test intent (1 USDC) |
 | `make verify` | Check balances |
 | `make clean` | Remove generated files |
@@ -139,8 +150,8 @@ solver-cli intent submit --amount 1000000 --direction forward
 │ InputSettler    │◄──── Solver ────────►│ OutputSettler   │
 │ (escrow tokens) │      monitors        │ (deliver tokens)│
 ├─────────────────┤      both chains     ├─────────────────┤
-│ Oracle          │◄────────────────────►│ Oracle          │
-│ (AlwaysYes)     │                      │ (AlwaysYes)     │
+│ Oracle          │◄── Oracle Operator ─►│ Oracle          │
+│ (Centralized)   │    (separate service)│ (Centralized)   │
 ├─────────────────┤                      ├─────────────────┤
 │ USDC Token      │                      │ USDC Token      │
 │ (MockERC20)     │                      │ (MockERC20)     │
@@ -186,8 +197,21 @@ The solver config has `min_profitability_pct = 0.0` but gas costs make the trade
 
 ### Solver not picking up intents
 1. Ensure solver is running: `ps aux | grep solver-runner`
-2. Check solver has tokens: `solver-cli verify`
-3. Check solver logs: `tail -f /tmp/solver.log`
+2. Ensure oracle operator is running: `ps aux | grep oracle-operator`
+3. Check solver has tokens: `solver-cli verify`
+4. Check solver logs: `tail -f /tmp/solver.log`
+
+### Solver filled order but not claiming
+The oracle operator must be running to sign attestations. Without it:
+- Solver fills the order ✅
+- Solver waits for attestation ⏳ (stuck here)
+- Oracle operator not running ❌
+- Solver cannot claim ❌
+
+Start the oracle operator in a separate terminal:
+```bash
+make operator-start
+```
 
 ### Wrong solver address funded
 The solver uses SEPOLIA_PK, not EVM_PK. Verify:
@@ -207,8 +231,14 @@ cast wallet address --private-key 0x$SEPOLIA_PK
 │       ├── deployment/   # Contract deployment
 │       └── solver/       # Config generation
 ├── solver-runner/        # OIF solver binary wrapper
+├── oracle-operator/      # Independent oracle operator service
+│   └── src/
+│       ├── main.rs       # Entry point
+│       ├── config.rs     # Configuration
+│       └── operator.rs   # Core operator logic
 ├── config/
-│   └── solver.toml       # Generated solver config
+│   ├── solver.toml       # Generated solver config
+│   └── oracle.toml       # Generated oracle operator config
 ├── .solver/
 │   └── state.json        # Deployed addresses
 ├── oif/
@@ -222,7 +252,7 @@ cast wallet address --private-key 0x$SEPOLIA_PK
 - **MockERC20** - Mintable test USDC token
 - **InputSettlerEscrow** - Escrows user tokens on origin chain
 - **OutputSettlerSimple** - Handles delivery on destination chain
-- **AlwaysYesOracle** - Mock oracle that approves all proofs (testing only)
+- **CentralizedOracle** - Oracle that verifies attestations from authorized operator
 
 ## Development
 

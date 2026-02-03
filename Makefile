@@ -25,7 +25,7 @@ start:
 	fi
 .PHONY: start
 
-## stop: Stop local Evolve chain and solver
+## stop: Stop local Evolve chain, solver, and oracle operator
 stop:
 	@if [ -f .anvil.pid ]; then \
 		kill $$(cat .anvil.pid) 2>/dev/null || true; \
@@ -33,6 +33,8 @@ stop:
 		echo "Anvil stopped"; \
 	fi
 	@pkill -f solver-runner 2>/dev/null || true
+	@pkill -f oracle-operator 2>/dev/null || true
+	@echo "All services stopped"
 .PHONY: stop
 
 ## init: Initialize project state (use FORCE=1 to reinitialize)
@@ -55,10 +57,34 @@ fund: build
 	@$(SOLVER_CLI) fund --amount 10000000
 .PHONY: fund
 
-## solver: Start the solver
-solver: build
+## fund-operator: Fund oracle operator with ETH on evolve
+fund-operator:
+	@echo "Funding oracle operator on evolve..."
+	@. ./.env && \
+		OPERATOR_ADDR=$$(grep 'operator_address' config/oracle.toml | cut -d'"' -f2) && \
+		echo "  Operator address: $$OPERATOR_ADDR" && \
+		echo "  Sending 10 ETH..." && \
+		cast send --rpc-url $$EVOLVE_RPC --private-key $$EVOLVE_PK --value 10ether $$OPERATOR_ADDR && \
+		echo "✅ Funded oracle operator with 10 ETH on evolve"
+.PHONY: fund-operator
+
+## solver-start: Start the solver service
+solver-start: build
 	@$(SOLVER_CLI) solver start
+.PHONY: solver-start
+
+# Alias for convenience
+solver: solver-start
 .PHONY: solver
+
+## operator-start: Start the oracle operator service
+operator-start:
+	@cd oracle-operator && ORACLE_CONFIG=../config/oracle.toml RUST_LOG=info cargo run --release
+.PHONY: operator-start
+
+# Alias for convenience
+operator: operator-start
+.PHONY: operator
 
 ## intent: Submit a test intent (1 USDC)
 intent: build
@@ -76,12 +102,13 @@ reset: clean
 .PHONY: reset
 
 ## setup: Full setup (init + deploy + configure + fund)
-setup: init deploy configure fund
+setup: init deploy configure fund fund-operator
 	@echo ""
 	@echo "Setup complete! Next steps:"
-	@echo "  1. make solver  - Start solver (in separate terminal)"
-	@echo "  2. make intent  - Submit a test intent"
-	@echo "  3. make verify  - Check balances"
+	@echo "  1. make solver-start - Start solver service (in separate terminal)"
+	@echo "  2. make operator-start - Start oracle operator service (in another terminal)"
+	@echo "  3. make intent - Submit a test intent"
+	@echo "  4. make verify - Check balances"
 .PHONY: setup
 
 ## clean: Remove generated files

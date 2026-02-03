@@ -5,7 +5,7 @@ import { Script, console2 } from "forge-std/Script.sol";
 
 import { InputSettlerEscrow } from "../src/input/escrow/InputSettlerEscrow.sol";
 import { OutputSettlerSimple } from "../src/output/simple/OutputSettlerSimple.sol";
-import { AlwaysYesOracle } from "../test/mocks/AlwaysYesOracle.sol";
+import { CentralizedOracle } from "../src/oracles/CentralizedOracle.sol";
 import { MockERC20 } from "../test/mocks/MockERC20.sol";
 
 /**
@@ -16,12 +16,15 @@ import { MockERC20 } from "../test/mocks/MockERC20.sol";
 contract Deploy is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        // Use consistent operator across all chains
+        address operator = vm.envOr("OPERATOR_ADDRESS", vm.addr(deployerPrivateKey));
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Deploy AlwaysYesOracle (mock oracle that approves everything)
-        AlwaysYesOracle oracle = new AlwaysYesOracle();
-        console2.log("AlwaysYesOracle:", address(oracle));
+        // Deploy CentralizedOracle with operator
+        CentralizedOracle oracle = new CentralizedOracle(operator);
+        console2.log("CentralizedOracle:", address(oracle));
+        console2.log("Operator:", operator);
 
         // Deploy InputSettlerEscrow
         InputSettlerEscrow inputSettler = new InputSettlerEscrow();
@@ -37,6 +40,7 @@ contract Deploy is Script {
         console2.log("\n--- JSON OUTPUT ---");
         console2.log("{");
         console2.log("  \"oracle\": \"%s\",", address(oracle));
+        console2.log("  \"operator\": \"%s\",", operator);
         console2.log("  \"inputSettler\": \"%s\",", address(inputSettler));
         console2.log("  \"outputSettler\": \"%s\"", address(outputSettler));
         console2.log("}");
@@ -82,12 +86,15 @@ contract DeployAll is Script {
         string memory tokenName = vm.envOr("TOKEN_NAME", string("Mock ETH"));
         string memory tokenSymbol = vm.envOr("TOKEN_SYMBOL", string("ETH"));
         uint8 tokenDecimals = uint8(vm.envOr("TOKEN_DECIMALS", uint256(6)));
+        // Use consistent operator across all chains
+        address operator = vm.envOr("OPERATOR_ADDRESS", vm.addr(deployerPrivateKey));
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Deploy oracle
-        AlwaysYesOracle oracle = new AlwaysYesOracle();
-        console2.log("AlwaysYesOracle:", address(oracle));
+        // Deploy CentralizedOracle with operator
+        CentralizedOracle oracle = new CentralizedOracle(operator);
+        console2.log("CentralizedOracle:", address(oracle));
+        console2.log("Operator:", operator);
 
         // Deploy settlers
         InputSettlerEscrow inputSettler = new InputSettlerEscrow();
@@ -106,6 +113,7 @@ contract DeployAll is Script {
         console2.log("\n--- JSON OUTPUT ---");
         console2.log("{");
         console2.log("  \"oracle\": \"%s\",", address(oracle));
+        console2.log("  \"operator\": \"%s\",", operator);
         console2.log("  \"inputSettler\": \"%s\",", address(inputSettler));
         console2.log("  \"outputSettler\": \"%s\",", address(outputSettler));
         console2.log("  \"token\": \"%s\",", address(token));
