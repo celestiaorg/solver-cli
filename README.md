@@ -167,46 +167,6 @@ solver-cli intent submit --amount 1000000 --direction forward
 4. **Oracle attests** the fulfillment (AlwaysYesOracle auto-approves)
 5. **Solver claims** escrowed tokens as reward on EVM
 
-### Expected Balance Changes
-
-After a successful 1 USDC transfer (EVM -> Sepolia):
-
-| Location | Account | Change |
-|----------|---------|--------|
-| EVM | User | -1 USDC (escrowed, released to solver) |
-| EVM | Solver | +1 USDC (reward) |
-| Sepolia | User | +1 USDC (received) |
-| Sepolia | Solver | -1 USDC (delivered) |
-
-## Troubleshooting
-
-### "insufficient funds for gas"
-The solver needs native ETH on Sepolia. Fund your solver address:
-```bash
-# Check solver address
-cast wallet address --private-key 0x$SEPOLIA_PK
-
-# Send ETH to this address from a faucet or another wallet
-```
-
-### "replacement transaction underpriced"
-A previous transaction is pending. Wait 30 seconds and retry.
-
-### "Order rejected - insufficient margin"
-The solver config has `min_profitability_pct = 0.0` but gas costs make the trade unprofitable. The generated config uses `-100.0` to allow losses for testing.
-
-### Solver not picking up intents
-1. Ensure solver is running: `ps aux | grep solver-runner`
-2. Ensure oracle operator is running: `ps aux | grep oracle-operator`
-3. Check solver has tokens: `solver-cli verify`
-4. Check solver logs: `tail -f /tmp/solver.log`
-
-### Solver filled order but not claiming
-The oracle operator must be running to sign attestations. Without it:
-- Solver fills the order ✅
-- Solver waits for attestation ⏳ (stuck here)
-- Oracle operator not running ❌
-- Solver cannot claim ❌
 
 Start the oracle operator in a separate terminal:
 ```bash
@@ -220,32 +180,6 @@ The solver uses SEPOLIA_PK, not EVM_PK. Verify:
 cast wallet address --private-key 0x$SEPOLIA_PK
 ```
 
-## Project Structure
-
-```
-.
-├── solver-cli/           # Rust CLI
-│   └── src/
-│       ├── commands/     # init, deploy, configure, fund, solver, intent, verify
-│       ├── chain/        # Blockchain client
-│       ├── deployment/   # Contract deployment
-│       └── solver/       # Config generation
-├── solver-runner/        # OIF solver binary wrapper
-├── oracle-operator/      # Independent oracle operator service
-│   └── src/
-│       ├── main.rs       # Entry point
-│       ├── config.rs     # Configuration
-│       └── operator.rs   # Core operator logic
-├── config/
-│   ├── solver.toml       # Generated solver config
-│   └── oracle.toml       # Generated oracle operator config
-├── .solver/
-│   └── state.json        # Deployed addresses
-├── oif/
-│   ├── oif-contracts/    # Smart contracts
-│   └── oif-solver/       # Solver implementation
-└── .env                  # Your configuration
-```
 
 ## Contracts Deployed
 

@@ -65,7 +65,7 @@ fund-operator:
 		echo "  Operator address: $$OPERATOR_ADDR" && \
 		echo "  Sending 10 ETH..." && \
 		cast send --rpc-url $$EVOLVE_RPC --private-key $$EVOLVE_PK --value 10ether $$OPERATOR_ADDR && \
-		echo "✅ Funded oracle operator with 10 ETH on evolve"
+		echo "Funded oracle operator with 10 ETH on evolve"
 .PHONY: fund-operator
 
 ## solver-start: Start the solver service
