@@ -27,6 +27,7 @@ impl ForgeRunner {
         token_name: &str,
         token_symbol: &str,
         token_decimals: u8,
+        operator_address: Option<&str>,
     ) -> Result<DeploymentOutput> {
         info!("Running forge script deployment...");
 
@@ -48,9 +49,15 @@ impl ForgeRunner {
             .env("PRIVATE_KEY", &pk)
             .env("TOKEN_NAME", token_name)
             .env("TOKEN_SYMBOL", token_symbol)
-            .env("TOKEN_DECIMALS", token_decimals.to_string())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .env("TOKEN_DECIMALS", token_decimals.to_string());
+
+        // Set OPERATOR_ADDRESS if provided (ensures consistency across chains)
+        if let Some(operator) = operator_address {
+            cmd.env("OPERATOR_ADDRESS", operator);
+            info!("Using operator address: {}", operator);
+        }
+
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
         debug!("Running forge command in {:?}", self.contracts_path);
 
@@ -226,7 +233,8 @@ impl DeploymentOutput {
 
     pub fn oracle(&self) -> Option<&String> {
         self.addresses
-            .get("AlwaysYesOracle")
+            .get("CentralizedOracle")
+            .or_else(|| self.addresses.get("AlwaysYesOracle"))
             .or_else(|| self.addresses.get("Oracle"))
     }
 
@@ -256,5 +264,9 @@ impl DeploymentOutput {
             })
             // Handle JSON output format with quotes
             .or_else(|| self.addresses.get("\"token\""))
+    }
+
+    pub fn operator(&self) -> Option<&String> {
+        self.addresses.get("Operator")
     }
 }

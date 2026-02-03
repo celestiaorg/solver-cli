@@ -136,6 +136,12 @@ impl DeployCommand {
     ) -> Result<()> {
         print_summary_start();
 
+        // Show operator address at the top
+        if let Some(operator) = &state.solver.operator_address {
+            print_header("Oracle Configuration");
+            print_address("Operator", operator);
+        }
+
         if let Some(source) = &state.chains.source {
             print_header(&format!("{} (Chain ID: {})", source.name, source.chain_id));
             if let Some(addr) = &source.deployer {
@@ -148,7 +154,7 @@ impl DeployCommand {
                 print_address("OutputSettlerSimple", addr);
             }
             if let Some(addr) = &source.contracts.oracle {
-                print_address("Oracle", addr);
+                print_address("CentralizedOracle", addr);
             }
             for (symbol, token) in &source.tokens {
                 print_address(&format!("Token ({})", symbol), &token.address);
@@ -167,7 +173,7 @@ impl DeployCommand {
                 print_address("OutputSettlerSimple", addr);
             }
             if let Some(addr) = &dest.contracts.oracle {
-                print_address("Oracle", addr);
+                print_address("CentralizedOracle", addr);
             }
             for (symbol, token) in &dest.tokens {
                 print_address(&format!("Token ({})", symbol), &token.address);

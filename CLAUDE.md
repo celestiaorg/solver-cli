@@ -35,6 +35,12 @@ This is an implementation plan to build a dead-simple end-to-end workflow:
 │       ├── deployment/
 │       ├── state/
 │       └── utils/
+├── oracle-operator/         # Independent oracle operator service
+│   ├── Cargo.toml
+│   └── src/
+│       ├── main.rs
+│       ├── config.rs
+│       └── operator.rs
 ├── oif/
 │   ├── oif-contracts/       # Solidity contracts (foundry)
 │   │   ├── src/
@@ -44,6 +50,8 @@ This is an implementation plan to build a dead-simple end-to-end workflow:
 │       ├── config/demo/     # Generated solver config
 │       └── crates/
 └── config/                  # Generated configs (gitignored)
+    ├── solver.toml          # Solver configuration
+    └── oracle.toml          # Oracle operator configuration
 ```
 
 Notes:
@@ -68,6 +76,8 @@ EVOLVE_PK=0x...
 
 USER_PK=0x...
 
+ORACLE_OPERATOR_PK=0x...  # Separate key for oracle operator
+
 TOKEN_SYMBOL=USDC
 TRANSFER_AMOUNT=1000000
 
@@ -86,11 +96,68 @@ Implementation requirements:
 
 ---
 
-## 4) Tooling
+## 4) Oracle Operator Architecture
+
+**CRITICAL: Solver and Oracle Operator are SEPARATE services with DIFFERENT keys.**
+
+### Why Separate?
+
+The solver cannot attest to its own fills. That would be:
+```
+Solver: "I filled the order"
+Solver: "I confirm I filled the order" ← Same entity!
+Solver: "Pay me"
+```
+
+This is "trust me, I did the work" with no verification.
+
+### Correct Architecture
+
+```
+┌──────────────┐         ┌──────────────────┐
+│   Solver     │         │ Oracle Operator  │
+│   (key A)    │         │    (key B)       │
+└──────────────┘         └──────────────────┘
+       │                          │
+       │ 1. Fill order            │
+       │     (key A)              │
+       │                          │
+       │                  2. Watch fills
+       │                  3. Verify happened
+       │                  4. Sign attestation
+       │                     (key B) ← Different key!
+       │                  5. Submit to oracle
+       │                          │
+       │ 6. Poll oracle           │
+       │ 7. Claim (key A)         │
+```
+
+### Services
+
+1. **Solver** (`oif-solver/`):
+   - Fills orders on destination chain
+   - Polls CentralizedOracle.isProven()
+   - Claims escrowed funds once oracle confirms
+
+2. **Oracle Operator** (`oracle-operator/`):
+   - Watches both chains for OutputFilled events
+   - Verifies fills occurred
+   - Signs attestations with operator key
+   - Submits to CentralizedOracle contracts
+   - **Independent process, separate key**
+
+### For Testing
+
+For local E2E testing, you CAN use the same key for both (simpler setup), but understand this defeats the trust model. For production, these MUST be separate entities.
+
+---
+
+## 5) Tooling
 
 - **Rust CLI** (`solver-cli/`): Handles deployment, state management, intent submission, balance verification
 - **Foundry**: Contract compilation and deployment via forge scripts
 - **OIF Solver**: Core solver engine from `oif/oif-solver/`
+- **Oracle Operator**: Independent service that signs attestations
 
 Hard requirements:
 - Everything runnable via Make targets
@@ -98,20 +165,28 @@ Hard requirements:
 
 ---
 
-## 5) Makefile targets (top-level UX)
+## 6) Makefile targets (top-level UX)
 
 make start
 - starts local evolve node (ev-reth)
 
 make deploy
 - runs `solver-cli deploy`
-- deploys OIF contracts to Evolve and Sepolia
-- generates solver config (networks.toml, gas.toml)
+- deploys OIF contracts to Evolve and Sepolia (including CentralizedOracle)
+- generates solver config and oracle operator config
 - prints deployed addresses summary
 
-make solver
+make solver-start (or just: make solver)
 - starts OIF solver service using generated config
 - watches both chains for intents
+- fills orders on destination chain
+- waits for oracle attestations before claiming
+
+make operator-start (or just: make operator)
+- starts oracle operator service (SEPARATE process)
+- watches both chains for OutputFilled events
+- signs attestations with operator key
+- submits to CentralizedOracle contracts
 
 make intent
 - runs `solver-cli intent` to submit Evolve → Sepolia USDC intent
@@ -184,7 +259,17 @@ The solver runs from `oif/oif-solver/` using generated config.
 1. Solver watches InputSettlerEscrow on source chain
 2. When intent detected, calculates profitability (gas costs vs spread)
 3. If profitable (or within configured loss threshold), fills on destination
-4. Claims escrowed funds on source chain
+4. **Waits for oracle operator to submit attestation**
+5. Polls CentralizedOracle.isProven() on source chain
+6. Claims escrowed funds once oracle confirms fill
+
+### Oracle Operator Flow (Separate Service)
+1. Watches OutputSettlerSimple on both chains for OutputFilled events
+2. Extracts fill details (solver, timestamp, orderId, output)
+3. Computes attestation payload hash
+4. Signs attestation: `sign(keccak256(chainId, oracle, application, payloadHash))`
+5. Submits to CentralizedOracle contract on destination chain
+6. Oracle stores attestation, making it available via `isProven()`
 
 ### Cost/Profit Analysis
 Solver automatically:
@@ -222,22 +307,33 @@ make start
 make deploy
 
 # 3. Start solver (in separate terminal)
-make solver
+make solver-start
 
-# 4. Submit intent
+# 4. Start oracle operator (in another terminal)
+make operator-start
+
+# 5. Submit intent
 make intent
 
-# 5. Verify balances
+# 6. Verify balances
 make verify
 ```
+
+**Note**: Both solver and oracle operator must be running for the full flow to work. The solver fills orders, the oracle operator signs attestations, and the solver claims funds once attested.
+
+**Aliases**: You can use `make solver` instead of `make solver-start` and `make operator` instead of `make operator-start` for convenience.
 
 ---
 
 ## 10) Acceptance Checklist
 
-- [x] `make deploy`: deploys fresh contracts, prints addresses
-- [x] `make solver`: starts solver watching both chains
-- [x] `make intent`: submits intent, solver fills automatically
+- [x] `make deploy`: deploys fresh contracts (including CentralizedOracle), prints addresses
+- [x] `make solver-start`: starts solver watching both chains
+- [x] `make operator-start`: starts oracle operator (separate service)
+- [x] `make intent`: submits intent
+  - Solver fills on destination
+  - Oracle operator signs attestation
+  - Solver claims on source after oracle confirms
 - [x] `make verify`: shows correct balance changes
   - User: source decreased, destination increased
   - Solver: source increased, destination decreased
