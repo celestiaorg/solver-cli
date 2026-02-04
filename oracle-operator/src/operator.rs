@@ -423,10 +423,7 @@ impl OracleOperator {
         let message_hash = keccak256_bytes(&message);
 
         // Sign with EIP-191 prefix (sign_message automatically applies it)
-        let signature = self
-            .operator_signer
-            .sign_message(&message_hash)
-            .await?;
+        let signature = self.operator_signer.sign_message(&message_hash).await?;
         let signature_bytes = signature.as_bytes();
 
         info!(

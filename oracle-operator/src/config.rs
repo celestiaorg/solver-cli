@@ -47,8 +47,8 @@ impl OracleConfig {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read config file: {:?}", path))?;
 
-        let config: OracleConfig = toml::from_str(&content)
-            .context("Failed to parse config TOML")?;
+        let config: OracleConfig =
+            toml::from_str(&content).context("Failed to parse config TOML")?;
 
         Ok(config)
     }

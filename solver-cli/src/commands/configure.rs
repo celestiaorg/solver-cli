@@ -76,7 +76,10 @@ impl ConfigureCommand {
         // Generate oracle operator config
         let oracle_config_path = project_dir.join("config/oracle.toml");
         ConfigGenerator::write_oracle_config(&state, &oracle_config_path).await?;
-        print_success(&format!("Oracle config written to {:?}", oracle_config_path));
+        print_success(&format!(
+            "Oracle config written to {:?}",
+            oracle_config_path
+        ));
 
         // Save state
         state_mgr.save(&state).await?;

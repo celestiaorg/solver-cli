@@ -124,7 +124,10 @@ impl Deployer {
             .or_else(|_| std::env::var("SEPOLIA_PK"))
             .context("ORACLE_OPERATOR_PK or SEPOLIA_PK must be set")?;
         let operator_address = format!("{:?}", ChainClient::address_from_pk(&operator_pk)?);
-        info!("Using operator address: {} (derived from ORACLE_OPERATOR_PK)", operator_address);
+        info!(
+            "Using operator address: {} (derived from ORACLE_OPERATOR_PK)",
+            operator_address
+        );
 
         // Deploy to source chain
         let source_config = self
