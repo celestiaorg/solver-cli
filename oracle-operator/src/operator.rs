@@ -343,7 +343,7 @@ impl OracleOperator {
         };
 
         info!(
-            "📝 Found fill on chain {}: order={}, timestamp={}, amount={}",
+            "Found fill on chain {}: order={}, timestamp={}, amount={}",
             source_chain_id,
             hex::encode(order_id),
             timestamp,
@@ -468,7 +468,7 @@ impl OracleOperator {
         let receipt = pending.get_receipt().await?;
 
         info!(
-            "✅ Submitted attestation tx: {:?} (status: {:?})",
+            "Submitted attestation tx: {:?} (status: {:?})",
             receipt.transaction_hash,
             receipt.status()
         );
