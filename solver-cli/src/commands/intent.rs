@@ -71,6 +71,25 @@ pub enum IntentCommand {
         /// Timeout in seconds when waiting
         #[arg(long, default_value = "300")]
         timeout: u64,
+
+        /// Intent expiry in seconds (default: 30 minutes)
+        #[arg(long, default_value = "1800")]
+        expiry: u64,
+    },
+
+    /// Refund an expired intent (reclaim escrowed tokens)
+    Refund {
+        /// Transaction hash of the original intent submission
+        #[arg(long)]
+        tx_hash: String,
+
+        /// Project directory
+        #[arg(long)]
+        dir: Option<PathBuf>,
+
+        /// Source chain where intent was submitted
+        #[arg(long)]
+        chain: Option<String>,
     },
 
     /// Check intent status
@@ -107,7 +126,11 @@ impl IntentCommand {
                 to,
                 wait,
                 timeout,
-            } => Self::submit(dir, amount, asset, from, to, wait, timeout, output).await,
+                expiry,
+            } => Self::submit(dir, amount, asset, from, to, wait, timeout, expiry, output).await,
+            IntentCommand::Refund { tx_hash, dir, chain } => {
+                Self::refund(tx_hash, dir, chain, output).await
+            }
             IntentCommand::Status { id, dir } => Self::status(id, dir, output).await,
             IntentCommand::List { dir, status } => Self::list(dir, status, output).await,
         }
@@ -132,6 +155,7 @@ impl IntentCommand {
         to: Option<String>,
         wait: bool,
         timeout: u64,
+        expiry: u64,
         output: OutputFormat,
     ) -> Result<()> {
         let out = OutputFormatter::new(output);
@@ -327,8 +351,8 @@ impl IntentCommand {
             .as_secs();
 
         let nonce = now; // Use timestamp as nonce
-        let expires = (now + 300) as u32; // 5 minutes from now
-        let fill_deadline = (now + 240) as u32; // 4 minutes from now
+        let expires = (now + expiry) as u32; // Configurable expiry (default 30 min)
+        let fill_deadline = (now + expiry - 60) as u32; // 1 minute before expiry
 
         print_kv("Nonce", nonce);
         print_kv("Expires", expires);
@@ -729,6 +753,91 @@ impl IntentCommand {
 
         if out.is_json() {
             out.json(&intents)?;
+        }
+
+        Ok(())
+    }
+
+    async fn refund(
+        tx_hash: String,
+        dir: Option<PathBuf>,
+        chain: Option<String>,
+        output: OutputFormat,
+    ) -> Result<()> {
+        let out = OutputFormatter::new(output);
+        let project_dir = dir.unwrap_or_else(|| env::current_dir().unwrap());
+        let state_mgr = StateManager::new(&project_dir);
+
+        out.header("Refunding Expired Intent");
+
+        // Load state and env
+        let state = state_mgr.load_or_error().await?;
+        load_dotenv(&project_dir)?;
+        let env_config = EnvConfig::from_env()?;
+
+        let _user_pk = env_config
+            .user_pk
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("USER_PK not set"))?;
+
+        // Determine which chain to use
+        let source_chain = if let Some(chain_ref) = chain {
+            Self::resolve_chain(&state, &chain_ref)
+                .ok_or_else(|| anyhow::anyhow!("Chain '{}' not found", chain_ref))?
+                .clone()
+        } else {
+            // Try to find from stored intent
+            let intent = state.intents.iter().find(|i| i.tx_hash == tx_hash);
+            if let Some(i) = intent {
+                state
+                    .get_chain(i.source_chain_id)
+                    .ok_or_else(|| anyhow::anyhow!("Source chain {} not found", i.source_chain_id))?
+                    .clone()
+            } else {
+                // Default to first chain
+                let chain_ids = state.chain_ids();
+                if chain_ids.is_empty() {
+                    anyhow::bail!("No chains configured");
+                }
+                state.get_chain(chain_ids[0]).unwrap().clone()
+            }
+        };
+
+        print_kv("Chain", &format!("{} ({})", source_chain.name, source_chain.chain_id));
+        print_kv("TX Hash", &tx_hash);
+
+        let escrow_address = source_chain
+            .contracts
+            .input_settler_escrow
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No escrow contract on chain"))?;
+
+        print_address("Escrow", escrow_address);
+
+        // Call refund on the escrow contract
+        // The refund function requires the original order data, which we'd need to reconstruct
+        // For simplicity, we'll just provide instructions since reconstructing the order is complex
+        
+        print_warning("To refund an expired intent, you need the original order data.");
+        print_info("The escrow contract's refund() function requires the full StandardOrder struct.");
+        print_info("");
+        print_info("If the intent was created by this CLI, check the intent in state:");
+        print_info(&format!("  solver-cli intent status --id intent-{}", &tx_hash[2..10]));
+        print_info("");
+        print_info("Manual refund via cast (if you have the encoded order):");
+        print_info(&format!(
+            "  cast send {} 'refund((address,uint256,uint256,uint32,uint32,address,uint256[2][],(bytes32,bytes32,uint256,bytes32,uint256,bytes32,bytes,bytes)[]))' <encoded_order> --rpc-url {} --private-key <USER_PK>",
+            escrow_address,
+            source_chain.rpc
+        ));
+
+        if out.is_json() {
+            out.json(&serde_json::json!({
+                "tx_hash": tx_hash,
+                "chain": source_chain.name,
+                "escrow": escrow_address,
+                "note": "Manual refund required with original order data"
+            }))?;
         }
 
         Ok(())

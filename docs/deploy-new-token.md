@@ -197,3 +197,18 @@ Use `--force` to redeploy:
 ```bash
 solver-cli deploy --force
 ```
+
+### Intent expired / Funds stuck
+If an intent expires before being filled, you can reclaim your tokens:
+```bash
+# Check intent status
+solver-cli intent list
+
+# Get refund instructions
+solver-cli intent refund --tx-hash 0x...
+```
+
+The default expiry is 30 minutes. For testing, you can use a shorter expiry:
+```bash
+solver-cli intent submit --amount 1000000 --expiry 300  # 5 minute expiry
+```

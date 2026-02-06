@@ -1,4 +1,5 @@
 use crate::config::{ChainConfig, OracleConfig};
+use crate::state::StateManager;
 use alloy::network::EthereumWallet;
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy_primitives::{Address as AlloyAddress, Bytes, FixedBytes, U256};
@@ -7,8 +8,10 @@ use alloy_signer_local::PrivateKeySigner;
 use alloy_sol_types::{sol, SolCall, SolEvent};
 use anyhow::{Context, Result};
 use sha3::{Digest, Keccak256};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, warn};
 
@@ -153,11 +156,11 @@ pub struct OracleOperator {
     config: OracleConfig,
     operator_signer: PrivateKeySigner,
     providers: HashMap<u64, Arc<WalletHttpProvider>>,
-    processed_fills: Arc<tokio::sync::Mutex<HashSet<[u8; 32]>>>,
+    state: Arc<Mutex<StateManager>>,
 }
 
 impl OracleOperator {
-    pub async fn new(config: OracleConfig) -> Result<Self> {
+    pub async fn new(config: OracleConfig, state_dir: &Path) -> Result<Self> {
         // Parse operator signer
         let operator_signer: PrivateKeySigner = config
             .operator_private_key
@@ -165,6 +168,19 @@ impl OracleOperator {
             .context("Invalid operator private key")?;
 
         info!("Operator address: {:?}", operator_signer.address());
+
+        // Load persistent state
+        let state_manager = StateManager::new(state_dir)?;
+        
+        // Log resumption info
+        for chain in &config.chains {
+            if let Some(&last_block) = state_manager.state().last_processed_block.get(&chain.chain_id) {
+                info!(
+                    "Chain {}: resuming from block {}",
+                    chain.chain_id, last_block + 1
+                );
+            }
+        }
 
         // Create providers for each chain
         let mut providers: HashMap<u64, Arc<WalletHttpProvider>> = HashMap::new();
@@ -189,20 +205,38 @@ impl OracleOperator {
             config,
             operator_signer,
             providers,
-            processed_fills: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
+            state: Arc::new(Mutex::new(state_manager)),
         })
     }
 
-    pub async fn run(self) -> Result<()> {
+    pub async fn run(&self) -> Result<()> {
         let poll_interval = Duration::from_secs(self.config.poll_interval_seconds);
+        let save_interval = 10; // Save state every N polls (~30s with 3s poll)
+        let mut poll_count = 0u64;
 
         loop {
             if let Err(e) = self.poll_and_process().await {
                 error!("Error polling chains: {}", e);
             }
 
+            // Periodically save state to disk
+            poll_count += 1;
+            if poll_count % save_interval == 0 {
+                let mut state = self.state.lock().await;
+                if let Err(e) = state.save_if_dirty() {
+                    error!("Failed to save state: {}", e);
+                }
+            }
+
             sleep(poll_interval).await;
         }
+    }
+
+    /// Save state to disk (called on shutdown)
+    pub async fn save_state(&self) -> Result<()> {
+        let mut state = self.state.lock().await;
+        state.save()?;
+        Ok(())
     }
 
     async fn poll_and_process(&self) -> Result<()> {
@@ -228,10 +262,16 @@ impl OracleOperator {
         // Get current block
         let current_block = provider.get_block_number().await?;
 
-        // Start from configured block or recent blocks
-        let start_block = chain_config
-            .start_block
-            .unwrap_or(current_block.saturating_sub(100));
+        // Get start block from persistent state
+        let start_block = {
+            let state = self.state.lock().await;
+            state.get_start_block(chain_id, chain_config.start_block, current_block)
+        };
+
+        // Don't query if we're already at the current block
+        if start_block > current_block {
+            return Ok(());
+        }
 
         debug!(
             "Polling chain {} blocks {} to {}",
@@ -263,6 +303,12 @@ impl OracleOperator {
             }
         }
 
+        // Update last processed block
+        {
+            let mut state = self.state.lock().await;
+            state.set_last_block(chain_id, current_block);
+        }
+
         Ok(())
     }
 
@@ -279,10 +325,10 @@ impl OracleOperator {
 
         let order_id: [u8; 32] = log.topics()[1].0;
 
-        // Check if already processed
+        // Check if already processed (using persistent state)
         {
-            let processed = self.processed_fills.lock().await;
-            if processed.contains(&order_id) {
+            let state = self.state.lock().await;
+            if state.is_processed(&order_id) {
                 debug!(
                     "Already processed fill for order {:?}",
                     hex::encode(order_id)
@@ -353,10 +399,10 @@ impl OracleOperator {
         // Submit attestation to origin chain (where funds are escrowed)
         self.submit_attestation(&fill).await?;
 
-        // Mark as processed
+        // Mark as processed (persistently)
         {
-            let mut processed = self.processed_fills.lock().await;
-            processed.insert(order_id);
+            let mut state = self.state.lock().await;
+            state.mark_processed(&order_id);
         }
 
         Ok(())
