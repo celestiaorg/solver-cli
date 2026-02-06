@@ -10,27 +10,27 @@ use crate::utils::*;
 use crate::OutputFormat;
 
 #[derive(Args)]
-pub struct VerifyCommand {
+pub struct BalancesCommand {
     /// Project directory
     #[arg(long)]
     pub dir: Option<PathBuf>,
 
-    /// Token symbol to verify
+    /// Token symbol to check
     #[arg(long, default_value = "USDC")]
     pub token: String,
 
-    /// Specific chain to verify (name or ID). If not specified, verifies all chains.
+    /// Specific chain (name or ID). If not specified, shows all chains.
     #[arg(long)]
     pub chain: Option<String>,
 }
 
-impl VerifyCommand {
+impl BalancesCommand {
     pub async fn run(self, output: OutputFormat) -> Result<()> {
         let out = OutputFormatter::new(output);
         let project_dir = self.dir.unwrap_or_else(|| env::current_dir().unwrap());
         let state_mgr = StateManager::new(&project_dir);
 
-        out.header("Balance Verification");
+        out.header("Token Balances");
 
         // Load state and env
         let state = state_mgr.load_or_error().await?;

@@ -1,3 +1,4 @@
+pub mod balances;
 pub mod chain;
 pub mod configure;
 pub mod deploy;
@@ -6,4 +7,3 @@ pub mod init;
 pub mod intent;
 pub mod solver;
 pub mod token;
-pub mod verify;

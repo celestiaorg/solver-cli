@@ -100,7 +100,7 @@ Run `make help` to see all available commands.
 | `solver-cli solver start`                  | Start the solver                      |
 | `solver-cli intent submit`                 | Submit a cross-chain intent           |
 | `solver-cli intent submit --from a --to b` | Specify direction                     |
-| `solver-cli verify`                        | Check balances (alias: `make balances`)   |
+| `solver-cli balances`                      | Check balances on all chains              |
 
 
 ## Submitting Intents

@@ -224,7 +224,7 @@ make intent
 - prints intent ID and tx hash
 
 make balances
-- runs `solver-cli verify` to print balances on ALL chains
+- runs `solver-cli balances` to print balances on ALL chains
 - shows user + solver balances for configured token
 
 ---
@@ -248,8 +248,8 @@ solver-cli intent submit --amount 1000000  # Uses first two chains by default
 solver-cli intent list       # List all intents
 solver-cli intent status --id <id>
 
-solver-cli verify            # Check balances on all chains
-solver-cli verify --chain sepolia  # Check balances on specific chain
+solver-cli balances            # Check balances on all chains
+solver-cli balances --chain sepolia  # Check balances on specific chain
 ```
 
 ### Architecture

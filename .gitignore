@@ -6,3 +6,4 @@
 .anvil.pid
 .env
 config/
+logs/

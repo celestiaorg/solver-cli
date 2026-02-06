@@ -10,9 +10,9 @@ use tracing::Level;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use commands::{
-    chain::ChainCommand, configure::ConfigureCommand, deploy::DeployCommand, fund::FundCommand,
-    init::InitCommand, intent::IntentCommand, solver::SolverCommand, token::TokenCommand,
-    verify::VerifyCommand,
+    balances::BalancesCommand, chain::ChainCommand, configure::ConfigureCommand,
+    deploy::DeployCommand, fund::FundCommand, init::InitCommand, intent::IntentCommand,
+    solver::SolverCommand, token::TokenCommand,
 };
 
 #[derive(Parser)]
@@ -68,8 +68,8 @@ enum Commands {
     #[command(subcommand)]
     Intent(IntentCommand),
 
-    /// Verify balances on all chains
-    Verify(VerifyCommand),
+    /// Check token balances on all chains
+    Balances(BalancesCommand),
 }
 
 fn setup_logging(level: &str) -> anyhow::Result<()> {
@@ -102,7 +102,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Token(cmd) => cmd.run(cli.output).await,
         Commands::Solver(cmd) => cmd.run(cli.output).await,
         Commands::Intent(cmd) => cmd.run(cli.output).await,
-        Commands::Verify(cmd) => cmd.run(cli.output).await,
+        Commands::Balances(cmd) => cmd.run(cli.output).await,
     };
 
     if let Err(e) = result {

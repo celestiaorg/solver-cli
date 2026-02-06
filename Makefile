@@ -148,7 +148,7 @@ intent-back: build
 
 ## balances: Check balances on all chains (use CHAIN=name to limit to one)
 balances: build
-	@$(SOLVER_CLI) verify $(if $(CHAIN),--chain $(CHAIN),)
+	@$(SOLVER_CLI) balances $(if $(CHAIN),--chain $(CHAIN),)
 .PHONY: balances
 
 ## mint: Mint mock tokens (CHAIN=, SYMBOL=, TO=, AMOUNT=)
