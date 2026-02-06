@@ -9,10 +9,13 @@ pub struct ConfigGenerator;
 
 impl ConfigGenerator {
     /// Generate solver TOML configuration from state
+    /// Supports any number of chains with all-to-all routing
     pub fn generate_toml(state: &SolverState) -> Result<String> {
+        if state.chains.is_empty() {
+            anyhow::bail!("No chains configured");
+        }
+
         // Read private key from environment at generation time
-        // IMPORTANT: Use SEPOLIA_PK since EVOLVE_PK is the well-known Anvil key
-        // which gets drained by bots on public testnets
         let solver_private_key = std::env::var("SOLVER_PRIVATE_KEY")
             .or_else(|_| std::env::var("SEPOLIA_PK"))
             .map_err(|_| anyhow::anyhow!("SOLVER_PRIVATE_KEY or SEPOLIA_PK must be set"))?;
@@ -23,39 +26,74 @@ impl ConfigGenerator {
         } else {
             format!("0x{}", solver_private_key)
         };
-        let source = state
-            .chains
-            .source
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Source chain not configured"))?;
 
-        let dest = state
-            .chains
-            .destination
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Destination chain not configured"))?;
+        // Collect all chain IDs
+        let chain_ids: Vec<u64> = state.chain_ids();
+        let chain_ids_str = chain_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
 
-        // Get token info from source chain (assuming same token on both)
-        let token_symbol = source
-            .tokens
-            .keys()
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("No tokens configured"))?;
+        // Build networks section
+        let mut networks_section = String::new();
+        for chain in state.chains.values() {
+            networks_section.push_str(&format!(
+                r#"
+[networks.{}]
+input_settler_address = "{}"
+output_settler_address = "{}"
 
-        let source_token = source
-            .tokens
-            .get(token_symbol)
-            .ok_or_else(|| anyhow::anyhow!("Token {} not found on source chain", token_symbol))?;
+[[networks.{}.rpc_urls]]
+http = "{}"
+"#,
+                chain.chain_id,
+                chain.contracts.input_settler_escrow.as_deref().unwrap_or(""),
+                chain.contracts.output_settler_simple.as_deref().unwrap_or(""),
+                chain.chain_id,
+                chain.rpc,
+            ));
 
-        let dest_token = dest
-            .tokens
-            .get(token_symbol)
-            .ok_or_else(|| anyhow::anyhow!("Token {} not found on dest chain", token_symbol))?;
+            // Add tokens for this chain
+            for token in chain.tokens.values() {
+                networks_section.push_str(&format!(
+                    r#"
+[[networks.{}.tokens]]
+symbol = "{}"
+address = "{}"
+decimals = {}
+"#,
+                    chain.chain_id, token.symbol, token.address, token.decimals,
+                ));
+            }
+        }
 
-        // Generate TOML matching solver-runner expected format
+        // Build oracle configs (input/output for each chain)
+        let mut input_oracles = Vec::new();
+        let mut output_oracles = Vec::new();
+        for chain in state.chains.values() {
+            let oracle = chain.contracts.oracle.as_deref().unwrap_or("");
+            input_oracles.push(format!("{} = [\"{}\"]", chain.chain_id, oracle));
+            output_oracles.push(format!("{} = [\"{}\"]", chain.chain_id, oracle));
+        }
+
+        // Build routes (all-to-all)
+        let mut routes = Vec::new();
+        for &from_id in &chain_ids {
+            let destinations: Vec<String> = chain_ids
+                .iter()
+                .filter(|&&id| id != from_id)
+                .map(|id| id.to_string())
+                .collect();
+            if !destinations.is_empty() {
+                routes.push(format!("{} = [{}]", from_id, destinations.join(", ")));
+            }
+        }
+
         let config = format!(
             r#"# Auto-generated solver configuration
 # DO NOT EDIT MANUALLY - regenerate with 'solver-cli configure'
+# Supports {} chain(s): {}
 
 [solver]
 id = "{solver_id}"
@@ -84,29 +122,7 @@ private_key = "{solver_private_key}"
 # ============================================================================
 # NETWORKS
 # ============================================================================
-[networks.{source_chain_id}]
-input_settler_address = "{source_input_settler}"
-output_settler_address = "{source_output_settler}"
-
-[[networks.{source_chain_id}.rpc_urls]]
-http = "{source_rpc}"
-
-[[networks.{source_chain_id}.tokens]]
-symbol = "{token_symbol}"
-address = "{source_token_addr}"
-decimals = {token_decimals}
-
-[networks.{dest_chain_id}]
-input_settler_address = "{dest_input_settler}"
-output_settler_address = "{dest_output_settler}"
-
-[[networks.{dest_chain_id}.rpc_urls]]
-http = "{dest_rpc}"
-
-[[networks.{dest_chain_id}.tokens]]
-symbol = "{token_symbol}"
-address = "{dest_token_addr}"
-decimals = {token_decimals}
+{networks_section}
 
 # ============================================================================
 # DELIVERY
@@ -115,7 +131,7 @@ decimals = {token_decimals}
 min_confirmations = 1
 
 [delivery.implementations.evm_alloy]
-network_ids = [{source_chain_id}, {dest_chain_id}]
+network_ids = [{chain_ids_str}]
 
 # ============================================================================
 # DISCOVERY
@@ -123,7 +139,7 @@ network_ids = [{source_chain_id}, {dest_chain_id}]
 [discovery]
 
 [discovery.implementations.onchain_eip7683]
-network_ids = [{source_chain_id}, {dest_chain_id}]
+network_ids = [{chain_ids_str}]
 polling_interval_secs = 2
 
 # ============================================================================
@@ -161,47 +177,27 @@ settlement_poll_interval_seconds = 3
 
 [settlement.implementations.centralized]
 order = "eip7683"
-network_ids = [{source_chain_id}, {dest_chain_id}]
+network_ids = [{chain_ids_str}]
 
 # Oracle configuration (CentralizedOracle addresses)
 # Attestations are submitted by the separate oracle operator service
 [settlement.implementations.centralized.oracles]
-input = {{ {source_chain_id} = ["{source_oracle}"], {dest_chain_id} = ["{dest_oracle}"] }}
-output = {{ {source_chain_id} = ["{source_oracle}"], {dest_chain_id} = ["{dest_oracle}"] }}
+input = {{ {input_oracles} }}
+output = {{ {output_oracles} }}
 
-# Valid routes
+# Valid routes (all-to-all)
 [settlement.implementations.centralized.routes]
-{source_chain_id} = [{dest_chain_id}]
-{dest_chain_id} = [{source_chain_id}]
+{routes}
 "#,
+            chain_ids.len(),
+            chain_ids_str,
             solver_id = state.solver.solver_id.as_deref().unwrap_or("solver-001"),
             solver_private_key = solver_private_key,
-            source_chain_id = source.chain_id,
-            source_rpc = source.rpc,
-            source_input_settler = source
-                .contracts
-                .input_settler_escrow
-                .as_deref()
-                .unwrap_or(""),
-            source_output_settler = source
-                .contracts
-                .output_settler_simple
-                .as_deref()
-                .unwrap_or(""),
-            source_oracle = source.contracts.oracle.as_deref().unwrap_or(""),
-            source_token_addr = source_token.address,
-            token_symbol = token_symbol,
-            token_decimals = source_token.decimals,
-            dest_chain_id = dest.chain_id,
-            dest_rpc = dest.rpc,
-            dest_input_settler = dest.contracts.input_settler_escrow.as_deref().unwrap_or(""),
-            dest_output_settler = dest
-                .contracts
-                .output_settler_simple
-                .as_deref()
-                .unwrap_or(""),
-            dest_oracle = dest.contracts.oracle.as_deref().unwrap_or(""),
-            dest_token_addr = dest_token.address,
+            networks_section = networks_section.trim(),
+            chain_ids_str = chain_ids_str,
+            input_oracles = input_oracles.join(", "),
+            output_oracles = output_oracles.join(", "),
+            routes = routes.join("\n"),
         );
 
         Ok(config)
@@ -226,26 +222,72 @@ output = {{ {source_chain_id} = ["{source_oracle}"], {dest_chain_id} = ["{dest_o
 
     /// Generate YAML configuration (alternative format)
     pub fn generate_yaml(state: &SolverState) -> Result<String> {
-        let source = state
-            .chains
-            .source
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Source chain not configured"))?;
+        if state.chains.is_empty() {
+            anyhow::bail!("No chains configured");
+        }
 
-        let dest = state
-            .chains
-            .destination
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Destination chain not configured"))?;
+        let chain_ids: Vec<u64> = state.chain_ids();
+        let chain_ids_str = chain_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
 
-        let token_symbol = source
-            .tokens
-            .keys()
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("No tokens configured"))?;
+        // Build networks list
+        let mut networks_yaml = String::new();
+        for chain in state.chains.values() {
+            networks_yaml.push_str(&format!(
+                r#"
+  - chain_id: {}
+    rpc_url: "{}"
+    tokens:"#,
+                chain.chain_id, chain.rpc
+            ));
+            for token in chain.tokens.values() {
+                networks_yaml.push_str(&format!(
+                    r#"
+      - symbol: {}
+        address: "{}"
+        decimals: {}"#,
+                    token.symbol, token.address, token.decimals
+                ));
+            }
+        }
 
-        let source_token = source.tokens.get(token_symbol).unwrap();
-        let dest_token = dest.tokens.get(token_symbol).unwrap();
+        // Build oracle configs
+        let mut oracle_input = String::new();
+        let mut oracle_output = String::new();
+        for chain in state.chains.values() {
+            let oracle = chain.contracts.oracle.as_deref().unwrap_or("");
+            oracle_input.push_str(&format!(
+                r#"
+          {}: ["{}"]"#,
+                chain.chain_id, oracle
+            ));
+            oracle_output.push_str(&format!(
+                r#"
+          {}: ["{}"]"#,
+                chain.chain_id, oracle
+            ));
+        }
+
+        // Build routes
+        let mut routes_yaml = String::new();
+        for &from_id in &chain_ids {
+            let destinations: Vec<String> = chain_ids
+                .iter()
+                .filter(|&&id| id != from_id)
+                .map(|id| id.to_string())
+                .collect();
+            if !destinations.is_empty() {
+                routes_yaml.push_str(&format!(
+                    r#"
+        {}: [{}]"#,
+                    from_id,
+                    destinations.join(", ")
+                ));
+            }
+        }
 
         let config = format!(
             r#"# Auto-generated solver configuration
@@ -268,31 +310,18 @@ account:
     env:
       env_var: SOLVER_PRIVATE_KEY
 
-networks:
-  - chain_id: {source_chain_id}
-    rpc_url: "{source_rpc}"
-    tokens:
-      - symbol: {token_symbol}
-        address: "{source_token_addr}"
-        decimals: {token_decimals}
-
-  - chain_id: {dest_chain_id}
-    rpc_url: "{dest_rpc}"
-    tokens:
-      - symbol: {token_symbol}
-        address: "{dest_token_addr}"
-        decimals: {token_decimals}
+networks:{networks_yaml}
 
 delivery:
   min_confirmations: 1
   implementations:
     evm_alloy:
-      network_ids: [{source_chain_id}, {dest_chain_id}]
+      network_ids: [{chain_ids_str}]
 
 discovery:
   implementations:
     onchain_eip7683:
-      network_ids: [{source_chain_id}, {dest_chain_id}]
+      network_ids: [{chain_ids_str}]
       polling_interval_secs: 2
 
 order:
@@ -315,36 +344,29 @@ settlement:
   implementations:
     centralized:
       order: eip7683
-      network_ids: [{source_chain_id}, {dest_chain_id}]
+      network_ids: [{chain_ids_str}]
       oracles:
-        input:
-          {source_chain_id}: ["{source_oracle}"]
-          {dest_chain_id}: ["{dest_oracle}"]
-        output:
-          {source_chain_id}: ["{source_oracle}"]
-          {dest_chain_id}: ["{dest_oracle}"]
-      routes:
-        {source_chain_id}: [{dest_chain_id}]
-        {dest_chain_id}: [{source_chain_id}]
+        input:{oracle_input}
+        output:{oracle_output}
+      routes:{routes_yaml}
 "#,
             solver_id = state.solver.solver_id.as_deref().unwrap_or("solver-001"),
-            source_chain_id = source.chain_id,
-            source_rpc = source.rpc,
-            source_oracle = source.contracts.oracle.as_deref().unwrap_or(""),
-            source_token_addr = source_token.address,
-            token_symbol = token_symbol,
-            token_decimals = source_token.decimals,
-            dest_chain_id = dest.chain_id,
-            dest_rpc = dest.rpc,
-            dest_oracle = dest.contracts.oracle.as_deref().unwrap_or(""),
-            dest_token_addr = dest_token.address,
+            networks_yaml = networks_yaml,
+            chain_ids_str = chain_ids_str,
+            oracle_input = oracle_input,
+            oracle_output = oracle_output,
+            routes_yaml = routes_yaml,
         );
 
         Ok(config)
     }
 
-    /// Generate oracle operator configuration
+    /// Generate oracle operator configuration for all chains
     pub fn generate_oracle_toml(state: &SolverState) -> Result<String> {
+        if state.chains.is_empty() {
+            anyhow::bail!("No chains configured");
+        }
+
         // Read operator private key from environment at generation time
         let operator_private_key = std::env::var("ORACLE_OPERATOR_PK")
             .or_else(|_| std::env::var("SEPOLIA_PK"))
@@ -365,21 +387,30 @@ settlement:
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Operator address not configured"))?;
 
-        let source = state
-            .chains
-            .source
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Source chain not configured"))?;
-
-        let dest = state
-            .chains
-            .destination
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Destination chain not configured"))?;
+        // Build chain configurations
+        let mut chains_section = String::new();
+        for chain in state.chains.values() {
+            chains_section.push_str(&format!(
+                r#"
+[[chains]]
+chain_id = {}
+rpc_url = "{}"
+oracle_address = "{}"
+output_settler_address = "{}"
+input_settler_address = "{}"
+"#,
+                chain.chain_id,
+                chain.rpc,
+                chain.contracts.oracle.as_deref().unwrap_or(""),
+                chain.contracts.output_settler_simple.as_deref().unwrap_or(""),
+                chain.contracts.input_settler_escrow.as_deref().unwrap_or(""),
+            ));
+        }
 
         let config = format!(
             r#"# Auto-generated oracle operator configuration
 # DO NOT EDIT MANUALLY - regenerate with 'solver-cli configure'
+# Supports {} chain(s)
 
 # Operator private key (signs attestations)
 operator_private_key = "{operator_private_key}"
@@ -391,36 +422,11 @@ operator_address = "{operator_address}"
 poll_interval_seconds = 3
 
 # Chain configurations
-[[chains]]
-chain_id = {source_chain_id}
-rpc_url = "{source_rpc}"
-oracle_address = "{source_oracle}"
-output_settler_address = "{source_output_settler}"
-
-[[chains]]
-chain_id = {dest_chain_id}
-rpc_url = "{dest_rpc}"
-oracle_address = "{dest_oracle}"
-output_settler_address = "{dest_output_settler}"
-"#,
+{chains_section}"#,
+            state.chains.len(),
             operator_private_key = operator_private_key,
             operator_address = operator_address,
-            source_chain_id = source.chain_id,
-            source_rpc = source.rpc,
-            source_oracle = source.contracts.oracle.as_deref().unwrap_or(""),
-            source_output_settler = source
-                .contracts
-                .output_settler_simple
-                .as_deref()
-                .unwrap_or(""),
-            dest_chain_id = dest.chain_id,
-            dest_rpc = dest.rpc,
-            dest_oracle = dest.contracts.oracle.as_deref().unwrap_or(""),
-            dest_output_settler = dest
-                .contracts
-                .output_settler_simple
-                .as_deref()
-                .unwrap_or(""),
+            chains_section = chains_section.trim(),
         );
 
         Ok(config)

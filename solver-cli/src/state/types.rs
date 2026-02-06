@@ -62,14 +62,9 @@ impl std::str::FromStr for Environment {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ChainConfigs {
-    /// Source chain (typically local Evolve)
-    pub source: Option<ChainConfig>,
-
-    /// Destination chain (typically Sepolia)
-    pub destination: Option<ChainConfig>,
-}
+/// Chain configurations indexed by chain ID
+/// Supports any number of EVM chains
+pub type ChainConfigs = HashMap<u64, ChainConfig>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChainConfig {
@@ -217,12 +212,13 @@ impl std::fmt::Display for IntentStatus {
 }
 
 /// Token registry entry (from tokens.json)
+/// Generic structure supporting any chain by name
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenRegistryEntry {
     pub decimals: u8,
-    pub sepolia: Option<TokenChainInfo>,
-    pub evolve: Option<TokenChainInfo>,
-    pub local: Option<TokenChainInfo>,
+    /// Chain-specific token info, keyed by chain name (e.g., "sepolia", "evolve")
+    #[serde(flatten)]
+    pub chains: HashMap<String, TokenChainInfo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -230,4 +226,43 @@ pub struct TokenChainInfo {
     pub address: String,
     #[serde(rename = "type")]
     pub token_type: String,
+}
+
+/// Helper methods for working with chain configs
+impl SolverState {
+    /// Get all chain IDs
+    pub fn chain_ids(&self) -> Vec<u64> {
+        self.chains.keys().copied().collect()
+    }
+
+    /// Get a chain by ID
+    pub fn get_chain(&self, chain_id: u64) -> Option<&ChainConfig> {
+        self.chains.get(&chain_id)
+    }
+
+    /// Get a chain by name (case-insensitive)
+    pub fn get_chain_by_name(&self, name: &str) -> Option<&ChainConfig> {
+        self.chains
+            .values()
+            .find(|c| c.name.eq_ignore_ascii_case(name))
+    }
+
+    /// Check if all chains have complete contract deployments
+    pub fn all_chains_deployed(&self) -> bool {
+        !self.chains.is_empty() && self.chains.values().all(|c| c.contracts.is_complete())
+    }
+
+    /// Get routes between all chains (all-to-all)
+    pub fn get_all_routes(&self) -> Vec<(u64, u64)> {
+        let chain_ids: Vec<u64> = self.chain_ids();
+        let mut routes = Vec::new();
+        for &from in &chain_ids {
+            for &to in &chain_ids {
+                if from != to {
+                    routes.push((from, to));
+                }
+            }
+        }
+        routes
+    }
 }

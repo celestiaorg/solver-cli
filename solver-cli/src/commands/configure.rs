@@ -41,12 +41,15 @@ impl ConfigureCommand {
         let env_config = EnvConfig::from_env()?;
 
         // Validate deployment
-        if state.chains.source.is_none() || state.chains.destination.is_none() {
-            anyhow::bail!("Contracts not deployed. Run 'solver-cli deploy' first.");
+        if state.chains.is_empty() {
+            anyhow::bail!("No chains deployed. Run 'solver-cli deploy' first.");
         }
 
-        // Derive solver address
-        let solver_address = ChainClient::address_from_pk(&env_config.evolve_pk)?;
+        print_kv("Chains configured", state.chains.len());
+
+        // Derive solver address from solver private key
+        let solver_pk = env_config.get_solver_pk()?;
+        let solver_address = ChainClient::address_from_pk(&solver_pk)?;
         print_address("Solver address", &format!("{:?}", solver_address));
 
         // Update solver config in state

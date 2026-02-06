@@ -36,6 +36,10 @@ pub struct ChainConfig {
     /// OutputSettlerSimple contract address (to watch for fills)
     pub output_settler_address: String,
 
+    /// InputSettlerEscrow contract address (to query order status)
+    #[serde(default)]
+    pub input_settler_address: Option<String>,
+
     /// Block number to start watching from
     #[serde(default)]
     pub start_block: Option<u64>,

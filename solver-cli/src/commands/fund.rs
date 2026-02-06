@@ -24,13 +24,13 @@ pub struct FundCommand {
     #[arg(long, default_value = "USDC")]
     pub token: String,
 
-    /// Only fund source chain
+    /// Specific chain to fund (name or ID). If not specified, funds all chains.
     #[arg(long)]
-    pub source_only: bool,
+    pub chain: Option<String>,
 
-    /// Only fund destination chain
+    /// Skip native token funding
     #[arg(long)]
-    pub dest_only: bool,
+    pub skip_native: bool,
 }
 
 impl FundCommand {
@@ -48,125 +48,113 @@ impl FundCommand {
 
         let amount: U256 = self.amount.parse()?;
 
-        let source = state
-            .chains
-            .source
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Source chain not configured"))?;
-
-        let dest = state
-            .chains
-            .destination
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Destination chain not configured"))?;
-
-        // Get the solver private key - use SEPOLIA_PK since EVOLVE_PK is the well-known
-        // Anvil key that gets drained by bots on public testnets
-        let solver_key = std::env::var("SOLVER_PRIVATE_KEY")
-            .or_else(|_| std::env::var("SEPOLIA_PK"))
-            .unwrap_or_else(|_| env_config.sepolia_pk.clone());
+        // Get the solver private key
+        let solver_key = env_config.get_solver_pk()?;
         let solver_address = ChainClient::address_from_pk(&solver_key)?;
 
-        // Fund source chain solver
-        if !self.dest_only {
-            // 1. Fund native tokens first (critical for gas)
-            let native_balance = Self::get_native_balance(&source.rpc, solver_address).await?;
-            let min_native_balance = U256::from(100_000_000_000_000_000u64); // 0.1 ETH
-
-            print_kv("Native balance", format!("{} wei", native_balance));
-
-            if native_balance < min_native_balance {
-                print_warning("Low native token balance. Funding with 1.0 native tokens...");
-
-                let native_amount = U256::from(1_000_000_000_000_000_000u64); // 1.0 ETH
-                Self::send_native_tokens(
-                    &source.rpc,
-                    &env_config.evolve_pk,
-                    solver_address,
-                    native_amount,
-                )
-                .await?;
-
-                print_success("Funded solver with 1.0 native tokens (for gas)");
+        // Determine which chains to fund
+        let chain_ids: Vec<u64> = if let Some(ref chain_arg) = self.chain {
+            // Try to parse as chain ID first
+            if let Ok(id) = chain_arg.parse::<u64>() {
+                if state.chains.contains_key(&id) {
+                    vec![id]
+                } else {
+                    anyhow::bail!("Chain ID {} not found in state", id);
+                }
             } else {
-                print_success("Solver has sufficient native tokens");
+                // Try to find by name
+                let chain = state.get_chain_by_name(chain_arg).ok_or_else(|| {
+                    anyhow::anyhow!("Chain '{}' not found", chain_arg)
+                })?;
+                vec![chain.chain_id]
             }
+        } else {
+            state.chain_ids()
+        };
 
-            print_header(&format!("Funding solver on {}", source.name));
-            let token_info = source
-                .tokens
-                .get(&self.token)
-                .ok_or_else(|| anyhow::anyhow!("Token {} not found on source", self.token))?;
-
-            print_address("Solver", &format!("{:?}", solver_address));
-            print_address("Token", &token_info.address);
-
-            Self::mint_tokens(
-                &source.rpc,
-                &env_config.evolve_pk,
-                &token_info.address,
-                solver_address,
-                amount,
-            )
-            .await?;
-
-            print_success(&format!(
-                "Minted {} {} to solver on {}",
-                self.amount, self.token, source.name
-            ));
+        if chain_ids.is_empty() {
+            anyhow::bail!("No chains configured. Run 'solver-cli deploy' first.");
         }
 
-        // Fund destination chain solver
-        // Solver uses the same key (SEPOLIA_PK) for both chains
-        if !self.source_only {
-            print_header(&format!("Funding solver on {}", dest.name));
+        print_kv("Chains to fund", chain_ids.len());
+        print_address("Solver", &format!("{:?}", solver_address));
 
-            // 1. Check native token balance (critical for gas)
-            let native_balance = Self::get_native_balance(&dest.rpc, solver_address).await?;
-            let min_native_balance = U256::from(100_000_000_000_000_000u64); // 0.1 ETH
+        // Fund each chain
+        for chain_id in &chain_ids {
+            let chain = state.chains.get(chain_id).unwrap();
+            print_header(&format!("Funding solver on {} (Chain ID: {})", chain.name, chain.chain_id));
 
-            print_kv("Native balance", format!("{} wei", native_balance));
+            // Get the private key for this chain (to pay gas for minting)
+            let chain_env = env_config.get_chain(&chain.name);
+            let funder_pk = chain_env.map(|c| c.private_key.clone())
+                .or_else(|| env_config.get_any_pk())
+                .ok_or_else(|| anyhow::anyhow!("No private key found for chain {}", chain.name))?;
 
-            if native_balance < min_native_balance {
-                print_warning(&format!(
-                    "CRITICAL: Solver has insufficient native tokens on {} for gas!",
-                    dest.name
-                ));
-                print_warning(&format!(
-                    "Current: {} wei | Required: ~0.1 ETH minimum",
-                    native_balance
-                ));
-                print_info(&format!(
-                    "Please fund solver address {:?} on {} with native tokens.",
-                    solver_address, dest.name
-                ));
+            // 1. Check and fund native tokens (for gas)
+            if !self.skip_native {
+                let native_balance = Self::get_native_balance(&chain.rpc, solver_address).await?;
+                let min_native_balance = U256::from(100_000_000_000_000_000u64); // 0.1 ETH
 
-                if dest.name.to_lowercase().contains("sepolia") {
-                    print_info("Get Sepolia ETH from faucets:");
-                    print_info("  - https://www.alchemy.com/faucets/ethereum-sepolia");
-                    print_info("  - https://sepoliafaucet.com/");
+                print_kv("Native balance", format!("{} wei", native_balance));
+
+                if native_balance < min_native_balance {
+                    // Check if this is a local chain (can auto-fund)
+                    let is_local = chain.name.to_lowercase().contains("local")
+                        || chain.name.to_lowercase().contains("evolve")
+                        || chain.name.to_lowercase().contains("anvil");
+
+                    if is_local {
+                        print_warning("Low native token balance. Auto-funding with 1.0 native tokens...");
+                        let native_amount = U256::from(1_000_000_000_000_000_000u64); // 1.0 ETH
+                        Self::send_native_tokens(
+                            &chain.rpc,
+                            &funder_pk,
+                            solver_address,
+                            native_amount,
+                        )
+                        .await?;
+                        print_success("Funded solver with 1.0 native tokens (for gas)");
+                    } else {
+                        print_warning(&format!(
+                            "CRITICAL: Solver has insufficient native tokens on {} for gas!",
+                            chain.name
+                        ));
+                        print_warning(&format!(
+                            "Current: {} wei | Required: ~0.1 ETH minimum",
+                            native_balance
+                        ));
+                        print_info(&format!(
+                            "Please fund solver address {:?} on {} with native tokens.",
+                            solver_address, chain.name
+                        ));
+
+                        if chain.name.to_lowercase().contains("sepolia") {
+                            print_info("Get Sepolia ETH from faucets:");
+                            print_info("  - https://www.alchemy.com/faucets/ethereum-sepolia");
+                            print_info("  - https://sepoliafaucet.com/");
+                        }
+
+                        anyhow::bail!(
+                            "Solver needs at least 0.1 native tokens on {} to operate. Please fund and retry.",
+                            chain.name
+                        );
+                    }
+                } else {
+                    print_success("Solver has sufficient native tokens");
                 }
-
-                anyhow::bail!(
-                                "Solver needs at least 0.1 native tokens on {} to operate. Please fund and retry.",
-                                dest.name
-                            );
-            } else {
-                print_success("Solver has sufficient native tokens");
             }
 
-            let token_info = dest
+            // 2. Fund ERC20 tokens
+            let token_info = chain
                 .tokens
                 .get(&self.token)
-                .ok_or_else(|| anyhow::anyhow!("Token {} not found on dest", self.token))?;
+                .ok_or_else(|| anyhow::anyhow!("Token {} not found on {}", self.token, chain.name))?;
 
-            print_address("Solver", &format!("{:?}", solver_address));
             print_address("Token", &token_info.address);
 
-            // Use SEPOLIA_PK to pay for gas, but mint TO the solver address
             Self::mint_tokens(
-                &dest.rpc,
-                &env_config.sepolia_pk,
+                &chain.rpc,
+                &funder_pk,
                 &token_info.address,
                 solver_address,
                 amount,
@@ -175,13 +163,14 @@ impl FundCommand {
 
             print_success(&format!(
                 "Minted {} {} to solver on {}",
-                self.amount, self.token, dest.name
+                self.amount, self.token, chain.name
             ));
         }
 
         print_summary_start();
         print_kv("Token", &self.token);
         print_kv("Amount per chain", &self.amount);
+        print_kv("Chains funded", chain_ids.len());
         print_summary_end();
 
         print_success("Solver funding complete!");
@@ -191,6 +180,7 @@ impl FundCommand {
                 "funded": true,
                 "amount": self.amount,
                 "token": self.token,
+                "chains": chain_ids,
             }))?;
         }
 
@@ -217,7 +207,12 @@ impl FundCommand {
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let balance_str = stdout.trim();
+        // cast may return format like "1000000 [1e6]" - extract just the first number
+        let balance_str = stdout
+            .trim()
+            .split_whitespace()
+            .next()
+            .unwrap_or("0");
 
         let balance = U256::from_str(balance_str)
             .or_else(|_| U256::from_str_radix(balance_str.trim_start_matches("0x"), 16))

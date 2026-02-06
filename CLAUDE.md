@@ -1,22 +1,21 @@
-# E2E Solver Setup: Evolve (ev-reth) ↔ Ethereum Sepolia
+# E2E Solver Setup: Multi-Chain EVM Interop
 
-This is an implementation plan to build a dead-simple end-to-end workflow:
-1) start local Evolve, 2) deploy OIF contracts fresh to Evolve+Sepolia, 3) run solver (both directions), 4) trigger transfers (either direction), 5) print balances + addresses for verification.
+This is an implementation for a dead-simple end-to-end cross-chain solver workflow supporting **any number of EVM chains**.
+
+Default setup: local Evolve ↔ Ethereum Sepolia, but easily extensible to N chains.
 
 ---
 
-## 0) Non-negotiables
+## 0) Key Features
 
-- Ignore Celestia DA properties; they can run in the background.
-- Focus only on EVM interop between local Evolve (ev-reth) and Ethereum Sepolia.
-- `make deploy` ALWAYS redeploys contracts fresh to BOTH chains.
-- Use ONE funded private key per chain (deployer/solver operator), plus ONE user key (can be same if you want, but keep it configurable).
-- Start with ONE token: USDC. Make adding/switching tokens trivial (data-driven, not code edits).
-- After transfers, print:
-  - USDC balance of solver on source (should increase)
-  - USDC balance of user on source (should decrease)
-  - USDC balance of user on destination (should increase)
-  - show those 3 addresses too
+- **Multi-chain support**: Configure any number of EVM chains (not limited to 2)
+- **Bidirectional**: Solver works in all directions between configured chains
+- **All-to-all routing**: Every chain can send to every other chain
+- **Chain-agnostic**: Core logic uses chain IDs, not hardcoded names
+- `make deploy` deploys contracts to ALL configured chains
+- Use ONE funded private key per chain, plus ONE user key
+- Start with ONE token: USDC. Make adding/switching tokens trivial (data-driven, not code edits)
+- After transfers, print balances on all chains
 
 ---
 
@@ -63,26 +62,53 @@ Notes:
 
 ## 2) Environment (.env)
 
-Create `.env` (never commit):
+Create `.env` (never commit). Two configuration formats supported:
+
+### Option 1: Legacy format (2 chains)
+
+```bash
+# Chain configs
+EVOLVE_RPC=http://127.0.0.1:8545
+EVOLVE_PK=0x...
+EVOLVE_CHAIN_ID=1234
 
 SEPOLIA_RPC=https://sepolia.infura.io/v3/KEY
-EVOLVE_RPC=http://127.0.0.1:8545
-
-SEPOLIA_CHAIN_ID=11155111
-EVOLVE_CHAIN_ID=<fill with local chain id>
-
 SEPOLIA_PK=0x...
-EVOLVE_PK=0x...
+SEPOLIA_CHAIN_ID=11155111
 
+# Solver/operator keys (default to SEPOLIA_PK)
+SOLVER_PRIVATE_KEY=0x...
+ORACLE_OPERATOR_PK=0x...
+
+# User key
 USER_PK=0x...
 
-ORACLE_OPERATOR_PK=0x...  # Separate key for oracle operator
-
+# Token config
 TOKEN_SYMBOL=USDC
 TRANSFER_AMOUNT=1000000
+```
+
+### Option 2: Explicit chain list (N chains)
+
+```bash
+# Explicit chain list
+CHAINS=evolve,sepolia,arbitrum
+
+# Per-chain config
+EVOLVE_RPC=http://127.0.0.1:8545
+EVOLVE_PK=0x...
+
+SEPOLIA_RPC=https://sepolia.infura.io/v3/KEY
+SEPOLIA_PK=0x...
+
+ARBITRUM_RPC=https://sepolia-rollup.arbitrum.io/rpc
+ARBITRUM_PK=0x...
+
+# ... rest same as above
+```
 
 Implementation requirements:
-- scripts MUST `source .env` and fail fast if required vars are missing.
+- CLI auto-detects configuration format
 - `TRANSFER_AMOUNT` is in token base units (USDC: 6 decimals => 1 USDC = 1000000).
 
 ---
@@ -140,10 +166,13 @@ This is "trust me, I did the work" with no verification.
    - Claims escrowed funds once oracle confirms
 
 2. **Oracle Operator** (`oracle-operator/`):
-   - Watches both chains for OutputFilled events
+   - Watches ALL configured chains for OutputFilled events
    - Verifies fills occurred
    - Signs attestations with operator key
-   - Submits to CentralizedOracle contracts
+   - **N-chain routing**: When a fill is detected, the operator queries each chain's
+     InputSettlerEscrow.orderStatus(orderId) to find where the order originated.
+     The attestation is then submitted to the correct origin chain.
+   - Submits to CentralizedOracle contracts on the origin chain
    - **Independent process, separate key**
 
 ### For Testing
@@ -165,36 +194,37 @@ Hard requirements:
 
 ---
 
-## 6) Makefile targets (top-level UX)
+## 5) Makefile targets (top-level UX)
 
 make start
 - starts local evolve node (ev-reth)
 
 make deploy
 - runs `solver-cli deploy`
-- deploys OIF contracts to Evolve and Sepolia (including CentralizedOracle)
+- deploys OIF contracts to ALL configured chains (including CentralizedOracle)
 - generates solver config and oracle operator config
 - prints deployed addresses summary
 
 make solver-start (or just: make solver)
 - starts OIF solver service using generated config
-- watches both chains for intents
-- fills orders on destination chain
+- watches ALL chains for intents
+- fills orders on any destination chain
 - waits for oracle attestations before claiming
 
 make operator-start (or just: make operator)
 - starts oracle operator service (SEPARATE process)
-- watches both chains for OutputFilled events
+- watches ALL chains for OutputFilled events
 - signs attestations with operator key
-- submits to CentralizedOracle contracts
+- submits to CentralizedOracle contracts on source chains
 
 make intent
-- runs `solver-cli intent` to submit Evolve → Sepolia USDC intent
+- runs `solver-cli intent submit` (defaults to first two chains)
+- use `make intent FROM=sepolia TO=evolve` for reverse direction
 - mints tokens to user if needed (testnet)
 - prints intent ID and tx hash
 
-make verify
-- runs `solver-cli verify` to print balances on both chains
+make balances
+- runs `solver-cli verify` to print balances on ALL chains
 - shows user + solver balances for configured token
 
 ---
@@ -207,9 +237,19 @@ The CLI handles all deployment and intent operations.
 
 ```bash
 solver-cli init              # Initialize project state
-solver-cli deploy            # Deploy contracts to both chains
-solver-cli intent            # Submit cross-chain intent
-solver-cli verify            # Check balances on both chains
+solver-cli deploy            # Deploy contracts to all configured chains
+solver-cli deploy --chains evolve,sepolia  # Deploy to specific chains only
+solver-cli configure         # Generate solver and oracle configs
+solver-cli fund              # Fund solver on all chains
+solver-cli fund --chain sepolia  # Fund solver on specific chain
+
+solver-cli intent submit --amount 1000000 --from evolve --to sepolia
+solver-cli intent submit --amount 1000000  # Uses first two chains by default
+solver-cli intent list       # List all intents
+solver-cli intent status --id <id>
+
+solver-cli verify            # Check balances on all chains
+solver-cli verify --chain sepolia  # Check balances on specific chain
 ```
 
 ### Architecture
@@ -239,15 +279,30 @@ solver-cli/src/
 ### State Management
 
 State stored in `.solver/state.json`:
-- Deployed contract addresses per chain
-- Token configurations
-- Solver address
+- Deployed contract addresses per chain (indexed by chain ID)
+- Token configurations per chain
+- Solver address and operator address
+- Intent history
+
+Chain configs use `HashMap<u64, ChainConfig>` structure:
+```rust
+pub type ChainConfigs = HashMap<u64, ChainConfig>;
+
+pub struct ChainConfig {
+    pub name: String,
+    pub chain_id: u64,
+    pub rpc: String,
+    pub contracts: ContractAddresses,
+    pub tokens: HashMap<String, TokenInfo>,
+    pub deployer: Option<String>,
+}
+```
 
 ### Config Generation
 
-After deployment, generates OIF solver config:
-- `config/networks.toml` - Chain RPCs and contract addresses
-- `config/gas.toml` - Gas estimation settings
+After deployment, generates configs for all chains:
+- `config/solver.toml` - Solver configuration with all chains and all-to-all routes
+- `config/oracle.toml` - Oracle operator configuration for all chains
 
 ---
 
@@ -282,16 +337,18 @@ Solver automatically:
 
 ## 8) Output Formatting
 
-CLI outputs formatted summaries:
+CLI outputs formatted summaries (for any number of chains):
 
 ```
 ═══ SUMMARY ═══
-  Chain   │ Account │ Balance
-  ────────┼─────────┼────────
-  evolve  │ User    │ 0 USDC
-  evolve  │ Solver  │ 10 USDC
-  sepolia │ User    │ 1 USDC
-  sepolia │ Solver  │ 9 USDC
+  Chain    │ Account │ Balance
+  ─────────┼─────────┼────────
+  evolve   │ User    │ 0 USDC
+  evolve   │ Solver  │ 10 USDC
+  sepolia  │ User    │ 1 USDC
+  sepolia  │ Solver  │ 9 USDC
+  arbitrum │ User    │ 0 USDC
+  arbitrum │ Solver  │ 0 USDC
 ═══════════════
 ```
 
@@ -316,7 +373,7 @@ make operator-start
 make intent
 
 # 6. Verify balances
-make verify
+make balances
 ```
 
 **Note**: Both solver and oracle operator must be running for the full flow to work. The solver fills orders, the oracle operator signs attestations, and the solver claims funds once attested.
@@ -334,6 +391,6 @@ make verify
   - Solver fills on destination
   - Oracle operator signs attestation
   - Solver claims on source after oracle confirms
-- [x] `make verify`: shows correct balance changes
+- [x] `make balances`: shows correct balance changes
   - User: source decreased, destination increased
   - Solver: source increased, destination decreased

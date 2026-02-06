@@ -146,7 +146,7 @@ struct FillEvent {
     recipient: [u8; 32],
     call_data: Vec<u8>,
     context: Vec<u8>,
-    source_chain_id: u64, // Chain where this fill happened
+    fill_chain_id: u64, // Chain where this fill happened (destination)
 }
 
 pub struct OracleOperator {
@@ -339,7 +339,7 @@ impl OracleOperator {
             recipient,
             call_data,
             context,
-            source_chain_id,
+            fill_chain_id: source_chain_id,
         };
 
         info!(
@@ -350,7 +350,7 @@ impl OracleOperator {
             amount
         );
 
-        // Process attestation for destination chain
+        // Submit attestation to origin chain (where funds are escrowed)
         self.submit_attestation(&fill).await?;
 
         // Mark as processed
@@ -362,21 +362,112 @@ impl OracleOperator {
         Ok(())
     }
 
-    async fn submit_attestation(&self, fill: &FillEvent) -> Result<()> {
-        // The fill happened on fill.source_chain_id (the destination where OutputFilled was emitted)
-        // We need to attest on the OTHER chain (the source where funds are escrowed)
-        let fill_chain_id = fill.source_chain_id;
+    /// Find the origin chain by querying escrow contracts for the order status
+    async fn find_origin_chain(&self, order_id: &[u8; 32], fill_chain_id: u64) -> Option<u64> {
+        // Query each chain (except the fill chain) to find where the order originated
+        for chain_config in &self.config.chains {
+            if chain_config.chain_id == fill_chain_id {
+                continue; // Skip the fill chain
+            }
 
-        // Find the escrow chain (the other chain that isn't the fill chain)
+            if let Some(provider) = self.providers.get(&chain_config.chain_id) {
+                // Query orderStatus(orderId) on the input settler
+                // orderStatus returns an enum: 0=None, 1=Deposited, 2=Claimed, 3=Refunded
+                let input_settler: AlloyAddress = match chain_config
+                    .input_settler_address
+                    .as_ref()
+                    .and_then(|a| a.parse().ok())
+                {
+                    Some(addr) => addr,
+                    None => continue,
+                };
+
+                // Encode the call: orderStatus(bytes32)
+                let call_data = {
+                    let mut data = vec![0u8; 36];
+                    // Function selector for orderStatus(bytes32) = 0x2dff692d
+                    data[0..4].copy_from_slice(&[0x2d, 0xff, 0x69, 0x2d]);
+                    data[4..36].copy_from_slice(order_id);
+                    Bytes::from(data)
+                };
+
+                let tx = alloy::rpc::types::TransactionRequest::default()
+                    .to(input_settler)
+                    .input(call_data.into());
+
+                match provider.call(&tx).await {
+                    Ok(result) => {
+                        // Result is a uint8 enum value
+                        if result.len() >= 32 {
+                            let status = result[31]; // Last byte of 32-byte response
+                            // 1 = Deposited (order exists and is pending)
+                            // 2 = Claimed (order was filled)
+                            // Either means this is the origin chain
+                            if status == 1 || status == 2 {
+                                debug!(
+                                    "Found order {} on chain {} with status {}",
+                                    hex::encode(order_id),
+                                    chain_config.chain_id,
+                                    status
+                                );
+                                return Some(chain_config.chain_id);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        debug!(
+                            "Failed to query order status on chain {}: {}",
+                            chain_config.chain_id, e
+                        );
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    async fn submit_attestation(&self, fill: &FillEvent) -> Result<()> {
+        // The fill happened on fill.fill_chain_id (the destination where OutputFilled was emitted)
+        // We need to find the origin chain where funds are escrowed
+        let fill_chain_id = fill.fill_chain_id;
+
+        // Find the origin chain by querying escrows
+        let origin_chain_id = match self.find_origin_chain(&fill.order_id, fill_chain_id).await {
+            Some(id) => id,
+            None => {
+                // Fallback for 2-chain setup: use the other chain
+                if self.config.chains.len() == 2 {
+                    self.config
+                        .chains
+                        .iter()
+                        .find(|c| c.chain_id != fill_chain_id)
+                        .map(|c| c.chain_id)
+                        .ok_or_else(|| anyhow::anyhow!("No other chain found"))?
+                } else {
+                    warn!(
+                        "Could not find origin chain for order {}, skipping",
+                        hex::encode(fill.order_id)
+                    );
+                    return Ok(());
+                }
+            }
+        };
+
+        info!(
+            "Relaying attestation: fill on chain {} -> origin chain {}",
+            fill_chain_id, origin_chain_id
+        );
+
+        // Find the escrow chain config
         let escrow_chain_config = self
             .config
             .chains
             .iter()
-            .find(|c| c.chain_id != fill_chain_id)
+            .find(|c| c.chain_id == origin_chain_id)
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "No other chain found for escrow (fill was on {})",
-                    fill_chain_id
+                    "Origin chain {} not found in config",
+                    origin_chain_id
                 )
             })?;
 

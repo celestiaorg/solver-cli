@@ -18,6 +18,10 @@ pub struct VerifyCommand {
     /// Token symbol to verify
     #[arg(long, default_value = "USDC")]
     pub token: String,
+
+    /// Specific chain to verify (name or ID). If not specified, verifies all chains.
+    #[arg(long)]
+    pub chain: Option<String>,
 }
 
 impl VerifyCommand {
@@ -33,167 +37,147 @@ impl VerifyCommand {
         load_dotenv(&project_dir)?;
         let env_config = EnvConfig::from_env()?;
 
-        let source = state
-            .chains
-            .source
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Source chain not configured"))?;
-
-        let dest = state
-            .chains
-            .destination
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Destination chain not configured"))?;
-
         // Derive addresses
         let user_pk = env_config
             .user_pk
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("USER_PK not set"))?;
 
         let user_address = ChainClient::address_from_pk(&user_pk)?;
-        // Solver uses SEPOLIA_PK on BOTH chains (not EVOLVE_PK which is the well-known Anvil key)
-        let solver_address = ChainClient::address_from_pk(&env_config.sepolia_pk)?;
+        let solver_pk = env_config.get_solver_pk()?;
+        let solver_address = ChainClient::address_from_pk(&solver_pk)?;
 
-        // Get token info
-        let source_token = source
-            .tokens
-            .get(&self.token)
-            .ok_or_else(|| anyhow::anyhow!("Token {} not found on source chain", self.token))?;
+        // Determine which chains to verify
+        let chain_ids: Vec<u64> = if let Some(ref chain_arg) = self.chain {
+            // Try to parse as chain ID first
+            if let Ok(id) = chain_arg.parse::<u64>() {
+                if state.chains.contains_key(&id) {
+                    vec![id]
+                } else {
+                    anyhow::bail!("Chain ID {} not found in state", id);
+                }
+            } else {
+                // Try to find by name
+                let chain = state.get_chain_by_name(chain_arg).ok_or_else(|| {
+                    anyhow::anyhow!("Chain '{}' not found", chain_arg)
+                })?;
+                vec![chain.chain_id]
+            }
+        } else {
+            let mut ids = state.chain_ids();
+            ids.sort();
+            ids
+        };
 
-        let dest_token = dest
-            .tokens
-            .get(&self.token)
-            .ok_or_else(|| anyhow::anyhow!("Token {} not found on dest chain", self.token))?;
+        if chain_ids.is_empty() {
+            anyhow::bail!("No chains configured. Run 'solver-cli deploy' first.");
+        }
 
-        // Connect to chains
-        let source_client = ChainClient::new(&source.name, &source.rpc).await?;
-        let dest_client = ChainClient::new(&dest.name, &dest.rpc).await?;
+        // Collect balances for summary table
+        let mut table_rows: Vec<(String, String, String, String)> = Vec::new();
 
-        let source_token_addr: Address = source_token.address.parse()?;
-        let dest_token_addr: Address = dest_token.address.parse()?;
+        // Verify each chain
+        for chain_id in &chain_ids {
+            let chain = state.chains.get(chain_id).unwrap();
 
-        // Query balances
-        print_header(&format!("Source Chain: {}", source.name));
+            // Get token info
+            let token_info = chain
+                .tokens
+                .get(&self.token)
+                .ok_or_else(|| anyhow::anyhow!("Token {} not found on chain {}", self.token, chain.name))?;
 
-        let user_source_balance = source_client
-            .get_token_balance(source_token_addr, user_address)
-            .await?;
-        let solver_source_balance = source_client
-            .get_token_balance(source_token_addr, solver_address)
-            .await?;
+            // Connect to chain
+            let client = ChainClient::new(&chain.name, &chain.rpc).await?;
+            let token_addr: Address = token_info.address.parse()?;
 
-        print_address("User address", &format!("{:?}", user_address));
-        print_balance(
-            "User balance",
-            &format_token_amount(user_source_balance, source_token.decimals),
-            &self.token,
-        );
-        print_address("Solver address", &format!("{:?}", solver_address));
-        print_balance(
-            "Solver balance",
-            &format_token_amount(solver_source_balance, source_token.decimals),
-            &self.token,
-        );
-        print_address("Token address", &source_token.address);
+            print_header(&format!("{} (Chain ID: {})", chain.name, chain.chain_id));
 
-        print_header(&format!("Destination Chain: {}", dest.name));
+            // Query balances
+            let user_balance = client
+                .get_token_balance(token_addr, user_address)
+                .await?;
+            let solver_balance = client
+                .get_token_balance(token_addr, solver_address)
+                .await?;
 
-        let user_dest_balance = dest_client
-            .get_token_balance(dest_token_addr, user_address)
-            .await?;
-        let solver_dest_balance = dest_client
-            .get_token_balance(dest_token_addr, solver_address)
-            .await?;
+            print_address("User address", &format!("{:?}", user_address));
+            print_balance(
+                "User balance",
+                &format_token_amount(user_balance, token_info.decimals),
+                &self.token,
+            );
+            print_address("Solver address", &format!("{:?}", solver_address));
+            print_balance(
+                "Solver balance",
+                &format_token_amount(solver_balance, token_info.decimals),
+                &self.token,
+            );
+            print_address("Token address", &token_info.address);
 
-        print_address("User address", &format!("{:?}", user_address));
-        print_balance(
-            "User balance",
-            &format_token_amount(user_dest_balance, dest_token.decimals),
-            &self.token,
-        );
-        print_address("Solver address", &format!("{:?}", solver_address));
-        print_balance(
-            "Solver balance",
-            &format_token_amount(solver_dest_balance, dest_token.decimals),
-            &self.token,
-        );
-        print_address("Token address", &dest_token.address);
+            // Store for summary table
+            table_rows.push((
+                chain.name.clone(),
+                "User".to_string(),
+                format!(
+                    "{} {}",
+                    format_token_amount(user_balance, token_info.decimals),
+                    self.token
+                ),
+                format!("{:?}", user_address),
+            ));
+            table_rows.push((
+                chain.name.clone(),
+                "Solver".to_string(),
+                format!(
+                    "{} {}",
+                    format_token_amount(solver_balance, token_info.decimals),
+                    self.token
+                ),
+                format!("{:?}", solver_address),
+            ));
+        }
 
-        // Verify escrow state (if applicable)
-        // TODO: Check escrow contract balances
-
+        // Print summary table
         print_summary_start();
 
         let mut table = Table::new(vec!["Chain", "Account", "Balance"]);
-        table.add_row(vec![
-            &source.name,
-            "User",
-            &format!(
-                "{} {}",
-                format_token_amount(user_source_balance, source_token.decimals),
-                self.token
-            ),
-        ]);
-        table.add_row(vec![
-            &source.name,
-            "Solver",
-            &format!(
-                "{} {}",
-                format_token_amount(solver_source_balance, source_token.decimals),
-                self.token
-            ),
-        ]);
-        table.add_row(vec![
-            &dest.name,
-            "User",
-            &format!(
-                "{} {}",
-                format_token_amount(user_dest_balance, dest_token.decimals),
-                self.token
-            ),
-        ]);
-        table.add_row(vec![
-            &dest.name,
-            "Solver",
-            &format!(
-                "{} {}",
-                format_token_amount(solver_dest_balance, dest_token.decimals),
-                self.token
-            ),
-        ]);
-
+        for (chain, account, balance, _) in &table_rows {
+            table.add_row(vec![chain, account, balance]);
+        }
         table.print();
+
         print_summary_end();
 
         print_success("Verification complete");
 
         if out.is_json() {
-            out.json(&serde_json::json!({
-                "source": {
-                    "chain": source.name,
-                    "user": {
-                        "address": format!("{:?}", user_address),
-                        "balance": user_source_balance.to_string(),
-                    },
-                    "solver": {
-                        "address": format!("{:?}", solver_address),
-                        "balance": solver_source_balance.to_string(),
-                    },
-                    "token": source_token.address,
-                },
-                "destination": {
-                    "chain": dest.name,
-                    "user": {
-                        "address": format!("{:?}", user_address),
-                        "balance": user_dest_balance.to_string(),
-                    },
-                    "solver": {
-                        "address": format!("{:?}", solver_address),
-                        "balance": solver_dest_balance.to_string(),
-                    },
-                    "token": dest_token.address,
-                },
-            }))?;
+            let mut chains_json = serde_json::Map::new();
+            for chain_id in &chain_ids {
+                let chain = state.chains.get(chain_id).unwrap();
+                let token_info = chain.tokens.get(&self.token).unwrap();
+                let client = ChainClient::new(&chain.name, &chain.rpc).await?;
+                let token_addr: Address = token_info.address.parse()?;
+
+                let user_balance = client.get_token_balance(token_addr, user_address).await?;
+                let solver_balance = client.get_token_balance(token_addr, solver_address).await?;
+
+                chains_json.insert(
+                    chain.name.clone(),
+                    serde_json::json!({
+                        "chain_id": chain.chain_id,
+                        "user": {
+                            "address": format!("{:?}", user_address),
+                            "balance": user_balance.to_string(),
+                        },
+                        "solver": {
+                            "address": format!("{:?}", solver_address),
+                            "balance": solver_balance.to_string(),
+                        },
+                        "token": token_info.address,
+                    }),
+                );
+            }
+            out.json(&serde_json::Value::Object(chains_json))?;
         }
 
         Ok(())
