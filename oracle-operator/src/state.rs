@@ -35,7 +35,12 @@ impl OperatorState {
     }
 
     /// Get the starting block for a chain
-    pub fn get_start_block(&self, chain_id: u64, config_start: Option<u64>, current_block: u64) -> u64 {
+    pub fn get_start_block(
+        &self,
+        chain_id: u64,
+        config_start: Option<u64>,
+        current_block: u64,
+    ) -> u64 {
         // Priority:
         // 1. Last processed block from state (+ 1 to avoid reprocessing)
         // 2. Config start_block
@@ -65,7 +70,8 @@ impl OperatorState {
             );
             // HashSet doesn't preserve order, so we just keep a random half
             // In production, consider using a proper LRU or time-based eviction
-            let to_remove: Vec<_> = self.processed_fills
+            let to_remove: Vec<_> = self
+                .processed_fills
                 .iter()
                 .take(self.processed_fills.len() / 2)
                 .cloned()
@@ -88,11 +94,11 @@ impl StateManager {
     /// Create a new state manager, loading existing state if present
     pub fn new(state_dir: &Path) -> Result<Self> {
         let state_path = state_dir.join("oracle-state.json");
-        
+
         let state = if state_path.exists() {
             let content = std::fs::read_to_string(&state_path)
                 .with_context(|| format!("Failed to read state file: {:?}", state_path))?;
-            
+
             match serde_json::from_str::<OperatorState>(&content) {
                 Ok(s) => {
                     info!(
@@ -124,12 +130,6 @@ impl StateManager {
         &self.state
     }
 
-    /// Get mutable state (marks as dirty)
-    pub fn state_mut(&mut self) -> &mut OperatorState {
-        self.dirty = true;
-        &mut self.state
-    }
-
     /// Check if an order has been processed
     pub fn is_processed(&self, order_id: &[u8; 32]) -> bool {
         self.state.is_processed(order_id)
@@ -142,8 +142,14 @@ impl StateManager {
     }
 
     /// Get the starting block for a chain
-    pub fn get_start_block(&self, chain_id: u64, config_start: Option<u64>, current_block: u64) -> u64 {
-        self.state.get_start_block(chain_id, config_start, current_block)
+    pub fn get_start_block(
+        &self,
+        chain_id: u64,
+        config_start: Option<u64>,
+        current_block: u64,
+    ) -> u64 {
+        self.state
+            .get_start_block(chain_id, config_start, current_block)
     }
 
     /// Update the last processed block for a chain
@@ -171,8 +177,8 @@ impl StateManager {
                 .with_context(|| format!("Failed to create state directory: {:?}", parent))?;
         }
 
-        let content = serde_json::to_string_pretty(&self.state)
-            .context("Failed to serialize state")?;
+        let content =
+            serde_json::to_string_pretty(&self.state).context("Failed to serialize state")?;
 
         std::fs::write(&self.state_path, &content)
             .with_context(|| format!("Failed to write state file: {:?}", self.state_path))?;

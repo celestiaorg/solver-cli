@@ -171,13 +171,18 @@ impl OracleOperator {
 
         // Load persistent state
         let state_manager = StateManager::new(state_dir)?;
-        
+
         // Log resumption info
         for chain in &config.chains {
-            if let Some(&last_block) = state_manager.state().last_processed_block.get(&chain.chain_id) {
+            if let Some(&last_block) = state_manager
+                .state()
+                .last_processed_block
+                .get(&chain.chain_id)
+            {
                 info!(
                     "Chain {}: resuming from block {}",
-                    chain.chain_id, last_block + 1
+                    chain.chain_id,
+                    last_block + 1
                 );
             }
         }
@@ -360,9 +365,7 @@ impl OracleOperator {
         let output = &decoded.output;
 
         // Extract fields from MandateOutput (correct order), converting FixedBytes to [u8; 32]
-        let _oracle = output.oracle.0;
         let settler = output.settler.0;
-        let _chain_id = output.chainId.to::<u64>();
         let token = output.token.0;
         let amount = output.amount;
         let recipient = output.recipient.0;
@@ -446,9 +449,9 @@ impl OracleOperator {
                         // Result is a uint8 enum value
                         if result.len() >= 32 {
                             let status = result[31]; // Last byte of 32-byte response
-                            // 1 = Deposited (order exists and is pending)
-                            // 2 = Claimed (order was filled)
-                            // Either means this is the origin chain
+                                                     // 1 = Deposited (order exists and is pending)
+                                                     // 2 = Claimed (order was filled)
+                                                     // Either means this is the origin chain
                             if status == 1 || status == 2 {
                                 debug!(
                                     "Found order {} on chain {} with status {}",
@@ -511,10 +514,7 @@ impl OracleOperator {
             .iter()
             .find(|c| c.chain_id == origin_chain_id)
             .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "Origin chain {} not found in config",
-                    origin_chain_id
-                )
+                anyhow::anyhow!("Origin chain {} not found in config", origin_chain_id)
             })?;
 
         let fill_chain_config = self
