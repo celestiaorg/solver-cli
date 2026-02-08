@@ -14,10 +14,10 @@
   "devDependencies": {
     "@arbitrum/nitro-contracts": "^3.1.0",
     "@eth-optimism/contracts": "^0.6.0",
-    "@nomicfoundation/hardhat-ignition": "^0.15.0",
-    "@nomicfoundation/hardhat-ignition-viem": "^0.15.0",
+    "@nomicfoundation/hardhat-ignition": "^3.0.7",
+    "@nomicfoundation/hardhat-ignition-viem": "^3.0.7",
     "@nomicfoundation/hardhat-network-helpers": "^1.0.0",
-    "@nomicfoundation/hardhat-toolbox-viem": "^3.0.0",
+    "@nomicfoundation/hardhat-toolbox-viem": "^5.0.2",
     "@nomicfoundation/hardhat-verify": "^2.0.0",
     "@nomicfoundation/hardhat-viem": "^2.0.0",
     "@openzeppelin/contracts": "5.5.0-rc.0",
