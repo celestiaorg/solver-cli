@@ -302,14 +302,17 @@ impl OracleOperator {
             chain_id
         );
 
+        let mut all_succeeded = true;
         for log in logs {
             if let Err(e) = self.process_fill_event(chain_id, &log).await {
                 warn!("Error processing fill event: {}", e);
+                all_succeeded = false;
             }
         }
 
-        // Update last processed block
-        {
+        // Only advance block cursor if all events were processed successfully.
+        // Otherwise we retry the same range next poll (failed attestations can be retried).
+        if all_succeeded {
             let mut state = self.state.lock().await;
             state.set_last_block(chain_id, current_block);
         }
