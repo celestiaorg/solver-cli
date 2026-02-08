@@ -1,12 +1,12 @@
 # OIF E2E Solver
 
-Cross-chain intent solver for **Evolve (local)** <-> **Ethereum Sepolia**.
+Cross-chain intent solver for **EVM (local)** <-> **Ethereum Sepolia**.
 
 This CLI deploys OIF contracts, runs a solver, and executes cross-chain USDC transfers.
 
 ## Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/) - Local Evolve chain
+- [Docker](https://docs.docker.com/get-docker/) - Local EVM chain
 - [Foundry](https://book.getfoundry.sh/getting-started/installation) - `forge` and `cast`
 - [Rust](https://rustup.rs/) - Build the CLI
 - **Sepolia ETH** - Get testnet ETH from a [faucet](https://sepoliafaucet.com)
@@ -14,31 +14,29 @@ This CLI deploys OIF contracts, runs a solver, and executes cross-chain USDC tra
 ## Quick Start
 
 ```bash
-# 1. Start local Evolve chain
+# 1. Start local EVM chain
 make start
 
 # 2. Configure environment
 cp .env.example .env
 # Edit .env with your SEPOLIA_PK (must have Sepolia ETH for gas!)
 
-# 3. Build CLI
-cd solver-cli && cargo build --release && cd ..
+# 3. Full setup (build, deploy, configure, fund)
+make clean && make setup
 
-# 4. Deploy contracts (both chains)
-./solver-cli/target/release/solver-cli init
-./solver-cli/target/release/solver-cli deploy --force
+# 4. Start solver (in separate terminal) 
+# Note: wait a few seconds after make setup or else you might
+# get a pending TX error.
+make solver
 
-# 5. Configure solver
-./solver-cli/target/release/solver-cli configure
+# 5. Submit intent and verify (in original terminal)
+make intent
+make verify
+```
 
-# 6. Fund solver with USDC tokens
-./solver-cli/target/release/solver-cli fund --amount 10000000
-
-# 7. Start solver (in separate terminal)
-./solver-cli/target/release/solver-cli solver start
-
-# 8. Submit intent (in original terminal)
-./solver-cli/target/release/solver-cli intent submit --amount 1000000 --direction forward
+To stop everything:
+```bash
+make stop
 ```
 
 ## Environment Setup (.env)
@@ -46,19 +44,19 @@ cd solver-cli && cargo build --release && cd ..
 ```bash
 # RPC Endpoints
 SEPOLIA_RPC=https://ethereum-sepolia-rpc.publicnode.com
-EVOLVE_RPC=http://127.0.0.1:8545
+EVM_RPC=http://127.0.0.1:8545
 
 # Chain IDs
 SEPOLIA_CHAIN_ID=11155111
-EVOLVE_CHAIN_ID=1234
+EVM_CHAIN_ID=1234
 
 # Private Keys (without 0x prefix)
 # IMPORTANT: SEPOLIA_PK is used as the SOLVER key on BOTH chains
 # This key must have Sepolia ETH for gas!
 SEPOLIA_PK=<your-private-key-with-sepolia-eth>
 
-# Deployer for local Evolve (Anvil default key is fine here)
-EVOLVE_PK=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+# Deployer for local EVM (Anvil default key is fine here)
+EVM_PK=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 
 # User account (creates intents)
 USER_PK=59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
@@ -69,7 +67,7 @@ TOKEN_SYMBOL=USDC
 
 ### Critical: Solver Private Key
 
-The solver uses **SEPOLIA_PK** (not EVOLVE_PK) for transactions on both chains.
+The solver uses **SEPOLIA_PK** (not EVM_PK) for transactions on both chains.
 
 **Why?** The default Anvil key (`0xac0974...`) is publicly known. Bots monitor this address on public networks and instantly drain any funds. Your SEPOLIA_PK should be a private key that only you know.
 
@@ -82,7 +80,26 @@ This address needs:
 1. **Sepolia ETH** for gas (~0.1 ETH is plenty)
 2. **USDC tokens** (the `fund` command mints these)
 
+## Make Commands
+
+| Command | Description |
+|---------|-------------|
+| `make start` | Start local EVM chain (Anvil) |
+| `make stop` | Stop Anvil and solver |
+| `make setup` | Full setup: build + init + deploy + configure + fund |
+| `make solver` | Start the solver |
+| `make intent` | Submit a test intent (1 USDC) |
+| `make verify` | Check balances |
+| `make clean` | Remove generated files |
+| `make reset` | Clean and reinitialize everything |
+
+Use `FORCE=1` to reinitialize or redeploy: `make setup FORCE=1`
+
+Run `make help` to see all available commands.
+
 ## CLI Commands
+
+For more control, use the CLI directly:
 
 | Command | Description |
 |---------|-------------|
@@ -116,7 +133,7 @@ solver-cli intent submit --amount 1000000 --direction forward
 
 ```
 ┌─────────────────┐                      ┌─────────────────┐
-│     EVOLVE      │                      │     SEPOLIA     │
+│     EVM      │                      │     SEPOLIA     │
 │   (Chain 1234)  │                      │ (Chain 11155111)│
 ├─────────────────┤                      ├─────────────────┤
 │ InputSettler    │◄──── Solver ────────►│ OutputSettler   │
@@ -130,23 +147,23 @@ solver-cli intent submit --amount 1000000 --direction forward
 └─────────────────┘                      └─────────────────┘
 ```
 
-### Intent Flow (Evolve -> Sepolia)
+### Intent Flow (EVM -> Sepolia)
 
-1. **User submits intent** on Evolve
+1. **User submits intent** on EVM
    - Tokens escrowed in InputSettler
 2. **Solver detects** intent via on-chain polling
 3. **Solver delivers** tokens to user on Sepolia
 4. **Oracle attests** the fulfillment (AlwaysYesOracle auto-approves)
-5. **Solver claims** escrowed tokens as reward on Evolve
+5. **Solver claims** escrowed tokens as reward on EVM
 
 ### Expected Balance Changes
 
-After a successful 1 USDC transfer (Evolve -> Sepolia):
+After a successful 1 USDC transfer (EVM -> Sepolia):
 
 | Location | Account | Change |
 |----------|---------|--------|
-| Evolve | User | -1 USDC (escrowed, released to solver) |
-| Evolve | Solver | +1 USDC (reward) |
+| EVM | User | -1 USDC (escrowed, released to solver) |
+| EVM | Solver | +1 USDC (reward) |
 | Sepolia | User | +1 USDC (received) |
 | Sepolia | Solver | -1 USDC (delivered) |
 
@@ -173,7 +190,7 @@ The solver config has `min_profitability_pct = 0.0` but gas costs make the trade
 3. Check solver logs: `tail -f /tmp/solver.log`
 
 ### Wrong solver address funded
-The solver uses SEPOLIA_PK, not EVOLVE_PK. Verify:
+The solver uses SEPOLIA_PK, not EVM_PK. Verify:
 ```bash
 # This should match the address shown in solver logs
 cast wallet address --private-key 0x$SEPOLIA_PK

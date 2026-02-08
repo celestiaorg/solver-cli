@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(clippy::too_many_arguments)]
+
 use anyhow::{Context, Result};
 use std::path::Path;
 use tracing::info;
@@ -35,11 +38,7 @@ impl Deployer {
         let chain_id = client.chain_id;
         let deployer = ChainClient::address_from_pk(private_key)?;
 
-        info!(
-            "Chain ID: {}, Deployer: {}",
-            chain_id,
-            deployer
-        );
+        info!("Chain ID: {}, Deployer: {}", chain_id, deployer);
 
         // Deploy contracts
         let deployment = self
@@ -120,7 +119,13 @@ impl Deployer {
 
         // Deploy to source chain
         let source_config = self
-            .deploy_to_chain(source_name, source_rpc, source_pk, token_symbol, token_decimals)
+            .deploy_to_chain(
+                source_name,
+                source_rpc,
+                source_pk,
+                token_symbol,
+                token_decimals,
+            )
             .await?;
 
         // Deploy to destination chain

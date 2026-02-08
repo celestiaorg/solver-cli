@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use anyhow::{Context, Result};
 use std::env;
 use std::path::Path;
@@ -27,17 +29,10 @@ pub fn get_env_or(name: &str, default: &str) -> String {
 }
 
 /// Environment variables required for deployment
-pub const REQUIRED_DEPLOY_VARS: &[&str] = &[
-    "EVOLVE_RPC",
-    "SEPOLIA_RPC",
-    "EVOLVE_PK",
-    "SEPOLIA_PK",
-];
+pub const REQUIRED_DEPLOY_VARS: &[&str] = &["EVOLVE_RPC", "SEPOLIA_RPC", "EVOLVE_PK", "SEPOLIA_PK"];
 
 /// Environment variables required for transfers
-pub const REQUIRED_TRANSFER_VARS: &[&str] = &[
-    "USER_PK",
-];
+pub const REQUIRED_TRANSFER_VARS: &[&str] = &["USER_PK"];
 
 /// Check all required environment variables
 pub fn check_required_vars(vars: &[&str]) -> Result<()> {

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use colored::*;
 use std::fmt::Display;
 
@@ -170,7 +172,13 @@ impl Table {
             let line: String = row
                 .iter()
                 .enumerate()
-                .map(|(i, c)| format!("{:width$}", c, width = self.col_widths.get(i).copied().unwrap_or(c.len())))
+                .map(|(i, c)| {
+                    format!(
+                        "{:width$}",
+                        c,
+                        width = self.col_widths.get(i).copied().unwrap_or(c.len())
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join(" │ ");
             println!("  {}", line);

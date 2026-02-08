@@ -2,7 +2,6 @@ use anyhow::Result;
 use clap::Subcommand;
 use std::env;
 use std::path::PathBuf;
-use tracing::info;
 
 use crate::solver::SolverRunner;
 use crate::state::StateManager;
@@ -55,9 +54,7 @@ pub enum SolverCommand {
 impl SolverCommand {
     pub async fn run(self, output: OutputFormat) -> Result<()> {
         match self {
-            SolverCommand::Start { dir, background } => {
-                Self::start(dir, background, output).await
-            }
+            SolverCommand::Start { dir, background } => Self::start(dir, background, output).await,
             SolverCommand::Stop { dir } => Self::stop(dir, output).await,
             SolverCommand::Status { dir } => Self::status(dir, output).await,
             SolverCommand::Logs { dir, lines, follow } => {

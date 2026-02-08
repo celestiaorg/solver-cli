@@ -10,7 +10,7 @@ use std::str::FromStr;
 use tokio::time::{sleep, Duration};
 use tracing::info;
 
-use crate::chain::{format_token_amount, parse_token_amount, ChainClient};
+use crate::chain::{format_token_amount, ChainClient};
 use crate::state::{IntentRecord, IntentStatus, StateManager};
 use crate::utils::*;
 use crate::OutputFormat;
@@ -169,9 +169,14 @@ impl IntentCommand {
             .ok_or_else(|| anyhow::anyhow!("Token {} not found on dest chain", asset))?;
 
         // Parse amount (raw units, like fund command)
-        let amount_raw: U256 = amount.parse().map_err(|_| anyhow::anyhow!("Invalid amount"))?;
-        print_kv("Amount (raw units)", &format!("{} {}", amount, asset));
-        print_kv("Human readable", &format_token_amount(amount_raw, source_token.decimals));
+        let amount_raw: U256 = amount
+            .parse()
+            .map_err(|_| anyhow::anyhow!("Invalid amount"))?;
+        print_kv("Amount (raw units)", format!("{} {}", amount, asset));
+        print_kv(
+            "Human readable",
+            format_token_amount(amount_raw, source_token.decimals),
+        );
 
         // Derive addresses
         let user_address = ChainClient::address_from_pk(&user_pk)?;
@@ -217,11 +222,8 @@ impl IntentCommand {
         // Step 1: Ensure user has tokens (mint if needed using deployer key)
         print_header("Checking User Balance");
 
-        let user_balance = Self::get_token_balance(
-            &source.rpc,
-            &source_token.address,
-            user_address,
-        ).await?;
+        let user_balance =
+            Self::get_token_balance(&source.rpc, &source_token.address, user_address).await?;
 
         print_balance(
             "User balance",
@@ -239,7 +241,8 @@ impl IntentCommand {
                 &source_token.address,
                 user_address,
                 amount_raw,
-            ).await?;
+            )
+            .await?;
 
             print_success("Tokens minted to user");
         }
@@ -253,7 +256,8 @@ impl IntentCommand {
             &source_token.address,
             escrow_address,
             amount_raw,
-        ).await?;
+        )
+        .await?;
 
         print_success(&format!("Approval tx: {}", approve_tx));
 
@@ -289,7 +293,10 @@ impl IntentCommand {
             expires,
             fillDeadline: fill_deadline,
             inputOracle: source_oracle,
-            inputs: vec![[U256::from_be_slice(source_token_address.as_slice()), amount_raw]],
+            inputs: vec![[
+                U256::from_be_slice(source_token_address.as_slice()),
+                amount_raw,
+            ]],
             outputs: vec![MandateOutput {
                 oracle: addr_to_bytes32(dest_oracle),
                 settler: addr_to_bytes32(dest_settler),
@@ -303,12 +310,7 @@ impl IntentCommand {
         };
 
         // Encode the order and call open()
-        let tx_hash = Self::submit_order(
-            &source.rpc,
-            &user_pk,
-            escrow_address,
-            &order,
-        ).await?;
+        let tx_hash = Self::submit_order(&source.rpc, &user_pk, escrow_address, &order).await?;
 
         print_success(&format!("Intent submitted! TX: {}", tx_hash));
 
@@ -336,20 +338,22 @@ impl IntentCommand {
         print_summary_start();
         print_kv("Intent ID", &intent_id);
         print_kv("TX Hash", &tx_hash);
-        print_kv("Amount", &format!("{} {}", amount, asset));
+        print_kv("Amount", format!("{} {}", amount, asset));
         print_kv("Status", "pending");
         print_summary_end();
 
         // Wait for fulfillment if requested
         if wait {
-            print_info(&format!("Waiting for fulfillment (timeout: {}s)...", timeout));
+            print_info(&format!(
+                "Waiting for fulfillment (timeout: {}s)...",
+                timeout
+            ));
 
             // Poll destination chain for user balance increase
-            let initial_dest_balance = Self::get_token_balance(
-                dest_rpc,
-                &dest_token.address,
-                user_address,
-            ).await.unwrap_or(U256::ZERO);
+            let initial_dest_balance =
+                Self::get_token_balance(dest_rpc, &dest_token.address, user_address)
+                    .await
+                    .unwrap_or(U256::ZERO);
 
             let fulfilled = Self::wait_for_balance_increase(
                 dest_rpc,
@@ -357,7 +361,8 @@ impl IntentCommand {
                 user_address,
                 initial_dest_balance,
                 timeout,
-            ).await?;
+            )
+            .await?;
 
             if fulfilled {
                 print_success("Intent fulfilled!");
@@ -372,17 +377,15 @@ impl IntentCommand {
                 // Print final balances
                 print_header("Final Balances");
 
-                let user_source_balance = Self::get_token_balance(
-                    &source.rpc,
-                    &source_token.address,
-                    user_address,
-                ).await.unwrap_or(U256::ZERO);
+                let user_source_balance =
+                    Self::get_token_balance(&source.rpc, &source_token.address, user_address)
+                        .await
+                        .unwrap_or(U256::ZERO);
 
-                let user_dest_balance = Self::get_token_balance(
-                    dest_rpc,
-                    &dest_token.address,
-                    user_address,
-                ).await.unwrap_or(U256::ZERO);
+                let user_dest_balance =
+                    Self::get_token_balance(dest_rpc, &dest_token.address, user_address)
+                        .await
+                        .unwrap_or(U256::ZERO);
 
                 print_balance(
                     &format!("User on {} ({})", source.name, asset),
@@ -412,11 +415,7 @@ impl IntentCommand {
         Ok(())
     }
 
-    async fn get_token_balance(
-        rpc_url: &str,
-        token_address: &str,
-        owner: Address,
-    ) -> Result<U256> {
+    async fn get_token_balance(rpc_url: &str, token_address: &str, owner: Address) -> Result<U256> {
         use std::process::Stdio;
         use tokio::process::Command;
 

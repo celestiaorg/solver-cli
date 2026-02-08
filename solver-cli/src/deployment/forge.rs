@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::Path;
@@ -139,7 +141,7 @@ impl ForgeRunner {
     fn parse_deployment_line(line: &str) -> Option<(String, String)> {
         // Try format: "ContractName deployed at: 0x..."
         if let Some(idx) = line.find("deployed at:") {
-            let name = line[..idx].trim().split_whitespace().last()?.to_string();
+            let name = line[..idx].split_whitespace().last()?.to_string();
             let addr = line[idx + 12..].trim().to_string();
             if addr.starts_with("0x") && addr.len() >= 42 {
                 return Some((name, addr[..42].to_string()));

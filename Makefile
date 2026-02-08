@@ -1,4 +1,5 @@
 SOLVER_CLI=solver-cli/target/release/solver-cli
+FORCE_FLAG=$(if $(FORCE),--force,)
 
 ## help: Show available commands
 help: Makefile
@@ -34,14 +35,14 @@ stop:
 	@pkill -f solver-runner 2>/dev/null || true
 .PHONY: stop
 
-## init: Initialize project state
+## init: Initialize project state (use FORCE=1 to reinitialize)
 init: build
-	@$(SOLVER_CLI) init
+	@$(SOLVER_CLI) init $(FORCE_FLAG)
 .PHONY: init
 
-## deploy: Deploy contracts to both chains
+## deploy: Deploy contracts to both chains (use FORCE=1 to redeploy)
 deploy: build
-	@$(SOLVER_CLI) deploy --force
+	@$(SOLVER_CLI) deploy $(FORCE_FLAG)
 .PHONY: deploy
 
 ## configure: Generate solver configuration
@@ -68,6 +69,11 @@ intent: build
 verify: build
 	@$(SOLVER_CLI) verify
 .PHONY: verify
+
+## reset: Clean and reinitialize everything
+reset: clean
+	@$(MAKE) setup FORCE=1
+.PHONY: reset
 
 ## setup: Full setup (init + deploy + configure + fund)
 setup: init deploy configure fund

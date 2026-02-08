@@ -1,6 +1,8 @@
 **/target/
 **/out/
 **/cache/
+**/broadcast/
 .anvil.log
 .anvil.pid
 .env
+config/

@@ -2,7 +2,6 @@ use anyhow::Result;
 use clap::Args;
 use std::env;
 use std::path::PathBuf;
-use tracing::info;
 
 use crate::chain::ChainClient;
 use crate::solver::ConfigGenerator;
