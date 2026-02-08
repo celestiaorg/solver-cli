@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::env;
 use std::path::Path;
 use std::process::Stdio;
 use tokio::fs;
@@ -21,30 +22,8 @@ impl SolverRunner {
         }
     }
 
-    /// Start the solver in foreground mode
-    pub async fn start_foreground(&self, solver_binary: &Path) -> Result<()> {
-        self.ensure_config_exists().await?;
-
-        info!("Starting solver in foreground mode...");
-        info!("Config: {:?}", self.config_path);
-
-        let status = Command::new(solver_binary)
-            .arg("--config")
-            .arg(&self.config_path)
-            .env("RUST_LOG", "info")
-            .status()
-            .await
-            .context("Failed to start solver")?;
-
-        if !status.success() {
-            anyhow::bail!("Solver exited with status: {:?}", status.code());
-        }
-
-        Ok(())
-    }
-
-    /// Start the solver in background mode
-    pub async fn start_background(&self, solver_binary: &Path) -> Result<u32> {
+    /// Start the solver in background by spawning solver-cli with `solver run --config ...`
+    pub async fn start_background_in_process(&self, config_path: &Path) -> Result<u32> {
         self.ensure_config_exists().await?;
 
         // Check if already running
@@ -60,9 +39,11 @@ impl SolverRunner {
             .await
             .context("Failed to create log file")?;
 
-        let child = Command::new(solver_binary)
-            .arg("--config")
-            .arg(&self.config_path)
+        let exe = env::current_exe().context("Failed to get current executable")?;
+
+        let child = Command::new(&exe)
+            .args(["solver", "run", "--config"])
+            .arg(config_path)
             .env("RUST_LOG", "info")
             .stdout(Stdio::from(log_file.try_clone().await?.into_std().await))
             .stderr(Stdio::from(log_file.into_std().await))
@@ -178,7 +159,7 @@ impl SolverRunner {
     }
 
     /// Ensure config file exists
-    async fn ensure_config_exists(&self) -> Result<()> {
+    pub async fn ensure_config_exists(&self) -> Result<()> {
         if !self.config_path.exists() {
             anyhow::bail!(
                 "Solver config not found at {:?}. Run 'solver-cli configure' first.",

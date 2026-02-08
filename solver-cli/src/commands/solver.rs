@@ -3,14 +3,14 @@ use clap::Subcommand;
 use std::env;
 use std::path::PathBuf;
 
-use crate::solver::SolverRunner;
+use crate::solver::{run_solver_from_config, SolverRunner};
 use crate::state::StateManager;
 use crate::utils::*;
 use crate::OutputFormat;
 
 #[derive(Subcommand)]
 pub enum SolverCommand {
-    /// Start the solver
+    /// Start the solver (in-process; no separate binary)
     Start {
         /// Project directory
         #[arg(long)]
@@ -19,6 +19,13 @@ pub enum SolverCommand {
         /// Run in background
         #[arg(long, short)]
         background: bool,
+    },
+
+    /// Run the solver engine (used internally for background; or run with explicit config path)
+    Run {
+        /// Path to the solver TOML config file
+        #[arg(long)]
+        config: PathBuf,
     },
 
     /// Stop the solver
@@ -55,12 +62,18 @@ impl SolverCommand {
     pub async fn run(self, output: OutputFormat) -> Result<()> {
         match self {
             SolverCommand::Start { dir, background } => Self::start(dir, background, output).await,
+            SolverCommand::Run { config } => Self::run_engine(&config).await,
             SolverCommand::Stop { dir } => Self::stop(dir, output).await,
             SolverCommand::Status { dir } => Self::status(dir, output).await,
             SolverCommand::Logs { dir, lines, follow } => {
                 Self::logs(dir, lines, follow, output).await
             }
         }
+    }
+
+    /// Run the solver engine in-process (used by `solver start` foreground and `solver run`)
+    async fn run_engine(config_path: &PathBuf) -> Result<()> {
+        run_solver_from_config(config_path).await
     }
 
     async fn start(dir: Option<PathBuf>, background: bool, output: OutputFormat) -> Result<()> {
@@ -80,33 +93,12 @@ impl SolverCommand {
         // Load environment for solver private key
         load_dotenv(&project_dir)?;
 
-        // Find solver binary
-        let solver_runner_dir = project_dir.join("solver-runner");
-        let solver_binary = if solver_runner_dir.exists() {
-            // Build and use local solver-runner
-            print_info("Building solver-runner...");
-            let status = tokio::process::Command::new("cargo")
-                .current_dir(&solver_runner_dir)
-                .args(["build", "--release"])
-                .status()
-                .await?;
-
-            if !status.success() {
-                anyhow::bail!("Failed to build solver-runner");
-            }
-
-            solver_runner_dir.join("target/release/solver-runner")
-        } else {
-            // Try to find global solver binary
-            which::which("solver").unwrap_or_else(|_| PathBuf::from("solver"))
-        };
-
-        print_kv("Solver binary", solver_binary.display());
-
         let runner = SolverRunner::new(&project_dir);
+        let config_path = runner.config_path().to_path_buf();
 
         if background {
-            let pid = runner.start_background(&solver_binary).await?;
+            // Spawn solver-cli itself with "solver run --config ..."
+            let pid = runner.start_background_in_process(&config_path).await?;
             print_success(&format!("Solver started in background (PID: {})", pid));
             print_kv("Log file", runner.log_file().display());
 
@@ -121,7 +113,8 @@ impl SolverCommand {
         } else {
             print_info("Starting solver in foreground (Ctrl+C to stop)...");
             print_divider();
-            runner.start_foreground(&solver_binary).await?;
+            runner.ensure_config_exists().await?;
+            run_solver_from_config(&config_path).await?;
         }
 
         Ok(())

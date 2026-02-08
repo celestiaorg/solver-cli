@@ -210,7 +210,7 @@ impl ForgeRunner {
             .arg("build")
             .output()
             .await
-            .context("Failed to build contracts")?;
+            .context("Failed to run forge build. Is Foundry installed and forge in PATH? Run: forge --version")?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);

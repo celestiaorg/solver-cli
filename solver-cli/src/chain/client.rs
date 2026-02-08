@@ -44,7 +44,7 @@ impl ChainClient {
         let chain_id = provider
             .get_chain_id()
             .await
-            .context("Failed to get chain ID")?;
+            .context(format!("Failed to get chain ID from {} (is the RPC node running?)", rpc_url))?;
 
         Ok(Self {
             name: name.to_string(),

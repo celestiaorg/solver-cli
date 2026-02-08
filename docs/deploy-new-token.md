@@ -104,7 +104,10 @@ solver-cli deploy --chains arbitrum
 # 3. Regenerate configs
 solver-cli configure
 
-# 4. Fund solver on new chain
+# 4. Restart solver and oracle operator so they pick up the new chain
+# (Stop with Ctrl+C, then run make solver and make operator again.)
+
+# 5. Fund solver on new chain
 solver-cli fund --chain arbitrum
 ```
 

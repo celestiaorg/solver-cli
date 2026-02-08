@@ -7,9 +7,9 @@ help: Makefile
 	@sed -n 's/^##//p' $< | column -t -s ':' | sed -e 's/^/  /'
 .PHONY: help
 
-## build: Build the solver-cli
+## build: Build the solver-cli (with solver-runtime for in-process solver)
 build:
-	@cd solver-cli && cargo build --release
+	@cd solver-cli && cargo build --release --features solver-runtime
 .PHONY: build
 
 ## start: Start local Evolve chain (Anvil)
@@ -32,7 +32,7 @@ stop:
 		rm .anvil.pid; \
 		echo "Anvil stopped"; \
 	fi
-	@pkill -f solver-runner 2>/dev/null || true
+	@$(SOLVER_CLI) solver stop 2>/dev/null || true
 	@pkill -f oracle-operator 2>/dev/null || true
 	@echo "All services stopped"
 .PHONY: stop

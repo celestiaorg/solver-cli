@@ -53,6 +53,8 @@ make solver
 make operator
 ```
 
+**After adding or removing chains**, run `solver-cli configure` again, then **restart both solver and oracle operator** so they load the updated config.
+
 ## Adding Chains
 
 Use `chain add` for chains with existing OIF contracts:
@@ -231,3 +233,6 @@ Then restart the solver and operator.
 2. Check solver has gas on destination chain
 3. Check oracle operator is running
 4. Check order profitability (solver may skip unprofitable orders)
+
+### Fill done but solver never claims (attestation not submitted)
+If the solver filled on the destination chain but the oracle operator failed to submit the attestation (e.g. RPC or tx error), the operator will retry on the next poll: it does not advance the block cursor until all fills in the range are processed. Restart the operator if it crashed; ensure it has gas on the **origin** (escrow) chain for `submitAttestation` transactions.
