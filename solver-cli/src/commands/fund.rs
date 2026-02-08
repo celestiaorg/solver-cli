@@ -63,9 +63,9 @@ impl FundCommand {
                 }
             } else {
                 // Try to find by name
-                let chain = state.get_chain_by_name(chain_arg).ok_or_else(|| {
-                    anyhow::anyhow!("Chain '{}' not found", chain_arg)
-                })?;
+                let chain = state
+                    .get_chain_by_name(chain_arg)
+                    .ok_or_else(|| anyhow::anyhow!("Chain '{}' not found", chain_arg))?;
                 vec![chain.chain_id]
             }
         } else {
@@ -82,11 +82,15 @@ impl FundCommand {
         // Fund each chain
         for chain_id in &chain_ids {
             let chain = state.chains.get(chain_id).unwrap();
-            print_header(&format!("Funding solver on {} (Chain ID: {})", chain.name, chain.chain_id));
+            print_header(&format!(
+                "Funding solver on {} (Chain ID: {})",
+                chain.name, chain.chain_id
+            ));
 
             // Get the private key for this chain (to pay gas for minting)
             let chain_env = env_config.get_chain(&chain.name);
-            let funder_pk = chain_env.map(|c| c.private_key.clone())
+            let funder_pk = chain_env
+                .map(|c| c.private_key.clone())
                 .or_else(|| env_config.get_any_pk())
                 .ok_or_else(|| anyhow::anyhow!("No private key found for chain {}", chain.name))?;
 
@@ -104,7 +108,9 @@ impl FundCommand {
                         || chain.name.to_lowercase().contains("anvil");
 
                     if is_local {
-                        print_warning("Low native token balance. Auto-funding with 1.0 native tokens...");
+                        print_warning(
+                            "Low native token balance. Auto-funding with 1.0 native tokens...",
+                        );
                         let native_amount = U256::from(1_000_000_000_000_000_000u64); // 1.0 ETH
                         Self::send_native_tokens(
                             &chain.rpc,
@@ -145,10 +151,9 @@ impl FundCommand {
             }
 
             // 2. Fund ERC20 tokens
-            let token_info = chain
-                .tokens
-                .get(&self.token)
-                .ok_or_else(|| anyhow::anyhow!("Token {} not found on {}", self.token, chain.name))?;
+            let token_info = chain.tokens.get(&self.token).ok_or_else(|| {
+                anyhow::anyhow!("Token {} not found on {}", self.token, chain.name)
+            })?;
 
             print_address("Token", &token_info.address);
 
@@ -208,11 +213,7 @@ impl FundCommand {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         // cast may return format like "1000000 [1e6]" - extract just the first number
-        let balance_str = stdout
-            .trim()
-            .split_whitespace()
-            .next()
-            .unwrap_or("0");
+        let balance_str = stdout.trim().split_whitespace().next().unwrap_or("0");
 
         let balance = U256::from_str(balance_str)
             .or_else(|_| U256::from_str_radix(balance_str.trim_start_matches("0x"), 16))

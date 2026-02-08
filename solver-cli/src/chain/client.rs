@@ -41,10 +41,10 @@ impl ChainClient {
         let url: reqwest::Url = rpc_url.parse().context("Invalid RPC URL")?;
         let provider = ProviderBuilder::new().connect_http(url);
 
-        let chain_id = provider
-            .get_chain_id()
-            .await
-            .context(format!("Failed to get chain ID from {} (is the RPC node running?)", rpc_url))?;
+        let chain_id = provider.get_chain_id().await.context(format!(
+            "Failed to get chain ID from {} (is the RPC node running?)",
+            rpc_url
+        ))?;
 
         Ok(Self {
             name: name.to_string(),

@@ -60,8 +60,7 @@ async fn main() -> Result<()> {
         std::env::var("ORACLE_CONFIG").unwrap_or_else(|_| "config/oracle.toml".to_string());
     let config_path = PathBuf::from(&config_path);
 
-    let config =
-        OracleConfig::load(&config_path).context("Failed to load oracle config")?;
+    let config = OracleConfig::load(&config_path).context("Failed to load oracle config")?;
 
     info!("Loaded config for {} chains", config.chains.len());
     info!("Operator address: {}", config.operator_address);
@@ -76,7 +75,10 @@ async fn main() -> Result<()> {
     let operator = Arc::new(OracleOperator::new(config, &state_dir).await?);
 
     info!("Oracle Operator initialized, watching for fills...");
-    info!("State persisted to {:?}", state_dir.join("oracle-state.json"));
+    info!(
+        "State persisted to {:?}",
+        state_dir.join("oracle-state.json")
+    );
 
     // Run with graceful shutdown
     let operator_clone = operator.clone();

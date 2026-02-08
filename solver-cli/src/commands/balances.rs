@@ -58,9 +58,9 @@ impl BalancesCommand {
                 }
             } else {
                 // Try to find by name
-                let chain = state.get_chain_by_name(chain_arg).ok_or_else(|| {
-                    anyhow::anyhow!("Chain '{}' not found", chain_arg)
-                })?;
+                let chain = state
+                    .get_chain_by_name(chain_arg)
+                    .ok_or_else(|| anyhow::anyhow!("Chain '{}' not found", chain_arg))?;
                 vec![chain.chain_id]
             }
         } else {
@@ -81,10 +81,9 @@ impl BalancesCommand {
             let chain = state.chains.get(chain_id).unwrap();
 
             // Get token info
-            let token_info = chain
-                .tokens
-                .get(&self.token)
-                .ok_or_else(|| anyhow::anyhow!("Token {} not found on chain {}", self.token, chain.name))?;
+            let token_info = chain.tokens.get(&self.token).ok_or_else(|| {
+                anyhow::anyhow!("Token {} not found on chain {}", self.token, chain.name)
+            })?;
 
             // Connect to chain
             let client = ChainClient::new(&chain.name, &chain.rpc).await?;
@@ -93,12 +92,8 @@ impl BalancesCommand {
             print_header(&format!("{} (Chain ID: {})", chain.name, chain.chain_id));
 
             // Query balances
-            let user_balance = client
-                .get_token_balance(token_addr, user_address)
-                .await?;
-            let solver_balance = client
-                .get_token_balance(token_addr, solver_address)
-                .await?;
+            let user_balance = client.get_token_balance(token_addr, user_address).await?;
+            let solver_balance = client.get_token_balance(token_addr, solver_address).await?;
 
             print_address("User address", &format!("{:?}", user_address));
             print_balance(

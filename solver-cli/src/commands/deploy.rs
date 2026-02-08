@@ -55,7 +55,10 @@ impl DeployCommand {
 
         // Determine which chains to deploy to
         let chain_names: Vec<String> = if let Some(chains_arg) = &self.chains {
-            chains_arg.split(',').map(|s| s.trim().to_string()).collect()
+            chains_arg
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect()
         } else {
             env_config.chain_names()
         };

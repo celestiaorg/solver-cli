@@ -71,10 +71,7 @@ async fn run_solver_from_config_impl(config_path: &Path) -> Result<()> {
         }
     } else {
         tracing::info!("Starting solver (no API server)");
-        solver
-            .run()
-            .await
-            .map_err(|e| anyhow::anyhow!("{}", e))?;
+        solver.run().await.map_err(|e| anyhow::anyhow!("{}", e))?;
     }
 
     tracing::info!("Solver stopped");

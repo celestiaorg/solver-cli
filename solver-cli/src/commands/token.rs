@@ -220,7 +220,10 @@ impl TokenCommand {
         // Save state
         state_mgr.save(&state).await?;
 
-        print_success(&format!("Token {} removed from {}", symbol_upper, chain_name));
+        print_success(&format!(
+            "Token {} removed from {}",
+            symbol_upper, chain_name
+        ));
         print_info("Run 'solver-cli configure' to regenerate solver config.");
 
         if out.is_json() {
@@ -387,7 +390,14 @@ impl TokenCommand {
         // Call mint on the token contract
         print_info("Calling mint()...");
 
-        Self::call_mint(&chain.rpc, &minter_pk, &token.address, recipient, amount_raw).await?;
+        Self::call_mint(
+            &chain.rpc,
+            &minter_pk,
+            &token.address,
+            recipient,
+            amount_raw,
+        )
+        .await?;
 
         print_success(&format!(
             "Minted {} {} to {:?}",
@@ -447,10 +457,7 @@ impl TokenCommand {
     }
 
     /// Resolve chain by name or ID
-    fn resolve_chain_id(
-        state: &crate::state::SolverState,
-        chain_ref: &str,
-    ) -> Result<u64> {
+    fn resolve_chain_id(state: &crate::state::SolverState, chain_ref: &str) -> Result<u64> {
         // Try parsing as chain ID first
         if let Ok(id) = chain_ref.parse::<u64>() {
             if state.chains.contains_key(&id) {

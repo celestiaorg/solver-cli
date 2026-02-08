@@ -48,8 +48,16 @@ output_settler_address = "{}"
 http = "{}"
 "#,
                 chain.chain_id,
-                chain.contracts.input_settler_escrow.as_deref().unwrap_or(""),
-                chain.contracts.output_settler_simple.as_deref().unwrap_or(""),
+                chain
+                    .contracts
+                    .input_settler_escrow
+                    .as_deref()
+                    .unwrap_or(""),
+                chain
+                    .contracts
+                    .output_settler_simple
+                    .as_deref()
+                    .unwrap_or(""),
                 chain.chain_id,
                 chain.rpc,
             ));
@@ -402,8 +410,16 @@ input_settler_address = "{}"
                 chain.chain_id,
                 chain.rpc,
                 chain.contracts.oracle.as_deref().unwrap_or(""),
-                chain.contracts.output_settler_simple.as_deref().unwrap_or(""),
-                chain.contracts.input_settler_escrow.as_deref().unwrap_or(""),
+                chain
+                    .contracts
+                    .output_settler_simple
+                    .as_deref()
+                    .unwrap_or(""),
+                chain
+                    .contracts
+                    .input_settler_escrow
+                    .as_deref()
+                    .unwrap_or(""),
             ));
         }
 

@@ -128,9 +128,11 @@ impl IntentCommand {
                 timeout,
                 expiry,
             } => Self::submit(dir, amount, asset, from, to, wait, timeout, expiry, output).await,
-            IntentCommand::Refund { tx_hash, dir, chain } => {
-                Self::refund(tx_hash, dir, chain, output).await
-            }
+            IntentCommand::Refund {
+                tx_hash,
+                dir,
+                chain,
+            } => Self::refund(tx_hash, dir, chain, output).await,
             IntentCommand::Status { id, dir } => Self::status(id, dir, output).await,
             IntentCommand::List { dir, status } => Self::list(dir, status, output).await,
         }
@@ -522,11 +524,7 @@ impl IntentCommand {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         // cast returns format like "20000000 [2e7]" - extract just the first number
-        let balance_str = stdout
-            .trim()
-            .split_whitespace()
-            .next()
-            .unwrap_or("0");
+        let balance_str = stdout.trim().split_whitespace().next().unwrap_or("0");
 
         // Parse the balance (cast returns decimal)
         let balance = U256::from_str(balance_str)
@@ -803,7 +801,10 @@ impl IntentCommand {
             }
         };
 
-        print_kv("Chain", &format!("{} ({})", source_chain.name, source_chain.chain_id));
+        print_kv(
+            "Chain",
+            &format!("{} ({})", source_chain.name, source_chain.chain_id),
+        );
         print_kv("TX Hash", &tx_hash);
 
         let escrow_address = source_chain
@@ -817,12 +818,17 @@ impl IntentCommand {
         // Call refund on the escrow contract
         // The refund function requires the original order data, which we'd need to reconstruct
         // For simplicity, we'll just provide instructions since reconstructing the order is complex
-        
+
         print_warning("To refund an expired intent, you need the original order data.");
-        print_info("The escrow contract's refund() function requires the full StandardOrder struct.");
+        print_info(
+            "The escrow contract's refund() function requires the full StandardOrder struct.",
+        );
         print_info("");
         print_info("If the intent was created by this CLI, check the intent in state:");
-        print_info(&format!("  solver-cli intent status --id intent-{}", &tx_hash[2..10]));
+        print_info(&format!(
+            "  solver-cli intent status --id intent-{}",
+            &tx_hash[2..10]
+        ));
         print_info("");
         print_info("Manual refund via cast (if you have the encoded order):");
         print_info(&format!(

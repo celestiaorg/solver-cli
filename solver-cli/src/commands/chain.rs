@@ -93,7 +93,10 @@ fn parse_token_arg(s: &str) -> Result<ParsedToken, String> {
     let address = addr_parts[0].to_string();
     let decimals = if addr_parts.len() > 1 {
         Some(addr_parts[1].parse::<u8>().map_err(|_| {
-            format!("Invalid decimals '{}'. Expected a number 0-255", addr_parts[1])
+            format!(
+                "Invalid decimals '{}'. Expected a number 0-255",
+                addr_parts[1]
+            )
         })?)
     } else {
         None
