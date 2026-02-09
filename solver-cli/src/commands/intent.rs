@@ -11,7 +11,7 @@ use tokio::time::{sleep, Duration};
 use tracing::info;
 
 use crate::chain::{format_token_amount, ChainClient};
-use crate::state::{IntentRecord, IntentStatus, StateManager};
+use crate::state::{ChainConfig, IntentRecord, IntentStatus, SolverState, StateManager};
 use crate::utils::*;
 use crate::OutputFormat;
 
@@ -56,9 +56,13 @@ pub enum IntentCommand {
         #[arg(long, default_value = "USDC")]
         asset: String,
 
-        /// Direction: "forward" (evolve->sepolia) or "back" (sepolia->evolve)
-        #[arg(long, short, default_value = "forward")]
-        direction: String,
+        /// Source chain (name or ID)
+        #[arg(long)]
+        from: Option<String>,
+
+        /// Destination chain (name or ID)
+        #[arg(long)]
+        to: Option<String>,
 
         /// Wait for fulfillment
         #[arg(long, short)]
@@ -67,6 +71,25 @@ pub enum IntentCommand {
         /// Timeout in seconds when waiting
         #[arg(long, default_value = "300")]
         timeout: u64,
+
+        /// Intent expiry in seconds (default: 30 minutes)
+        #[arg(long, default_value = "1800")]
+        expiry: u64,
+    },
+
+    /// Refund an expired intent (reclaim escrowed tokens)
+    Refund {
+        /// Transaction hash of the original intent submission
+        #[arg(long)]
+        tx_hash: String,
+
+        /// Project directory
+        #[arg(long)]
+        dir: Option<PathBuf>,
+
+        /// Source chain where intent was submitted
+        #[arg(long)]
+        chain: Option<String>,
     },
 
     /// Check intent status
@@ -99,12 +122,30 @@ impl IntentCommand {
                 dir,
                 amount,
                 asset,
-                direction,
+                from,
+                to,
                 wait,
                 timeout,
-            } => Self::submit(dir, amount, asset, direction, wait, timeout, output).await,
+                expiry,
+            } => Self::submit(dir, amount, asset, from, to, wait, timeout, expiry, output).await,
+            IntentCommand::Refund {
+                tx_hash,
+                dir,
+                chain,
+            } => Self::refund(tx_hash, dir, chain, output).await,
             IntentCommand::Status { id, dir } => Self::status(id, dir, output).await,
             IntentCommand::List { dir, status } => Self::list(dir, status, output).await,
+        }
+    }
+
+    /// Resolve a chain by name or ID
+    fn resolve_chain<'a>(state: &'a SolverState, chain_ref: &str) -> Option<&'a ChainConfig> {
+        // Try parsing as chain ID first
+        if let Ok(id) = chain_ref.parse::<u64>() {
+            state.get_chain(id)
+        } else {
+            // Try finding by name
+            state.get_chain_by_name(chain_ref)
         }
     }
 
@@ -112,9 +153,11 @@ impl IntentCommand {
         dir: Option<PathBuf>,
         amount: String,
         asset: String,
-        direction: String,
+        from: Option<String>,
+        to: Option<String>,
         wait: bool,
         timeout: u64,
+        expiry: u64,
         output: OutputFormat,
     ) -> Result<()> {
         let out = OutputFormatter::new(output);
@@ -130,32 +173,73 @@ impl IntentCommand {
 
         let user_pk = env_config
             .user_pk
+            .clone()
             .ok_or_else(|| anyhow::anyhow!("USER_PK not set"))?;
 
-        // Determine source/dest based on direction
-        let is_forward = direction.to_lowercase() != "back";
-        let (source, dest, source_pk, dest_rpc) = if is_forward {
-            (
-                state.chains.source.as_ref(),
-                state.chains.destination.as_ref(),
-                &env_config.evolve_pk,
-                &env_config.sepolia_rpc,
-            )
-        } else {
-            (
-                state.chains.destination.as_ref(),
-                state.chains.source.as_ref(),
-                &env_config.sepolia_pk,
-                &env_config.evolve_rpc,
-            )
+        let chain_ids = state.chain_ids();
+        if chain_ids.len() < 2 {
+            anyhow::bail!(
+                "At least 2 chains required for cross-chain intents. Found: {}",
+                chain_ids.len()
+            );
+        }
+
+        // Determine source and destination chains
+        // Clone the chain configs to avoid borrow checker issues
+        let (source, dest) = match (from.as_ref(), to.as_ref()) {
+            (Some(from_str), Some(to_str)) => {
+                let src = Self::resolve_chain(&state, from_str)
+                    .ok_or_else(|| anyhow::anyhow!("Source chain '{}' not found", from_str))?
+                    .clone();
+                let dst = Self::resolve_chain(&state, to_str)
+                    .ok_or_else(|| anyhow::anyhow!("Destination chain '{}' not found", to_str))?
+                    .clone();
+                (src, dst)
+            }
+            (Some(from_str), None) => {
+                let src = Self::resolve_chain(&state, from_str)
+                    .ok_or_else(|| anyhow::anyhow!("Source chain '{}' not found", from_str))?
+                    .clone();
+                // Pick first different chain as destination
+                let dst = chain_ids
+                    .iter()
+                    .filter(|&&id| id != src.chain_id)
+                    .next()
+                    .and_then(|&id| state.get_chain(id))
+                    .ok_or_else(|| anyhow::anyhow!("No destination chain available"))?
+                    .clone();
+                (src, dst)
+            }
+            (None, Some(to_str)) => {
+                let dst = Self::resolve_chain(&state, to_str)
+                    .ok_or_else(|| anyhow::anyhow!("Destination chain '{}' not found", to_str))?
+                    .clone();
+                // Pick first different chain as source
+                let src = chain_ids
+                    .iter()
+                    .filter(|&&id| id != dst.chain_id)
+                    .next()
+                    .and_then(|&id| state.get_chain(id))
+                    .ok_or_else(|| anyhow::anyhow!("No source chain available"))?
+                    .clone();
+                (src, dst)
+            }
+            (None, None) => {
+                // Default: use first two chains sorted by ID
+                let mut sorted_ids = chain_ids.clone();
+                sorted_ids.sort();
+                let src = state.get_chain(sorted_ids[0]).unwrap().clone();
+                let dst = state.get_chain(sorted_ids[1]).unwrap().clone();
+                (src, dst)
+            }
         };
 
-        let source = source.ok_or_else(|| anyhow::anyhow!("Source chain not configured"))?;
-        let dest = dest.ok_or_else(|| anyhow::anyhow!("Destination chain not configured"))?;
+        if source.chain_id == dest.chain_id {
+            anyhow::bail!("Source and destination chains must be different");
+        }
 
-        print_kv("Direction", if is_forward { "forward" } else { "back" });
-        print_kv("Source", &source.name);
-        print_kv("Destination", &dest.name);
+        print_kv("Source", &format!("{} ({})", source.name, source.chain_id));
+        print_kv("Destination", &format!("{} ({})", dest.name, dest.chain_id));
 
         // Get token info
         let source_token = source
@@ -219,7 +303,7 @@ impl IntentCommand {
         print_address("Source Oracle", &format!("{:?}", source_oracle));
         print_address("Dest Settler", &format!("{:?}", dest_settler));
 
-        // Step 1: Ensure user has tokens (mint if needed using deployer key)
+        // Step 1: Check user has sufficient tokens
         print_header("Checking User Balance");
 
         let user_balance =
@@ -232,19 +316,17 @@ impl IntentCommand {
         );
 
         if user_balance < amount_raw {
-            print_warning("Insufficient balance. Minting tokens to user...");
-
-            // Mint tokens to user using deployer key
-            Self::mint_tokens(
-                &source.rpc,
-                source_pk,
-                &source_token.address,
+            anyhow::bail!(
+                "Insufficient {} balance. Have: {}, need: {}.\n\
+                For test tokens, run: solver-cli token mint --chain {} --symbol {} --to {:?} --amount {}",
+                asset,
+                format_token_amount(user_balance, source_token.decimals),
+                format_token_amount(amount_raw, source_token.decimals),
+                source.name,
+                asset,
                 user_address,
-                amount_raw,
-            )
-            .await?;
-
-            print_success("Tokens minted to user");
+                amount
+            );
         }
 
         // Step 2: Approve escrow to spend tokens
@@ -271,8 +353,8 @@ impl IntentCommand {
             .as_secs();
 
         let nonce = now; // Use timestamp as nonce
-        let expires = (now + 300) as u32; // 5 minutes from now
-        let fill_deadline = (now + 240) as u32; // 4 minutes from now
+        let expires = (now + expiry) as u32; // Configurable expiry (default 30 min)
+        let fill_deadline = (now + expiry - 60) as u32; // 1 minute before expiry
 
         print_kv("Nonce", nonce);
         print_kv("Expires", expires);
@@ -305,6 +387,8 @@ impl IntentCommand {
                 amount: amount_raw, // 1:1 for same token
                 recipient: addr_to_bytes32(user_address),
                 callbackData: vec![].into(),
+                // Context is used by contract for order types (limit, dutch, etc.)
+                // Empty = simple limit order
                 context: vec![].into(),
             }],
         };
@@ -351,12 +435,12 @@ impl IntentCommand {
 
             // Poll destination chain for user balance increase
             let initial_dest_balance =
-                Self::get_token_balance(dest_rpc, &dest_token.address, user_address)
+                Self::get_token_balance(&dest.rpc, &dest_token.address, user_address)
                     .await
                     .unwrap_or(U256::ZERO);
 
             let fulfilled = Self::wait_for_balance_increase(
-                dest_rpc,
+                &dest.rpc,
                 &dest_token.address,
                 user_address,
                 initial_dest_balance,
@@ -383,7 +467,7 @@ impl IntentCommand {
                         .unwrap_or(U256::ZERO);
 
                 let user_dest_balance =
-                    Self::get_token_balance(dest_rpc, &dest_token.address, user_address)
+                    Self::get_token_balance(&dest.rpc, &dest_token.address, user_address)
                         .await
                         .unwrap_or(U256::ZERO);
 
@@ -409,6 +493,8 @@ impl IntentCommand {
                 "status": "pending",
                 "amount": amount,
                 "asset": asset,
+                "source_chain": source.name,
+                "dest_chain": dest.name,
             }))?;
         }
 
@@ -437,7 +523,8 @@ impl IntentCommand {
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let balance_str = stdout.trim();
+        // cast returns format like "20000000 [2e7]" - extract just the first number
+        let balance_str = stdout.trim().split_whitespace().next().unwrap_or("0");
 
         // Parse the balance (cast returns decimal)
         let balance = U256::from_str(balance_str)
@@ -445,41 +532,6 @@ impl IntentCommand {
             .unwrap_or(U256::ZERO);
 
         Ok(balance)
-    }
-
-    async fn mint_tokens(
-        rpc_url: &str,
-        private_key: &str,
-        token_address: &str,
-        recipient: Address,
-        amount: U256,
-    ) -> Result<()> {
-        use std::process::Stdio;
-        use tokio::process::Command;
-
-        let pk = private_key.strip_prefix("0x").unwrap_or(private_key);
-
-        let output = Command::new("cast")
-            .arg("send")
-            .arg(token_address)
-            .arg("mint(address,uint256)")
-            .arg(format!("{:?}", recipient))
-            .arg(amount.to_string())
-            .arg("--private-key")
-            .arg(pk)
-            .arg("--rpc-url")
-            .arg(rpc_url)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("Mint failed: {}", stderr);
-        }
-
-        Ok(())
     }
 
     async fn approve_tokens(
@@ -699,6 +751,99 @@ impl IntentCommand {
 
         if out.is_json() {
             out.json(&intents)?;
+        }
+
+        Ok(())
+    }
+
+    async fn refund(
+        tx_hash: String,
+        dir: Option<PathBuf>,
+        chain: Option<String>,
+        output: OutputFormat,
+    ) -> Result<()> {
+        let out = OutputFormatter::new(output);
+        let project_dir = dir.unwrap_or_else(|| env::current_dir().unwrap());
+        let state_mgr = StateManager::new(&project_dir);
+
+        out.header("Refunding Expired Intent");
+
+        // Load state and env
+        let state = state_mgr.load_or_error().await?;
+        load_dotenv(&project_dir)?;
+        let env_config = EnvConfig::from_env()?;
+
+        let _user_pk = env_config
+            .user_pk
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("USER_PK not set"))?;
+
+        // Determine which chain to use
+        let source_chain = if let Some(chain_ref) = chain {
+            Self::resolve_chain(&state, &chain_ref)
+                .ok_or_else(|| anyhow::anyhow!("Chain '{}' not found", chain_ref))?
+                .clone()
+        } else {
+            // Try to find from stored intent
+            let intent = state.intents.iter().find(|i| i.tx_hash == tx_hash);
+            if let Some(i) = intent {
+                state
+                    .get_chain(i.source_chain_id)
+                    .ok_or_else(|| anyhow::anyhow!("Source chain {} not found", i.source_chain_id))?
+                    .clone()
+            } else {
+                // Default to first chain
+                let chain_ids = state.chain_ids();
+                if chain_ids.is_empty() {
+                    anyhow::bail!("No chains configured");
+                }
+                state.get_chain(chain_ids[0]).unwrap().clone()
+            }
+        };
+
+        print_kv(
+            "Chain",
+            &format!("{} ({})", source_chain.name, source_chain.chain_id),
+        );
+        print_kv("TX Hash", &tx_hash);
+
+        let escrow_address = source_chain
+            .contracts
+            .input_settler_escrow
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No escrow contract on chain"))?;
+
+        print_address("Escrow", escrow_address);
+
+        // Call refund on the escrow contract
+        // The refund function requires the original order data, which we'd need to reconstruct
+        // For simplicity, we'll just provide instructions since reconstructing the order is complex
+
+        print_warning("To refund an expired intent, you need the original order data.");
+        print_info(
+            "The escrow contract's refund() function requires the full StandardOrder struct.",
+        );
+        print_info("");
+        print_info("If the intent was created by this CLI, check the intent in state:");
+        print_info(&format!(
+            "  solver-cli intent status --id intent-{}",
+            &tx_hash[2..10]
+        ));
+        print_info("");
+        print_info("Manual refund via cast (if you have the encoded order):");
+        print_info(&format!(
+            "  cast send {} 'refund((address,uint256,uint256,uint32,uint32,address,uint256[2][],(bytes32,bytes32,uint256,bytes32,uint256,bytes32,bytes,bytes)[]))' <encoded_order> --rpc-url {} --private-key <USER_PK>",
+            escrow_address,
+            source_chain.rpc
+        ));
+
+        if out.is_json() {
+            out.json(&serde_json::json!({
+                "tx_hash": tx_hash,
+                "chain": source_chain.name,
+                "escrow": escrow_address,
+                "note": "Manual refund required with original order data"
+            }))?;
         }
 
         Ok(())

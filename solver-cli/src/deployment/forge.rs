@@ -27,6 +27,7 @@ impl ForgeRunner {
         token_name: &str,
         token_symbol: &str,
         token_decimals: u8,
+        operator_address: Option<&str>,
     ) -> Result<DeploymentOutput> {
         info!("Running forge script deployment...");
 
@@ -48,9 +49,15 @@ impl ForgeRunner {
             .env("PRIVATE_KEY", &pk)
             .env("TOKEN_NAME", token_name)
             .env("TOKEN_SYMBOL", token_symbol)
-            .env("TOKEN_DECIMALS", token_decimals.to_string())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+            .env("TOKEN_DECIMALS", token_decimals.to_string());
+
+        // Set OPERATOR_ADDRESS if provided (ensures consistency across chains)
+        if let Some(operator) = operator_address {
+            cmd.env("OPERATOR_ADDRESS", operator);
+            info!("Using operator address: {}", operator);
+        }
+
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
         debug!("Running forge command in {:?}", self.contracts_path);
 
@@ -80,26 +87,28 @@ impl ForgeRunner {
         let combined = format!("{}\n{}", stdout, stderr);
         let mut addresses = HashMap::new();
 
-        // Parse lines like "AlwaysYesOracle deployed at: 0x..."
+        // Parse lines like "ContractName deployed at: 0x..." (any *Oracle stored as "Oracle")
         for line in combined.lines() {
             if line.contains("deployed at:") || line.contains("Deployed") {
                 if let Some((name, addr)) = Self::parse_deployment_line(line) {
-                    addresses.insert(name, addr);
+                    let key = if name.ends_with("Oracle") { "Oracle".to_string() } else { name };
+                    addresses.insert(key, addr);
                 }
             }
         }
 
         // Also try parsing console.log output format: "Contract: 0x..."
         for line in combined.lines() {
-            // Format: "  AlwaysYesOracle: 0x5FbDB2315678afecb367f032d93F642f64180aa3"
+            // Format: "  ContractName: 0x..." (*Oracle names normalized to key "Oracle")
             let trimmed = line.trim();
             if trimmed.contains(": 0x") && !trimmed.starts_with("//") {
                 let parts: Vec<&str> = trimmed.splitn(2, ": 0x").collect();
                 if parts.len() == 2 {
                     let name = parts[0].trim().to_string();
+                    let key = if name.ends_with("Oracle") { "Oracle".to_string() } else { name };
                     let addr = format!("0x{}", parts[1].trim());
                     if addr.len() == 42 {
-                        addresses.insert(name, addr);
+                        addresses.insert(key, addr);
                     }
                 }
             }
@@ -115,7 +124,7 @@ impl ForgeRunner {
                     if let Some(addr) = Self::extract_address(trimmed) {
                         // Try to determine contract name from context
                         if trimmed.to_lowercase().contains("oracle") {
-                            addresses.insert("AlwaysYesOracle".to_string(), addr);
+                            addresses.insert("Oracle".to_string(), addr);
                         } else if trimmed.to_lowercase().contains("escrow")
                             || trimmed.to_lowercase().contains("input")
                         {
@@ -203,7 +212,7 @@ impl ForgeRunner {
             .arg("build")
             .output()
             .await
-            .context("Failed to build contracts")?;
+            .context("Failed to run forge build. Is Foundry installed and forge in PATH? Run: forge --version")?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -225,9 +234,7 @@ impl DeploymentOutput {
     }
 
     pub fn oracle(&self) -> Option<&String> {
-        self.addresses
-            .get("AlwaysYesOracle")
-            .or_else(|| self.addresses.get("Oracle"))
+        self.addresses.get("Oracle")
     }
 
     pub fn input_settler(&self) -> Option<&String> {
@@ -256,5 +263,9 @@ impl DeploymentOutput {
             })
             // Handle JSON output format with quotes
             .or_else(|| self.addresses.get("\"token\""))
+    }
+
+    pub fn operator(&self) -> Option<&String> {
+        self.addresses.get("Operator")
     }
 }

@@ -4,7 +4,7 @@ use std::env;
 use std::path::PathBuf;
 
 use crate::deployment::Deployer;
-use crate::state::{Environment, StateManager};
+use crate::state::StateManager;
 use crate::utils::*;
 use crate::OutputFormat;
 
@@ -29,6 +29,11 @@ pub struct DeployCommand {
     /// Skip building contracts
     #[arg(long)]
     pub skip_build: bool,
+
+    /// Chains to deploy to (comma-separated, e.g., "evolve,sepolia")
+    /// If not specified, uses all chains from CHAINS env var
+    #[arg(long)]
+    pub chains: Option<String>,
 }
 
 impl DeployCommand {
@@ -46,41 +51,50 @@ impl DeployCommand {
 
         // Load environment
         load_dotenv(&project_dir)?;
-        check_required_vars(REQUIRED_DEPLOY_VARS)?;
-
         let env_config = EnvConfig::from_env()?;
 
-        // Determine chain names based on environment
-        let (source_name, dest_name) = match state.env {
-            Environment::Local => ("evolve", "sepolia"),
-            Environment::Sepolia => ("sepolia", "mainnet"),
-            Environment::Mainnet => ("mainnet", "arbitrum"),
+        // Determine which chains to deploy to
+        let chain_names: Vec<String> = if let Some(chains_arg) = &self.chains {
+            chains_arg
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect()
+        } else {
+            env_config.chain_names()
         };
 
-        print_kv("Source chain", source_name);
-        print_kv("Destination chain", dest_name);
+        if chain_names.is_empty() {
+            anyhow::bail!(
+                "No chains configured. Use --chains flag or set chain env vars.\n\
+                Example: --chains evolve,sepolia\n\
+                Required env vars: EVOLVE_RPC, EVOLVE_PK, SEPOLIA_RPC, SEPOLIA_PK"
+            );
+        }
+
+        // Gather chain configs (load dynamically for chains specified via --chains)
+        let mut loaded_chains: Vec<ChainEnvConfig> = Vec::new();
+        for name in &chain_names {
+            let chain = env_config.load_chain(name).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Chain '{}' not found in environment. \
+                    Make sure {}_RPC and {}_PK are set.",
+                    name,
+                    name.to_uppercase(),
+                    name.to_uppercase()
+                )
+            })?;
+            loaded_chains.push(chain);
+        }
+        let chain_configs: Vec<&ChainEnvConfig> = loaded_chains.iter().collect();
+
+        print_kv("Chains to deploy", chain_names.join(", "));
         print_kv("Token", &self.token);
 
-        // Check if already deployed
-        if !self.force && state.deployment_version.is_some() {
-            let source_complete = state
-                .chains
-                .source
-                .as_ref()
-                .map(|c| c.contracts.is_complete())
-                .unwrap_or(false);
-            let dest_complete = state
-                .chains
-                .destination
-                .as_ref()
-                .map(|c| c.contracts.is_complete())
-                .unwrap_or(false);
-
-            if source_complete && dest_complete {
-                print_warning("Contracts already deployed. Use --force to redeploy.");
-                Self::print_deployment_summary(&state, &out)?;
-                return Ok(());
-            }
+        // Check if already deployed (only if not forcing)
+        if !self.force && state.deployment_version.is_some() && state.all_chains_deployed() {
+            print_warning("Contracts already deployed. Use --force to redeploy.");
+            Self::print_deployment_summary(&state, &out)?;
+            return Ok(());
         }
 
         // Find contracts directory
@@ -94,19 +108,16 @@ impl DeployCommand {
 
         let deployer = Deployer::new(&contracts_path);
 
-        // Deploy to both chains
-        print_header("Deploying to Source Chain");
-        print_info(&format!("RPC: {}", env_config.evolve_rpc));
+        // Deploy to all specified chains
+        print_header("Deploying to Chains");
+        for chain in &chain_configs {
+            print_info(&format!("  {} -> {}", chain.name, chain.rpc_url));
+        }
 
         deployer
-            .deploy_all(
+            .deploy_to_chains(
                 &mut state,
-                &env_config.evolve_rpc,
-                &env_config.evolve_pk,
-                source_name,
-                &env_config.sepolia_rpc,
-                &env_config.sepolia_pk,
-                dest_name,
+                &chain_configs,
                 &self.token,
                 self.decimals,
                 self.skip_build,
@@ -136,40 +147,32 @@ impl DeployCommand {
     ) -> Result<()> {
         print_summary_start();
 
-        if let Some(source) = &state.chains.source {
-            print_header(&format!("{} (Chain ID: {})", source.name, source.chain_id));
-            if let Some(addr) = &source.deployer {
-                print_address("Deployer", addr);
-            }
-            if let Some(addr) = &source.contracts.input_settler_escrow {
-                print_address("InputSettlerEscrow", addr);
-            }
-            if let Some(addr) = &source.contracts.output_settler_simple {
-                print_address("OutputSettlerSimple", addr);
-            }
-            if let Some(addr) = &source.contracts.oracle {
-                print_address("Oracle", addr);
-            }
-            for (symbol, token) in &source.tokens {
-                print_address(&format!("Token ({})", symbol), &token.address);
-            }
+        // Show operator address at the top
+        if let Some(operator) = &state.solver.operator_address {
+            print_header("Oracle Configuration");
+            print_address("Operator", operator);
         }
 
-        if let Some(dest) = &state.chains.destination {
-            print_header(&format!("{} (Chain ID: {})", dest.name, dest.chain_id));
-            if let Some(addr) = &dest.deployer {
+        // Sort chains by ID for consistent output
+        let mut chain_ids: Vec<u64> = state.chains.keys().copied().collect();
+        chain_ids.sort();
+
+        for chain_id in chain_ids {
+            let chain = state.chains.get(&chain_id).unwrap();
+            print_header(&format!("{} (Chain ID: {})", chain.name, chain.chain_id));
+            if let Some(addr) = &chain.deployer {
                 print_address("Deployer", addr);
             }
-            if let Some(addr) = &dest.contracts.input_settler_escrow {
+            if let Some(addr) = &chain.contracts.input_settler_escrow {
                 print_address("InputSettlerEscrow", addr);
             }
-            if let Some(addr) = &dest.contracts.output_settler_simple {
+            if let Some(addr) = &chain.contracts.output_settler_simple {
                 print_address("OutputSettlerSimple", addr);
             }
-            if let Some(addr) = &dest.contracts.oracle {
+            if let Some(addr) = &chain.contracts.oracle {
                 print_address("Oracle", addr);
             }
-            for (symbol, token) in &dest.tokens {
+            for (symbol, token) in &chain.tokens {
                 print_address(&format!("Token ({})", symbol), &token.address);
             }
         }

@@ -10,8 +10,9 @@ use tracing::Level;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use commands::{
-    configure::ConfigureCommand, deploy::DeployCommand, fund::FundCommand, init::InitCommand,
-    intent::IntentCommand, solver::SolverCommand, verify::VerifyCommand,
+    balances::BalancesCommand, chain::ChainCommand, configure::ConfigureCommand,
+    deploy::DeployCommand, fund::FundCommand, init::InitCommand, intent::IntentCommand,
+    solver::SolverCommand, token::TokenCommand,
 };
 
 #[derive(Parser)]
@@ -42,7 +43,7 @@ enum Commands {
     /// Initialize project state
     Init(InitCommand),
 
-    /// Deploy contracts to both chains
+    /// Deploy contracts to all configured chains
     Deploy(DeployCommand),
 
     /// Generate solver configuration
@@ -50,6 +51,14 @@ enum Commands {
 
     /// Fund solver with tokens
     Fund(FundCommand),
+
+    /// Chain management (add/remove/list)
+    #[command(subcommand)]
+    Chain(ChainCommand),
+
+    /// Token management (add/remove/list)
+    #[command(subcommand)]
+    Token(TokenCommand),
 
     /// Solver management (start/stop)
     #[command(subcommand)]
@@ -59,8 +68,8 @@ enum Commands {
     #[command(subcommand)]
     Intent(IntentCommand),
 
-    /// Verify balances
-    Verify(VerifyCommand),
+    /// Check token balances on all chains
+    Balances(BalancesCommand),
 }
 
 fn setup_logging(level: &str) -> anyhow::Result<()> {
@@ -89,9 +98,11 @@ async fn main() -> anyhow::Result<()> {
         Commands::Deploy(cmd) => cmd.run(cli.output).await,
         Commands::Configure(cmd) => cmd.run(cli.output).await,
         Commands::Fund(cmd) => cmd.run(cli.output).await,
+        Commands::Chain(cmd) => cmd.run(cli.output).await,
+        Commands::Token(cmd) => cmd.run(cli.output).await,
         Commands::Solver(cmd) => cmd.run(cli.output).await,
         Commands::Intent(cmd) => cmd.run(cli.output).await,
-        Commands::Verify(cmd) => cmd.run(cli.output).await,
+        Commands::Balances(cmd) => cmd.run(cli.output).await,
     };
 
     if let Err(e) = result {

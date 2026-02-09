@@ -7,6 +7,7 @@ use tracing::info;
 
 use crate::chain::ChainClient;
 use crate::state::{ChainConfig, ContractAddresses, SolverState, TokenInfo};
+use crate::utils::ChainEnvConfig;
 
 use super::forge::ForgeRunner;
 
@@ -30,6 +31,7 @@ impl Deployer {
         private_key: &str,
         token_symbol: &str,
         token_decimals: u8,
+        operator_address: Option<&str>,
     ) -> Result<ChainConfig> {
         info!("Deploying to {} at {}", chain_name, rpc_url);
 
@@ -49,6 +51,7 @@ impl Deployer {
                 &format!("Mock {}", token_symbol),
                 token_symbol,
                 token_decimals,
+                operator_address,
             )
             .await
             .context("Contract deployment failed")?;
@@ -98,44 +101,54 @@ impl Deployer {
         self.forge.build().await
     }
 
-    /// Deploy to both chains and update state
-    pub async fn deploy_all(
+    /// Deploy to all specified chains and update state
+    pub async fn deploy_to_chains(
         &self,
         state: &mut SolverState,
-        source_rpc: &str,
-        source_pk: &str,
-        source_name: &str,
-        dest_rpc: &str,
-        dest_pk: &str,
-        dest_name: &str,
+        chain_configs: &[&ChainEnvConfig],
         token_symbol: &str,
         token_decimals: u8,
         skip_build: bool,
     ) -> Result<()> {
+        if chain_configs.is_empty() {
+            anyhow::bail!("No chains to deploy to");
+        }
+
         // Build first (unless skipped)
         if !skip_build {
             self.build().await?;
         }
 
-        // Deploy to source chain
-        let source_config = self
-            .deploy_to_chain(
-                source_name,
-                source_rpc,
-                source_pk,
-                token_symbol,
-                token_decimals,
-            )
-            .await?;
+        // Derive operator address from ORACLE_OPERATOR_PK
+        let operator_pk = std::env::var("ORACLE_OPERATOR_PK")
+            .or_else(|_| std::env::var("SEPOLIA_PK"))
+            .context("ORACLE_OPERATOR_PK or SEPOLIA_PK must be set")?;
+        let operator_address = format!("{:?}", ChainClient::address_from_pk(&operator_pk)?);
+        info!(
+            "Using operator address: {} (derived from ORACLE_OPERATOR_PK)",
+            operator_address
+        );
 
-        // Deploy to destination chain
-        let dest_config = self
-            .deploy_to_chain(dest_name, dest_rpc, dest_pk, token_symbol, token_decimals)
-            .await?;
+        // Deploy to each chain
+        for chain_env in chain_configs {
+            info!("Deploying to chain: {}", chain_env.name);
+            let chain_config = self
+                .deploy_to_chain(
+                    &chain_env.name,
+                    &chain_env.rpc_url,
+                    &chain_env.private_key,
+                    token_symbol,
+                    token_decimals,
+                    Some(&operator_address),
+                )
+                .await?;
 
-        // Update state
-        state.chains.source = Some(source_config);
-        state.chains.destination = Some(dest_config);
+            // Insert into state by chain_id
+            state.chains.insert(chain_config.chain_id, chain_config);
+        }
+
+        // Store operator address in solver config
+        state.solver.operator_address = Some(operator_address);
 
         // Compute deployment version hash
         state.deployment_version = Some(compute_deployment_hash(state));
@@ -150,17 +163,16 @@ fn compute_deployment_hash(state: &SolverState) -> String {
 
     let mut hasher = Sha256::new();
 
-    if let Some(source) = &state.chains.source {
-        hasher.update(source.chain_id.to_le_bytes());
-        if let Some(addr) = &source.contracts.input_settler_escrow {
-            hasher.update(addr.as_bytes());
-        }
-    }
+    // Sort chain IDs for deterministic hashing
+    let mut chain_ids: Vec<u64> = state.chains.keys().copied().collect();
+    chain_ids.sort();
 
-    if let Some(dest) = &state.chains.destination {
-        hasher.update(dest.chain_id.to_le_bytes());
-        if let Some(addr) = &dest.contracts.input_settler_escrow {
-            hasher.update(addr.as_bytes());
+    for chain_id in chain_ids {
+        if let Some(chain) = state.chains.get(&chain_id) {
+            hasher.update(chain.chain_id.to_le_bytes());
+            if let Some(addr) = &chain.contracts.input_settler_escrow {
+                hasher.update(addr.as_bytes());
+            }
         }
     }
 

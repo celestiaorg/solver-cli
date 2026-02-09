@@ -51,6 +51,7 @@ impl InitCommand {
         // Create directory structure
         let dirs = [
             project_dir.join("config"),
+            project_dir.join("config/deployed"),
         ];
 
         for dir in &dirs {
@@ -72,17 +73,24 @@ impl InitCommand {
         // Validate wallet keys if available
         load_dotenv(&project_dir).ok();
 
-        let missing_vars: Vec<&str> = REQUIRED_DEPLOY_VARS
-            .iter()
-            .filter(|v| env::var(v).is_err())
-            .copied()
-            .collect();
-
-        if !missing_vars.is_empty() {
-            print_warning(&format!(
-                "Missing environment variables: {}",
-                missing_vars.join(", ")
-            ));
+        // Check for chain configuration
+        match EnvConfig::from_env() {
+            Ok(env_config) => {
+                if env_config.chains.is_empty() {
+                    print_warning("No chains configured in environment.");
+                    print_info("Set {CHAIN}_RPC and {CHAIN}_PK for each chain.");
+                    print_info("Example: EVOLVE_RPC, EVOLVE_PK, SEPOLIA_RPC, SEPOLIA_PK");
+                } else {
+                    print_success(&format!(
+                        "Found {} chain(s): {}",
+                        env_config.chains.len(),
+                        env_config.chain_names().join(", ")
+                    ));
+                }
+            }
+            Err(_) => {
+                print_warning("Unable to load environment configuration.");
+            }
         }
 
         print_summary_start();

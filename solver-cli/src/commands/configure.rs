@@ -41,12 +41,15 @@ impl ConfigureCommand {
         let env_config = EnvConfig::from_env()?;
 
         // Validate deployment
-        if state.chains.source.is_none() || state.chains.destination.is_none() {
-            anyhow::bail!("Contracts not deployed. Run 'solver-cli deploy' first.");
+        if state.chains.is_empty() {
+            anyhow::bail!("No chains deployed. Run 'solver-cli deploy' first.");
         }
 
-        // Derive solver address
-        let solver_address = ChainClient::address_from_pk(&env_config.evolve_pk)?;
+        print_kv("Chains configured", state.chains.len());
+
+        // Derive solver address from solver private key
+        let solver_pk = env_config.get_solver_pk()?;
+        let solver_address = ChainClient::address_from_pk(&solver_pk)?;
         print_address("Solver address", &format!("{:?}", solver_address));
 
         // Update solver config in state
@@ -57,7 +60,7 @@ impl ConfigureCommand {
         // Set up contract permissions (if needed)
         if !self.skip_permissions {
             print_info("Setting up contract permissions...");
-            // For now, AlwaysYesOracle doesn't require setup
+            // For now, Oracle doesn't require setup
             // In a real scenario, you'd register the solver with the contracts
             print_success("Contract permissions configured");
         }
@@ -72,6 +75,14 @@ impl ConfigureCommand {
         let yaml_content = ConfigGenerator::generate_yaml(&state)?;
         tokio::fs::write(&yaml_path, yaml_content).await?;
         print_success(&format!("YAML config written to {:?}", yaml_path));
+
+        // Generate oracle operator config
+        let oracle_config_path = project_dir.join("config/oracle.toml");
+        ConfigGenerator::write_oracle_config(&state, &oracle_config_path).await?;
+        print_success(&format!(
+            "Oracle config written to {:?}",
+            oracle_config_path
+        ));
 
         // Save state
         state_mgr.save(&state).await?;
