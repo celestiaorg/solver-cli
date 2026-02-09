@@ -2,6 +2,7 @@
 **/out/
 **/cache/
 **/broadcast/
+**/logs/
 .anvil.log
 .anvil.pid
 .env
