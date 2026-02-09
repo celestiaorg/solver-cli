@@ -1,0 +1,32 @@
+{"timestamp":"2026-02-09T16:51:29.171568Z","level":"INFO","fields":{"message":"🔮 Starting Oracle Operator Service"},"target":"oracle_operator"}
+{"timestamp":"2026-02-09T16:51:29.171691Z","level":"INFO","fields":{"message":"Logs written to \"./logs/oracle\""},"target":"oracle_operator"}
+{"timestamp":"2026-02-09T16:51:29.172163Z","level":"INFO","fields":{"message":"Loaded config for 2 chains"},"target":"oracle_operator"}
+{"timestamp":"2026-02-09T16:51:29.172172Z","level":"INFO","fields":{"message":"Operator address: 0x9f2cd91d150236ba9796124f3dcda305c3a2086c"},"target":"oracle_operator"}
+{"timestamp":"2026-02-09T16:51:29.172384Z","level":"INFO","fields":{"message":"Operator address: 0x9f2cd91d150236ba9796124f3dcda305c3a2086c"},"target":"oracle_operator::operator"}
+{"timestamp":"2026-02-09T16:51:29.172406Z","level":"INFO","fields":{"message":"No existing state file, starting fresh"},"target":"oracle_operator::state"}
+{"timestamp":"2026-02-09T16:51:29.177741Z","level":"INFO","fields":{"message":"Connected to chain 11155111: https://ethereum-sepolia-rpc.publicnode.com"},"target":"oracle_operator::operator"}
+{"timestamp":"2026-02-09T16:51:29.177973Z","level":"INFO","fields":{"message":"Connected to chain 1234: http://127.0.0.1:8545"},"target":"oracle_operator::operator"}
+{"timestamp":"2026-02-09T16:51:29.177981Z","level":"INFO","fields":{"message":"Oracle Operator initialized, watching for fills..."},"target":"oracle_operator"}
+{"timestamp":"2026-02-09T16:51:29.177987Z","level":"INFO","fields":{"message":"State persisted to \"../config/oracle-state.json\""},"target":"oracle_operator"}
+{"timestamp":"2026-02-09T16:52:03.025636Z","level":"INFO","fields":{"message":"Found fill on chain 11155111: order=281120e0f20625e8c3cc4ca174c647c3bb577b2fd6a78771999e7d474907ff1e, timestamp=1770655920, amount=1000000"},"target":"oracle_operator::operator"}
+{"timestamp":"2026-02-09T16:52:03.026855Z","level":"INFO","fields":{"message":"Relaying attestation: fill on chain 11155111 -> origin chain 1234"},"target":"oracle_operator::operator"}
+{"timestamp":"2026-02-09T16:52:03.027014Z","level":"INFO","fields":{"message":"✍️  Signed attestation for order 281120e0f20625e8c3cc4ca174c647c3bb577b2fd6a78771999e7d474907ff1e (fill on chain 11155111, submitting to escrow chain 1234)"},"target":"oracle_operator::operator"}
+{"timestamp":"2026-02-09T16:52:03.782630Z","level":"INFO","fields":{"message":"Submitted attestation tx: 0x2e82a32f818262d5167a70b78f8551e957d472a0d10bb182eaa026349b8319b4 (status: true)"},"target":"oracle_operator::operator"}
+{"timestamp":"2026-02-09T16:52:16.428403Z","level":"INFO","fields":{"message":"Shutdown signal received, saving state..."},"target":"oracle_operator"}
+{"timestamp":"2026-02-09T16:52:16.429208Z","level":"INFO","fields":{"message":"State saved, shutting down."},"target":"oracle_operator"}
+{"timestamp":"2026-02-09T17:43:24.671286Z","level":"INFO","fields":{"message":"🔮 Starting Oracle Operator Service"},"target":"oracle_operator"}
+{"timestamp":"2026-02-09T17:43:24.671391Z","level":"INFO","fields":{"message":"Logs written to \"./logs/oracle\""},"target":"oracle_operator"}
+{"timestamp":"2026-02-09T17:43:24.671786Z","level":"INFO","fields":{"message":"Loaded config for 2 chains"},"target":"oracle_operator"}
+{"timestamp":"2026-02-09T17:43:24.671793Z","level":"INFO","fields":{"message":"Operator address: 0x9f2cd91d150236ba9796124f3dcda305c3a2086c"},"target":"oracle_operator"}
+{"timestamp":"2026-02-09T17:43:24.671969Z","level":"INFO","fields":{"message":"Operator address: 0x9f2cd91d150236ba9796124f3dcda305c3a2086c"},"target":"oracle_operator::operator"}
+{"timestamp":"2026-02-09T17:43:24.672118Z","level":"INFO","fields":{"message":"No existing state file, starting fresh"},"target":"oracle_operator::state"}
+{"timestamp":"2026-02-09T17:43:24.676136Z","level":"INFO","fields":{"message":"Connected to chain 1234: http://127.0.0.1:8545"},"target":"oracle_operator::operator"}
+{"timestamp":"2026-02-09T17:43:24.676264Z","level":"INFO","fields":{"message":"Connected to chain 11155111: https://ethereum-sepolia-rpc.publicnode.com"},"target":"oracle_operator::operator"}
+{"timestamp":"2026-02-09T17:43:24.676274Z","level":"INFO","fields":{"message":"Oracle Operator initialized, watching for fills..."},"target":"oracle_operator"}
+{"timestamp":"2026-02-09T17:43:24.676277Z","level":"INFO","fields":{"message":"State persisted to \"../config/oracle-state.json\""},"target":"oracle_operator"}
+{"timestamp":"2026-02-09T17:44:01.547204Z","level":"INFO","fields":{"message":"Found fill on chain 11155111: order=8c6c95dd8532f26552e9e44e899e1c45c82c79438f0ad79c1f6210ce69e6cd0c, timestamp=1770659040, amount=1000000"},"target":"oracle_operator::operator"}
+{"timestamp":"2026-02-09T17:44:01.548371Z","level":"INFO","fields":{"message":"Relaying attestation: fill on chain 11155111 -> origin chain 1234"},"target":"oracle_operator::operator"}
+{"timestamp":"2026-02-09T17:44:01.548582Z","level":"INFO","fields":{"message":"✍️  Signed attestation for order 8c6c95dd8532f26552e9e44e899e1c45c82c79438f0ad79c1f6210ce69e6cd0c (fill on chain 11155111, submitting to escrow chain 1234)"},"target":"oracle_operator::operator"}
+{"timestamp":"2026-02-09T17:44:01.805109Z","level":"INFO","fields":{"message":"Submitted attestation tx: 0x03201f39442732f18123a759671b39d27bb8a60ce365bfee0762b22fd334d720 (status: true)"},"target":"oracle_operator::operator"}
+{"timestamp":"2026-02-09T17:44:17.161584Z","level":"INFO","fields":{"message":"Shutdown signal received, saving state..."},"target":"oracle_operator"}
+{"timestamp":"2026-02-09T17:44:17.162257Z","level":"INFO","fields":{"message":"State saved, shutting down."},"target":"oracle_operator"}

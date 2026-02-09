@@ -6,13 +6,13 @@
       "chain_id": 1234,
       "rpc": "http://127.0.0.1:8545",
       "contracts": {
-        "input_settler_escrow": "0xf4B146FbA71F41E0592668ffbF264F1D186b2Ca8",
-        "output_settler_simple": "0x172076E0166D1F9Cc711C77Adf8488051744980C",
-        "oracle": "0x202CCe504e04bEd6fC0521238dDf04Bc9E8E15aB"
+        "input_settler_escrow": "0xF8e31cb472bc70500f08Cd84917E5A1912Ec8397",
+        "output_settler_simple": "0xc0F115A19107322cFBf1cDBC7ea011C19EbDB4F8",
+        "oracle": "0xD5ac451B0c50B9476107823Af206eD814a2e2580"
       },
       "tokens": {
         "USDC": {
-          "address": "0x4EE6eCAD1c2Dae9f525404De8555724e3c35d07B",
+          "address": "0xc96304e3c037f81dA488ed9dEa1D8F2a48278a75",
           "symbol": "USDC",
           "decimals": 6,
           "token_type": "erc20"
@@ -25,13 +25,13 @@
       "chain_id": 11155111,
       "rpc": "https://ethereum-sepolia-rpc.publicnode.com",
       "contracts": {
-        "input_settler_escrow": "0x7C5e20cbd136fFBe32D7135D638D3F01e24d1b62",
-        "output_settler_simple": "0xacd85FaEC3e1Ff22B09A3BC73b57BB16Afe32250",
-        "oracle": "0xa8C53D4d14dB97190B17361261e40dF0a594713E"
+        "input_settler_escrow": "0x2B0eE0D87Fe45F0b6Dc3f3C473434e2eC978602d",
+        "output_settler_simple": "0xeD6189FaB296c1998eBDC2ec3A2e8C8BA7E4d951",
+        "oracle": "0x2C55D0931eeD705e9d79e850F1eaDd997022bDe6"
       },
       "tokens": {
         "USDC": {
-          "address": "0x48427e105728842D3fa5Ae239269D81FA750efFA",
+          "address": "0xe5B282fF6d90d9F81202b7C04337AC5CCBCbd86B",
           "symbol": "USDC",
           "decimals": 6,
           "token_type": "erc20"
@@ -48,19 +48,19 @@
     "solver_id": "solver-001"
   },
   "users": {},
-  "deployment_version": "0a6a7160e43ae753",
-  "last_updated": "2026-02-09T17:24:31.765687Z",
+  "deployment_version": "f21bc0f938e508d5",
+  "last_updated": "2026-02-09T17:43:42.886588Z",
   "intents": [
     {
-      "id": "intent-100291c6",
-      "tx_hash": "0x100291c673e178501ac49d172cf9f715ae1d231c2221f8ce13e4a230c7f66769",
+      "id": "intent-9b7cd097",
+      "tx_hash": "0x9b7cd0970326b10817b88db654534860586bcab8ceb4445c7c4d34c98a47c7ee",
       "source_chain_id": 1234,
       "dest_chain_id": 11155111,
       "token": "USDC",
       "amount": "1000000",
       "user": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
       "status": "pending",
-      "created_at": "2026-02-09T17:24:31.765437Z",
+      "created_at": "2026-02-09T17:43:42.886423Z",
       "fulfillment_tx": null,
       "settlement_tx": null
     }

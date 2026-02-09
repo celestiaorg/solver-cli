@@ -60,7 +60,7 @@ impl ConfigureCommand {
         // Set up contract permissions (if needed)
         if !self.skip_permissions {
             print_info("Setting up contract permissions...");
-            // For now, Oracle doesn't require setup
+            // For now, AlwaysYesOracle doesn't require setup
             // In a real scenario, you'd register the solver with the contracts
             print_success("Contract permissions configured");
         }
