@@ -2,8 +2,12 @@
 **/out/
 **/cache/
 **/broadcast/
+**/logs/
 .anvil.log
 .anvil.pid
 .env
 config/
 .solver
+
+# Nested dependency lockfiles (e.g. oif-contracts libs)
+**/lib/**/package-lock.json
