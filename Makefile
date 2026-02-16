@@ -12,25 +12,40 @@ build:
 	@cd solver-cli && cargo build --release --features solver-runtime
 .PHONY: build
 
-## start: Start local Evolve chain (Anvil)
+## start: Start local EVM chains (Anvil)
 start:
-	@if [ -f .anvil.pid ] && kill -0 $$(cat .anvil.pid) 2>/dev/null; then \
-		echo "Anvil already running (PID: $$(cat .anvil.pid))"; \
+	@if [ -f .anvil1.pid ] && kill -0 $$(cat .anvil1.pid) 2>/dev/null; then \
+		echo "Anvil 1 (evolve) already running (PID: $$(cat .anvil1.pid))"; \
 	else \
-		echo "Starting Anvil..."; \
-		anvil --chain-id 1234 --block-time 1 > .anvil.log 2>&1 & \
-		echo $$! > .anvil.pid; \
+		echo "Starting Anvil 1 (evolve) on port 8545, chain-id 1234..."; \
+		anvil --chain-id 1234 --block-time 1 --port 8545 > .anvil1.log 2>&1 & \
+		echo $$! > .anvil1.pid; \
 		sleep 2; \
-		echo "Anvil started (PID: $$(cat .anvil.pid))"; \
+		echo "Anvil 1 started (PID: $$(cat .anvil1.pid))"; \
 	fi
+	@if [ -f .anvil2.pid ] && kill -0 $$(cat .anvil2.pid) 2>/dev/null; then \
+		echo "Anvil 2 (evolve2) already running (PID: $$(cat .anvil2.pid))"; \
+	else \
+		echo "Starting Anvil 2 (evolve2) on port 8546, chain-id 5678..."; \
+		anvil --chain-id 5678 --block-time 1 --port 8546 > .anvil2.log 2>&1 & \
+		echo $$! > .anvil2.pid; \
+		sleep 2; \
+		echo "Anvil 2 started (PID: $$(cat .anvil2.pid))"; \
+	fi
+	@echo "Local chains ready!"
 .PHONY: start
 
-## stop: Stop local Evolve chain, solver, and oracle operator
+## stop: Stop local chains, solver, and oracle operator
 stop:
-	@if [ -f .anvil.pid ]; then \
-		kill $$(cat .anvil.pid) 2>/dev/null || true; \
-		rm .anvil.pid; \
-		echo "Anvil stopped"; \
+	@if [ -f .anvil1.pid ]; then \
+		kill $$(cat .anvil1.pid) 2>/dev/null || true; \
+		rm .anvil1.pid; \
+		echo "Anvil 1 (evolve) stopped"; \
+	fi
+	@if [ -f .anvil2.pid ]; then \
+		kill $$(cat .anvil2.pid) 2>/dev/null || true; \
+		rm .anvil2.pid; \
+		echo "Anvil 2 (evolve2) stopped"; \
 	fi
 	@$(SOLVER_CLI) solver stop 2>/dev/null || true
 	@pkill -f oracle-operator 2>/dev/null || true
@@ -94,7 +109,7 @@ token-remove: build
 	@$(SOLVER_CLI) token remove --chain $(CHAIN) --symbol $(SYMBOL)
 .PHONY: token-remove
 
-## fund-operator: Fund oracle operator with ETH on evolve
+## fund-operator: Fund oracle operator with ETH on all chains
 fund-operator:
 	@echo "Funding oracle operator on all chains..."
 	@. ./.env && \
@@ -102,6 +117,10 @@ fund-operator:
 		echo "  Operator address: $$OPERATOR_ADDR" && \
 		echo "  Funding on Evolve (10 ETH)..." && \
 		cast send --rpc-url $$EVOLVE_RPC --private-key $$EVOLVE_PK --value 10ether $$OPERATOR_ADDR 2>/dev/null && \
+		if [ ! -z "$$EVOLVE2_RPC" ]; then \
+			echo "  Funding on Evolve2 (10 ETH)..." && \
+			cast send --rpc-url $$EVOLVE2_RPC --private-key $$EVOLVE2_PK --value 10ether $$OPERATOR_ADDR 2>/dev/null; \
+		fi && \
 		echo "  Funding on Sepolia (0.01 ETH)..." && \
 		cast send --rpc-url $$SEPOLIA_RPC --private-key $$SEPOLIA_PK --value 0.01ether $$OPERATOR_ADDR 2>/dev/null || \
 		echo "  Warning: Could not fund on Sepolia (may need testnet ETH)" && \
@@ -186,6 +205,6 @@ setup: init deploy configure fund fund-operator mint-user
 ## clean: Remove generated files
 clean:
 	@rm -rf .solver config/*.toml config/*.yaml
-	@rm -f .anvil.pid .anvil.log
+	@rm -f .anvil1.pid .anvil1.log .anvil2.pid .anvil2.log
 	@echo "Cleaned!"
 .PHONY: clean

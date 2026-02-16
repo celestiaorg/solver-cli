@@ -16,28 +16,11 @@ contract CentralizedOracle is BaseInputOracle {
 
     address public operator;
 
-    /**
-     * @notice Initializes the centralized oracle with the authorized attestation signer.
-     * @param _operator Address allowed to sign attestations accepted by this oracle.
-     * @dev Reverts with `ZeroAddress` if `_operator` is the zero address.
-     */
     constructor(address _operator) {
         if (_operator == address(0)) revert ZeroAddress();
         operator = _operator;
     }
 
-    /**
-     * @notice Verifies and stores an attestation proving an output fill.
-     * @param signature EIP-191 (`personal_sign`) signature over
-     * `keccak256(abi.encodePacked(remoteChainId, remoteOracle, application, dataHash))`.
-     * @param remoteChainId Chain ID where the proved output fill occurred.
-     * @param remoteOracle Oracle identifier on the remote chain (bytes32-encoded address/ID).
-     * @param application Application identifier, typically the output settler identifier.
-     * @param dataHash Hash of the fill payload being attested.
-     * @dev Recovers the signer from `signature` and requires it to match `operator`.
-     * Stores the attestation in `_attestations` and emits `OutputProven` on success.
-     * Reverts with `UnauthorizedSigner` if signature verification fails.
-     */
     function submitAttestation(
         bytes calldata signature,
         uint256 remoteChainId,

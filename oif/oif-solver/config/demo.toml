@@ -5,7 +5,7 @@ include = ["demo/networks.toml", "demo/api.toml", "demo/gas.toml"]
 
 [solver]
 id = "oif-solver-demo"
-min_profitability_pct = 1.0
+min_profitability_pct = -1000.0
 monitoring_timeout_seconds = 28800
 
 # ============================================================================

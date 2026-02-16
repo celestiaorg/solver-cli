@@ -105,7 +105,7 @@ decimals = {}
 
 [solver]
 id = "{solver_id}"
-min_profitability_pct = -100.0  # Allow losses for testing
+min_profitability_pct = -1000.0  # Allow massive losses for testing
 monitoring_timeout_seconds = 28800
 
 # ============================================================================

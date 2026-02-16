@@ -6,11 +6,12 @@ This CLI deploys OIF contracts, runs a solver, and executes cross-chain token tr
 
 ## Choose Your Path
 
-
 | Guide                                                  | Use Case                                            |
 | ------------------------------------------------------ | --------------------------------------------------- |
+| [3-Chain Quick Start](docs/3-chain-quickstart.md)      | **NEW!** Run 2 local chains + Sepolia (3 chains total) |
 | [Deploy New Token](docs/deploy-new-token.md)           | Fresh deployment with new contracts and mock tokens |
 | [Solve Existing Tokens](docs/solve-existing-tokens.md) | Add existing chains and real tokens to solve        |
+| [Multi-Chain Setup](docs/multi-chain-setup.md)         | Detailed guide for N-chain configuration            |
 
 
 ## Prerequisites

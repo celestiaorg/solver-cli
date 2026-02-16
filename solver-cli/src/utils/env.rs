@@ -82,7 +82,7 @@ pub struct EnvConfig {
 
 /// Known chain names to auto-detect from environment
 const KNOWN_CHAINS: &[&str] = &[
-    "evolve", "sepolia", "arbitrum", "optimism", "base", "polygon",
+    "evolve", "evolve2", "sepolia", "arbitrum", "optimism", "base", "polygon",
 ];
 
 impl EnvConfig {
