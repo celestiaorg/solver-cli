@@ -351,7 +351,7 @@ User/Client → Aggregator (port 4000) → Solver(s) (port 3000+)
 
 ### Aggregator Configuration
 
-Generated at `config/aggregator.json`:
+Generated at `config/config.json`:
 - Server settings (host, port)
 - Registered solver endpoints
 - Aggregation settings (timeouts, retries)

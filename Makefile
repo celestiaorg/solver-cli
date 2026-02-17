@@ -152,7 +152,7 @@ operator: operator-start
 ## aggregator-start: Start the OIF aggregator service
 aggregator-start:
 	@echo "Starting OIF aggregator on port 4000..."
-	@cd oif-aggregator && CONFIG_PATH=../config/aggregator.json RUST_LOG=info cargo run --release
+	@cd oif-aggregator && cp ../config/config.json config/ && RUST_LOG=info cargo run --release
 .PHONY: aggregator-start
 
 # Alias for convenience

@@ -1,398 +1,628 @@
-# Multi-Chain Setup Guide
+# Multi-Chain Solver Setup Guide
 
-This guide explains how to run the solver with multiple chains, including 2 local Anvil chains + Sepolia.
+This guide covers setting up the OIF solver with multiple chains, starting with 2 local Anvil chains + Sepolia testnet.
+
+## Table of Contents
+
+- [Architecture Overview](#architecture-overview)
+- [Quick Start (3 Chains)](#quick-start-3-chains)
+- [Testing All Routes](#testing-all-routes)
+- [Adding More Chains](#adding-more-chains)
+- [Token Management](#token-management)
+- [Troubleshooting](#troubleshooting)
+- [Architecture Deep Dive](#architecture-deep-dive)
 
 ## Architecture Overview
 
-The OIF solver system is designed to support **N chains** with **all-to-all routing**:
-- Oracle operator watches **all chains** for OutputFilled events
-- Solver watches **all chains** for intents
-- Intents can be created from **any chain** to **any other chain**
-- Each chain maintains its own contracts but shares the same solver/operator
+The OIF solver system supports **N chains** with **all-to-all routing**:
 
-## 3-Chain Setup (2 Local + 1 Testnet)
+```
+     evolve (1234)
+      /     \
+     /       \
+    /         \
+sepolia    evolve2
+(11155111) (5678)
+    \         /
+     \       /
+      \     /
+   All connected!
+```
 
-### Chain Configuration
+**Key Features:**
+- **N-chain support**: Add any number of EVM chains
+- **All-to-all routing**: Every chain can send to every other chain
+- **Single solver**: One solver instance monitors all chains
+- **Separate oracle operator**: Independent attestation service prevents self-verification
 
-| Chain    | Chain ID | RPC URL                 | Type    |
-|----------|----------|-------------------------|---------|
-| evolve   | 1234     | http://127.0.0.1:8545   | Local   |
-| evolve2  | 5678     | http://127.0.0.1:8546   | Local   |
-| sepolia  | 11155111 | https://...             | Testnet |
+**Components:**
+- **Solver**: Watches all chains, fills orders, claims rewards
+- **Oracle Operator**: Watches fills, discovers origin chains, submits attestations
+- **Contracts per chain**: InputSettlerEscrow, OutputSettlerSimple, CentralizedOracle
+
+## Quick Start (3 Chains)
 
 ### Prerequisites
 
-1. **Foundry** - For Anvil local chains
-2. **Solver CLI** - Built with `cargo build --release --features solver-runtime`
-3. **Sepolia ETH** - For gas on Sepolia testnet
-4. **Private Keys** - Solver key with funds on all chains
+- [Foundry](https://book.getfoundry.sh/getting-started/installation) - `forge`, `cast`, `anvil`
+- [Rust toolchain](https://rustup.rs/)
+- **Sepolia ETH** - Get from [faucet](https://sepoliafaucet.com)
 
-### Environment Setup
+### Chain Configuration
 
-Copy `.env.example` to `.env` and configure:
+| Chain    | Chain ID | RPC URL                         | Type    |
+|----------|----------|---------------------------------|---------|
+| evolve   | 1234     | http://127.0.0.1:8545           | Local   |
+| evolve2  | 5678     | http://127.0.0.1:8546           | Local   |
+| sepolia  | 11155111 | https://...publicnode.com       | Testnet |
+
+### 1. Configure Environment
 
 ```bash
-# =============================================================================
-# RPC ENDPOINTS
-# =============================================================================
-SEPOLIA_RPC=https://ethereum-sepolia-rpc.publicnode.com
-EVOLVE_RPC=http://127.0.0.1:8545
-EVOLVE2_RPC=http://127.0.0.1:8546
+cp .env.example .env
+```
 
-# =============================================================================
-# CHAIN IDS
-# =============================================================================
-SEPOLIA_CHAIN_ID=11155111
-EVOLVE_CHAIN_ID=1234
-EVOLVE2_CHAIN_ID=5678
+Edit `.env` and set your Sepolia private key:
 
-# =============================================================================
-# PRIVATE KEYS
-# =============================================================================
+```bash
+# Your solver key - MUST have Sepolia ETH for gas
+SEPOLIA_PK=your_private_key_here_without_0x_prefix
 
-# Solver key (needs Sepolia ETH for gas on testnet)
-SEPOLIA_PK=your_private_key_here
-
-# Local chain deployers (Anvil default keys are fine)
+# Local chain keys (Anvil defaults - OK to leave as-is)
 EVOLVE_PK=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 EVOLVE2_PK=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 
-# User key (creates intents)
+# User key (Anvil account #1 - OK to leave as-is)
 USER_PK=59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
-
-# =============================================================================
-# TOKEN CONFIGURATION
-# =============================================================================
-TOKEN_SYMBOL=USDC
-TRANSFER_AMOUNT=1000000
 ```
 
-### Quick Start
+### 2. Start Local Chains
 
 ```bash
-# 1. Start local chains (both Anvil instances)
 make start
+```
 
-# 2. Build CLI
-make build
+**Output:**
+```
+Starting Anvil 1 (evolve) on port 8545, chain-id 1234...
+Anvil 1 started (PID: 12345)
+Starting Anvil 2 (evolve2) on port 8546, chain-id 5678...
+Anvil 2 started (PID: 12346)
+Local chains ready!
+```
 
-# 3. Deploy contracts to all 3 chains
-make deploy
+### 3. Full Setup
 
-# 4. Generate solver & oracle configs
-make configure
+Run the all-in-one setup command:
 
-# 5. Fund solver with tokens on all chains
-make fund
+```bash
+make setup
+```
 
-# 6. Fund oracle operator with ETH on all chains
-make fund-operator
+This runs (in order):
+1. `make init` - Initialize state
+2. `make deploy` - Deploy contracts to all 3 chains
+3. `make configure` - Generate solver & oracle configs
+4. `make fund` - Fund solver with tokens on all chains
+5. `make fund-operator` - Fund oracle operator with ETH
+6. `make mint-user` - Mint test tokens to user
 
-# 7. Mint test tokens to user
-make mint-user
+**Expected output:**
+```
+═══ DEPLOYMENT SUMMARY ═══
+  3 chains configured
 
-# 8. Start solver (in separate terminal)
-make solver-start
+Chain: evolve (1234)
+  InputSettlerEscrow: 0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0
+  OutputSettlerSimple: 0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9
+  CentralizedOracle: 0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9
+  USDC: 0x5FbDB2315678afecb367f032d93F642f64180aa3
 
-# 9. Start oracle operator (in another terminal)
-make operator-start
+Chain: evolve2 (5678)
+  [... similar output ...]
 
-# 10. Submit test intents between any chains
-make intent FROM=evolve TO=sepolia
-make intent FROM=sepolia TO=evolve2
-make intent FROM=evolve2 TO=evolve
+Chain: sepolia (11155111)
+  [... similar output ...]
 
-# 11. Check balances on all chains
+Config written to config/solver.toml
+Oracle config written to config/oracle.toml
+Setup complete!
+```
+
+### 4. Start Services
+
+**Terminal 1 - Solver:**
+```bash
+make solver
+```
+
+Expected output:
+```
+[INFO] Starting solver with 3 chains
+[INFO] Watching chain 1234 (evolve)
+[INFO] Watching chain 5678 (evolve2)
+[INFO] Watching chain 11155111 (sepolia)
+[INFO] All-to-all routes configured: 6 routes
+[INFO] Solver ready
+```
+
+**Terminal 2 - Oracle Operator:**
+```bash
+make operator
+```
+
+Expected output:
+```
+[INFO] Oracle operator starting
+[INFO] Operator address: 0x70997970C51812dc3A010C7d01b50e0d17dc79C8
+[INFO] Watching chain 1234 for fills...
+[INFO] Watching chain 5678 for fills...
+[INFO] Watching chain 11155111 for fills...
+[INFO] Oracle operator ready
+```
+
+**Terminal 3 - Commands:**
+Use this terminal for submitting intents and checking balances.
+
+## Testing All Routes
+
+### Check Initial Balances
+
+```bash
 make balances
 ```
 
-Or use the all-in-one setup command:
+Expected output:
+```
+═══ BALANCES ═══
+  Chain    │ Account │ Balance
+  ─────────┼─────────┼────────
+  evolve   │ User    │ 10 USDC
+  evolve   │ Solver  │ 10 USDC
+  evolve2  │ User    │ 10 USDC
+  evolve2  │ Solver  │ 10 USDC
+  sepolia  │ User    │ 10 USDC
+  sepolia  │ Solver  │ 10 USDC
+═══════════════
+```
+
+### Test 1: evolve → sepolia
 
 ```bash
-make setup  # Runs init + deploy + configure + fund + fund-operator + mint-user
-```
-
-## How It Works
-
-### 1. Deployment
-
-`make deploy` deploys contracts to **all configured chains**:
-- InputSettlerEscrow (receives intents)
-- OutputSettlerSimple (fills orders)
-- CentralizedOracle (tracks attestations)
-- MockERC20 tokens (USDC by default)
-
-The CLI auto-detects chains from `.env` by looking for `{CHAIN}_RPC` + `{CHAIN}_PK` pairs.
-
-### 2. Config Generation
-
-`make configure` generates two config files:
-
-**config/solver.toml** - Solver configuration with all-to-all routes:
-```toml
-[solver]
-private_key = "0x..."
-solver_id = "solver-001"
-
-[networks.1234]  # evolve
-input_settler_address = "0x..."
-output_settler_address = "0x..."
-...
-
-[networks.5678]  # evolve2
-input_settler_address = "0x..."
-output_settler_address = "0x..."
-...
-
-[networks.11155111]  # sepolia
-input_settler_address = "0x..."
-output_settler_address = "0x..."
-...
-
-[routes]
-1234 = [5678, 11155111]      # evolve can send to evolve2 or sepolia
-5678 = [1234, 11155111]      # evolve2 can send to evolve or sepolia
-11155111 = [1234, 5678]      # sepolia can send to evolve or evolve2
-```
-
-**config/oracle.toml** - Oracle operator configuration:
-```toml
-operator_private_key = "0x..."
-operator_address = "0x..."
-poll_interval_seconds = 3
-
-[[chains]]
-chain_id = 1234
-rpc_url = "http://127.0.0.1:8545"
-oracle_address = "0x..."
-output_settler_address = "0x..."
-input_settler_address = "0x..."
-
-[[chains]]
-chain_id = 5678
-rpc_url = "http://127.0.0.1:8546"
-oracle_address = "0x..."
-output_settler_address = "0x..."
-input_settler_address = "0x..."
-
-[[chains]]
-chain_id = 11155111
-rpc_url = "https://..."
-oracle_address = "0x..."
-output_settler_address = "0x..."
-input_settler_address = "0x..."
-```
-
-### 3. Solver Operation
-
-The solver (from `oif/oif-solver/`) watches **all chains** simultaneously:
-
-1. **Discovery**: Polls InputSettlerEscrow on all chains for new intents
-2. **Profitability Check**: Calculates gas costs vs spread for each intent
-3. **Execution**: If profitable, fills the order on the destination chain
-4. **Claiming**: Waits for oracle attestation, then claims escrowed funds
-
-### 4. Oracle Operator Flow
-
-The oracle operator is a **separate service** that:
-
-1. **Watches all chains** for OutputFilled events
-2. **Discovers origin chain**: When a fill is detected, queries each chain's InputSettlerEscrow to find where the order originated
-3. **Signs attestation**: Creates cryptographic proof of the fill using operator key
-4. **Submits to origin chain**: Sends attestation to CentralizedOracle on the chain where the order was created
-
-**Critical**: The operator uses a **different key** than the solver to prevent self-attestation.
-
-### 5. Example Intent Flow
-
-Intent from evolve → sepolia:
-
-```
-1. User submits intent on evolve (chain 1234)
-   - Escrows 1 USDC in InputSettlerEscrow
-
-2. Solver detects intent on evolve
-   - Checks profitability
-   - Fills order on sepolia (chain 11155111)
-   - OutputSettlerSimple emits OutputFilled event
-
-3. Oracle operator detects fill on sepolia
-   - Queries all chains to find origin
-   - Finds orderId in evolve's InputSettlerEscrow
-   - Signs attestation with operator key
-   - Submits to CentralizedOracle on evolve
-
-4. Solver polls CentralizedOracle on evolve
-   - Waits for isProven() to return true
-   - Claims escrowed 1 USDC on evolve
-
-Result: User receives 1 USDC on sepolia, solver recoups 1 USDC on evolve
-```
-
-## Testing Multiple Routes
-
-Test all possible routes between your 3 chains:
-
-```bash
-# evolve → sepolia
 make intent FROM=evolve TO=sepolia AMOUNT=1000000
+```
 
-# sepolia → evolve2
-make intent FROM=sepolia TO=evolve2 AMOUNT=1000000
+**Flow:**
+1. User locks 1 USDC in evolve's InputSettlerEscrow
+2. Solver detects intent on evolve
+3. Solver fills 1 USDC on sepolia (pays from solver balance)
+4. Oracle operator sees OutputFilled on sepolia
+5. Oracle operator queries all chains, finds order originated on evolve
+6. Oracle operator submits attestation to evolve's CentralizedOracle
+7. Solver polls oracle on evolve, sees attestation
+8. Solver claims 1 USDC from escrow on evolve
 
-# evolve2 → evolve
-make intent FROM=evolve2 TO=evolve AMOUNT=1000000
+**Solver logs:**
+```
+[INFO] Detected intent on chain 1234 (evolve)
+[INFO] Intent: 1 USDC to chain 11155111 (sepolia)
+[INFO] Profitability check: profitable
+[INFO] Filling order on sepolia...
+[INFO] Fill tx: 0xabc123...
+[INFO] Waiting for oracle attestation on evolve...
+[INFO] Oracle confirmed! Claiming funds...
+[INFO] Claim tx: 0xdef456...
+[INFO] Fill complete!
+```
 
-# Check balances after each transfer
+**Oracle logs:**
+```
+[INFO] OutputFilled detected on chain 11155111 (sepolia)
+[INFO] OrderId: 0x789...
+[INFO] Querying all chains for origin...
+[INFO] Found order on chain 1234 (evolve)
+[INFO] Signing attestation...
+[INFO] Submitting attestation to chain 1234 oracle...
+[INFO] Attestation tx: 0xghi789...
+[INFO] Attestation submitted successfully
+```
+
+Check balances:
+```bash
 make balances
 ```
+
+Expected changes:
+```
+  Chain    │ Account │ Balance
+  ─────────┼─────────┼────────
+  evolve   │ User    │ 9 USDC    ← decreased
+  evolve   │ Solver  │ 11 USDC   ← increased (claimed from escrow)
+  sepolia  │ User    │ 11 USDC   ← increased (received fill)
+  sepolia  │ Solver  │ 9 USDC    ← decreased (paid for fill)
+```
+
+### Test 2: sepolia → evolve2
+
+```bash
+make intent FROM=sepolia TO=evolve2 AMOUNT=500000
+```
+
+Transfer 0.5 USDC from Sepolia to evolve2.
+
+### Test 3: evolve2 → evolve
+
+```bash
+make intent FROM=evolve2 TO=evolve AMOUNT=250000
+```
+
+Transfer 0.25 USDC between local chains.
+
+### All 6 Routes Work
+
+With 3 chains, you get **6 bidirectional routes**:
+- evolve ↔ sepolia (2 routes)
+- evolve ↔ evolve2 (2 routes)
+- sepolia ↔ evolve2 (2 routes)
 
 ## Adding More Chains
 
-To add a 4th, 5th, or Nth chain:
+The system automatically scales to N chains.
 
-1. **Update `.env`** with chain config:
-   ```bash
-   ARBITRUM_RPC=https://arb-sepolia.g.alchemy.com/v2/KEY
-   ARBITRUM_PK=your_key
-   ARBITRUM_CHAIN_ID=421614
-   ```
-
-2. **Deploy to new chain**:
-   ```bash
-   make deploy CHAINS=arbitrum
-   ```
-
-3. **Regenerate configs**:
-   ```bash
-   make configure
-   ```
-
-4. **Fund solver on new chain**:
-   ```bash
-   make fund CHAIN=arbitrum
-   ```
-
-5. **Restart solver and operator** to pick up new configs
-
-The solver automatically generates all-to-all routes for any number of chains!
-
-## Chain Management Commands
+### Step 1: Add Chain to `.env`
 
 ```bash
-# List all configured chains
-make chain-list
-
-# Add a chain with existing contracts (no deployment)
-make chain-add NAME=arbitrum RPC=... \
-    INPUT_SETTLER=0x... \
-    OUTPUT_SETTLER=0x... \
-    ORACLE=0x...
-
-# Remove a chain from config
-make chain-remove CHAIN=arbitrum
-
-# Check balances on specific chain
-make balances CHAIN=sepolia
+# Add your new chain
+ARBITRUM_RPC=https://arb-sepolia.g.alchemy.com/v2/YOUR_KEY
+ARBITRUM_PK=your_deployer_key
+ARBITRUM_CHAIN_ID=421614
 ```
+
+The CLI auto-detects chains from the pattern:
+- `{CHAIN}_RPC`
+- `{CHAIN}_PK`
+- `{CHAIN}_CHAIN_ID` (optional)
+
+### Step 2: Deploy to New Chain
+
+```bash
+# Deploy only to the new chain
+make deploy CHAINS=arbitrum
+
+# Or redeploy everything
+make deploy
+```
+
+### Step 3: Regenerate Configs
+
+```bash
+make configure
+```
+
+This updates:
+- `config/solver.toml` - Adds new chain with all-to-all routes
+- `config/oracle.toml` - Adds new chain for attestation monitoring
+
+### Step 4: Fund Solver
+
+```bash
+make fund CHAIN=arbitrum
+```
+
+### Step 5: Restart Services
+
+Restart solver and oracle operator to pick up new configs:
+
+```bash
+# In solver terminal: Ctrl+C, then:
+make solver
+
+# In operator terminal: Ctrl+C, then:
+make operator
+```
+
+### N-Chain Routing
+
+Routes grow quadratically:
+- **2 chains** = 2 routes (A↔B)
+- **3 chains** = 6 routes (A↔B, A↔C, B↔C)
+- **4 chains** = 12 routes
+- **N chains** = N×(N-1) routes
+
+All routes are automatically generated - no manual configuration needed!
 
 ## Token Management
 
+### List Tokens
+
 ```bash
-# List all tokens across chains
+# All tokens across all chains
 make token-list
 
-# Add a token to a chain
+# Tokens on specific chain
+make token-list CHAIN=sepolia
+```
+
+### Add a Token
+
+```bash
 make token-add CHAIN=evolve SYMBOL=DAI \
-    ADDRESS=0x... DECIMALS=18
+    ADDRESS=0x6B175474E89094C44Da98b954EedeAC495271d0F \
+    DECIMALS=18
+```
 
-# Remove a token
+### Remove a Token
+
+```bash
 make token-remove CHAIN=evolve SYMBOL=DAI
+```
 
-# Mint tokens for testing
+### Mint Test Tokens
+
+```bash
+# Mint to user on specific chain
 make mint CHAIN=evolve SYMBOL=USDC TO=user AMOUNT=10000000
+
+# Mint to user on all chains
+make mint-user
+```
+
+**Note:** Minting only works with MockERC20 tokens deployed by this system.
+
+## Chain Management
+
+### List Chains
+
+```bash
+make chain-list
+```
+
+### Add Chain with Existing Contracts
+
+If you have contracts already deployed:
+
+```bash
+make chain-add NAME=arbitrum RPC=https://... \
+    CHAIN_ID=421614 \
+    INPUT_SETTLER=0x... \
+    OUTPUT_SETTLER=0x... \
+    ORACLE=0x... \
+    TOKEN_ADDR=USDC=0x...
+```
+
+### Remove Chain
+
+```bash
+make chain-remove CHAIN=arbitrum
 ```
 
 ## Troubleshooting
 
 ### Solver not detecting intents
 
-1. Check solver is watching all chains:
-   ```bash
-   # Look for "Watching chain..." logs for each chain
-   tail -f .solver/solver.log
-   ```
+**Check solver is watching all chains:**
+```bash
+# Look for "Watching chain..." logs
+tail -f .solver/solver.log
+```
 
-2. Verify chain configs in `config/solver.toml`
+**Verify config:**
+```bash
+cat config/solver.toml | grep -A 5 "\[networks"
+```
 
-### Oracle operator not submitting attestations
+**Restart solver:**
+```bash
+solver-cli solver stop
+make solver
+```
 
-1. Check operator is watching all chains:
-   ```bash
-   # Should see output like:
-   # "Watching chain 1234 for fills..."
-   # "Watching chain 5678 for fills..."
-   # "Watching chain 11155111 for fills..."
-   ```
+### Oracle operator not submitting
 
-2. Verify operator has ETH for gas on all chains:
-   ```bash
-   make fund-operator
-   ```
+**Check operator has ETH for gas:**
+```bash
+make fund-operator
+```
 
-3. Check oracle addresses in `config/oracle.toml` match deployed contracts
+**Verify operator address:**
+```bash
+grep operator_address config/oracle.toml
+cast balance --rpc-url $SEPOLIA_RPC <operator_address>
+```
 
-### Intent fails with "insufficient balance"
+**Check oracle addresses match:**
+```bash
+# Compare deployed oracle addresses with config
+cat .solver/state.json | jq '.chains[].contracts.oracle'
+cat config/oracle.toml | grep oracle_address
+```
 
-Mint tokens to user:
+### Intent not filled
+
+**Check solver profitability:**
+- Solver may reject unprofitable orders
+- Check logs for "unprofitable" messages
+
+**Check solver balance:**
+```bash
+make balances
+```
+Solver needs tokens on destination chain to fill orders.
+
+**Check solver gas:**
+Solver needs ETH for gas on all chains:
+```bash
+cast balance --rpc-url $SEPOLIA_RPC <solver_address>
+```
+
+### User insufficient balance
+
 ```bash
 make mint-user  # Mints 10 USDC to user on all chains
 ```
 
-### Local chain stopped
+### Local chain connection refused
 
-Restart local chains:
 ```bash
 make stop
 make start
 ```
 
-## Performance Tips
+### Configuration validation failed
 
-- **Local chains**: Set `--block-time 1` for fast testing (default in Makefile)
-- **Parallel fills**: Solver can fill multiple intents simultaneously
-- **Gas optimization**: Solver rejects unprofitable orders automatically
-- **Polling intervals**: Adjust `poll_interval_seconds` in oracle config for faster/slower attestations
+```bash
+# Clean and reinitialize
+make clean
+make setup FORCE=1
+```
 
-## Architecture Notes
+## Architecture Deep Dive
 
 ### Why Separate Solver and Oracle Operator?
 
-This prevents the **self-attestation problem**:
+This prevents the **self-attestation problem**.
 
-❌ **Wrong**: Solver attests to its own fills
+**Wrong approach:**
 ```
 Solver (key A): "I filled the order"
 Solver (key A): "I confirm I filled the order"  ← Same key!
 Solver (key A): "Pay me"
 ```
 
-✅ **Correct**: Independent oracle operator verifies fills
+This is "trust me, I did the work" with no verification.
+
+**Correct approach:**
 ```
-Solver (key A): Fills order
-Oracle Operator (key B): Watches chain, verifies fill, signs attestation
+Solver (key A): Fills order on destination chain
+  ↓
+Oracle Operator (key B): Watches chain, verifies fill happened
+  ↓
+Oracle Operator (key B): Signs attestation with independent key
+  ↓
 Solver (key A): Claims funds once oracle confirms
 ```
 
-For **testing**, you can use the same key for both (simpler), but understand this defeats the trust model.
+**For testing:** You can use the same key for both (simpler setup), but understand this defeats the trust model.
 
-For **production**, solver and operator MUST use different keys and ideally run as separate services.
+**For production:** Solver and operator MUST use different keys and ideally run as separate services/entities.
 
-### All-to-All Routing
+### Intent Flow (Chain A → Chain B)
 
-The config generator automatically creates routes between every pair of chains:
-- 2 chains = 2 routes (A→B, B→A)
-- 3 chains = 6 routes (A→B, A→C, B→A, B→C, C→A, C→B)
-- N chains = N×(N-1) routes
+```
+┌────────────────────────────────────────────────────────────────┐
+│ 1. User submits intent on Chain A                             │
+│    → Tokens escrowed in InputSettlerEscrow                     │
+└────────────────────────────────────────────────────────────────┘
+                              ↓
+┌────────────────────────────────────────────────────────────────┐
+│ 2. Solver detects intent (polling InputSettlerEscrow)         │
+│    → Checks profitability (gas costs vs spread)                │
+└────────────────────────────────────────────────────────────────┘
+                              ↓
+┌────────────────────────────────────────────────────────────────┐
+│ 3. Solver fills order on Chain B                              │
+│    → Calls OutputSettlerSimple.fillOrder()                     │
+│    → Emits OutputFilled event                                  │
+└────────────────────────────────────────────────────────────────┘
+                              ↓
+┌────────────────────────────────────────────────────────────────┐
+│ 4. Oracle operator detects OutputFilled on Chain B            │
+│    → Queries all chains to find origin                         │
+│    → Finds orderId in Chain A's InputSettlerEscrow             │
+└────────────────────────────────────────────────────────────────┘
+                              ↓
+┌────────────────────────────────────────────────────────────────┐
+│ 5. Oracle operator signs attestation                          │
+│    → sign(keccak256(chainId, oracle, app, payloadHash))       │
+│    → Submits to CentralizedOracle on Chain A                   │
+└────────────────────────────────────────────────────────────────┘
+                              ↓
+┌────────────────────────────────────────────────────────────────┐
+│ 6. Solver polls CentralizedOracle.isProven() on Chain A       │
+│    → Waits for attestation confirmation                        │
+│    → Claims escrowed funds from InputSettlerEscrow             │
+└────────────────────────────────────────────────────────────────┘
+```
 
-No hardcoded chain names in the core logic - everything is data-driven via chain IDs.
+### N-Chain Discovery Algorithm
+
+When the oracle operator sees an `OutputFilled` event:
+
+1. **Capture fill details**: Extract orderId, solver, output amount
+2. **Query all chains**: For each chain, call `InputSettlerEscrow.orderStatus(orderId)`
+3. **Find origin**: The chain that returns non-zero order data is the origin
+4. **Sign attestation**: Use operator key to sign proof
+5. **Submit to origin**: Send attestation to CentralizedOracle on origin chain
+
+This scales to N chains without hardcoded routing tables!
+
+### Config Generation
+
+The CLI automatically generates configs from deployment state:
+
+**solver.toml** includes:
+- All deployed contract addresses per chain
+- All-to-all routes: `[routes]` section with `chainId = [destChain1, destChain2, ...]`
+- Gas settings and profitability thresholds
+
+**oracle.toml** includes:
+- List of all chains to monitor
+- Contract addresses per chain
+- Operator key and polling interval
+
+### Performance Considerations
+
+- **Local chains**: Use `--block-time 1` for fast testing (default in Makefile)
+- **Parallel fills**: Solver can handle multiple intents simultaneously
+- **Gas optimization**: Solver automatically rejects unprofitable orders
+- **Polling intervals**: Adjust in configs for faster/slower operation
+  - `poll_interval_seconds` in oracle.toml
+  - Solver polling is configured in solver.toml
+
+## Stopping Services
+
+```bash
+# Stop solver
+solver-cli solver stop
+
+# Stop oracle operator
+Ctrl+C in operator terminal
+
+# Stop local chains
+make stop
+```
+
+## Clean Slate
+
+To completely reset:
+
+```bash
+make clean  # Removes state, configs, and pid files
+make setup  # Re-run setup from scratch
+```
+
+## Next Steps
+
+- [Deploy New Token](./deploy-new-token.md) - Deploy fresh contracts and tokens
+- [Solve Existing Tokens](./solve-existing-tokens.md) - Use already-deployed tokens
+- [OIF Aggregator Integration](../AGGREGATOR_INTEGRATION.md) - Multi-solver quote aggregation
+
+## Summary
+
+**3-chain setup** creates:
+- 6 bidirectional routes
+- Automatic all-to-all routing
+- Single solver watching all chains
+- Independent oracle operator for attestations
+
+**Scaling to N chains**:
+- Add chain to `.env`
+- Run `make deploy CHAINS=newchain`
+- Regenerate configs with `make configure`
+- Restart services
+
+**Key concepts**:
+- Chain configs are data-driven (no hardcoded names)
+- Routes auto-generated for any N chains
+- Solver and oracle must use different keys (production)
+- All chains share the same solver instance
