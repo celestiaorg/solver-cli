@@ -264,38 +264,69 @@ app.post('/api/quote', async (req, res) => {
   }
 });
 
-// Order: sign EIP-712 and submit to aggregator
+// Order: approve tokens, sign EIP-712, prepend type byte, submit to aggregator
 app.post('/api/order', async (req, res) => {
-  const { quote } = req.body;
+  const { quote, fromChainId, asset = 'USDC' } = req.body;
   try {
     const user = getUserAccount();
     const state = readState();
 
-    // Use first chain's RPC for wallet client (only needed for signing, not sending)
-    const firstChain = Object.values(state.chains)[0];
-    const viemChain = makeViemChain(firstChain.chain_id, firstChain.name, firstChain.rpc);
+    // Resolve source chain for approval + signing
+    const srcChainId = fromChainId?.toString() || Object.keys(state.chains)[0];
+    const srcChain = state.chains[srcChainId];
+    if (!srcChain) throw new Error(`Source chain ${srcChainId} not found`);
+
+    const viemChain = makeViemChain(srcChain.chain_id, srcChain.name, srcChain.rpc);
 
     const walletClient = createWalletClient({
       account: user,
       chain: viemChain,
-      transport: http(firstChain.rpc),
+      transport: http(srcChain.rpc),
+    });
+    const publicClient = createPublicClient({
+      chain: viemChain,
+      transport: http(srcChain.rpc),
     });
 
-    // Sign EIP-712 typed data from the quote payload
+    // Step 1: Approve USDC for InputSettlerEscrow on source chain
+    const token = srcChain.tokens[asset];
+    const inputSettler = srcChain.contracts?.input_settler_escrow;
+    if (token && inputSettler) {
+      const approveHash = await walletClient.writeContract({
+        address: token.address,
+        abi: parseAbi(['function approve(address, uint256) returns (bool)']),
+        functionName: 'approve',
+        args: [inputSettler, 100000000n], // 100 USDC allowance
+      });
+      await publicClient.waitForTransactionReceipt({ hash: approveHash });
+    }
+
+    // Step 2: Sign EIP-712 typed data with viem
     const payload = quote.order.payload;
 
-    // Remove EIP712Domain from types if present (viem adds it automatically)
+    // Remove EIP712Domain from types (viem adds it automatically)
     const types = { ...payload.types };
     delete types.EIP712Domain;
 
-    const signature = await walletClient.signTypedData({
-      domain: payload.domain,
+    // Coerce domain.chainId to number — the aggregator returns it as a string
+    // which causes viem to produce a different EIP-712 hash
+    const domain = { ...payload.domain };
+    if (typeof domain.chainId === 'string') {
+      domain.chainId = Number(domain.chainId);
+    }
+
+    const rawSignature = await user.signTypedData({
+      domain,
       types,
       primaryType: payload.primaryType,
       message: payload.message,
     });
 
-    // Submit signed order to aggregator
+    // Step 3: Prepend ERC-3009 signature type byte (0x01)
+    // The contract checks signature[0] for type: 0x00=Permit2, 0x01=EIP-3009, 0xff=self
+    const signature = '0x01' + rawSignature.slice(2);
+
+    // Step 4: Submit signed order to aggregator
     const response = await fetch(`${AGGREGATOR_URL}/api/v1/orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

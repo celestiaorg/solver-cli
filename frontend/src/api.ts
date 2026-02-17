@@ -110,11 +110,11 @@ export const api = {
       body: JSON.stringify({ fromChainId, toChainId, amount, asset }),
     }),
 
-  submitOrder: (quote: Quote) =>
+  submitOrder: (quote: Quote, fromChainId: number, asset = 'USDC') =>
     json<OrderResponse>(`${BASE}/order`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ quote }),
+      body: JSON.stringify({ quote, fromChainId, asset }),
     }),
 
   orderStatus: (id: string) => json<OrderStatus>(`${BASE}/order/${id}`),

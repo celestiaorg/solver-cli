@@ -21,6 +21,16 @@ function formatETH(val: string) {
 
 type Step = 'idle' | 'quoting' | 'quoted' | 'signing' | 'submitted' | 'polling' | 'done' | 'error'
 
+/** Normalize status that may be a string or an object like {"failed": "reason"} */
+function normalizeStatus(status: unknown): string {
+  if (typeof status === 'string') return status
+  if (status && typeof status === 'object') {
+    const keys = Object.keys(status)
+    if (keys.length > 0) return keys[0]
+  }
+  return 'unknown'
+}
+
 // ── Status Dot ───────────────────────────────────────────────────────────────
 
 function StatusDot({ ok }: { ok: boolean }) {
@@ -162,7 +172,8 @@ export default function App() {
     setError('')
 
     try {
-      const resp = await api.submitOrder(quote)
+      const fromId = config!.chains[fromChain].chainId
+      const resp = await api.submitOrder(quote, fromId, asset)
       setOrderId(resp.orderId)
       setStep('polling')
       startPolling(resp.orderId)
@@ -178,7 +189,8 @@ export default function App() {
       try {
         const status = await api.orderStatus(id)
         setOrderStatus(status)
-        if (status.status === 'finalized' || status.status === 'failed') {
+        const normalized = normalizeStatus(status.status)
+        if (normalized === 'finalized' || normalized === 'failed') {
           clearInterval(pollRef.current)
           setStep('done')
           loadBalances() // Refresh balances after completion
@@ -398,23 +410,25 @@ export default function App() {
               )}
 
               {/* Order tracking */}
-              {(step === 'polling' || step === 'done') && orderStatus && (
+              {(step === 'polling' || step === 'done') && orderStatus && (() => {
+                const status = normalizeStatus(orderStatus.status)
+                return (
                 <div className={`border rounded-xl p-3 mb-4 text-xs space-y-1 ${
-                  orderStatus.status === 'finalized'
+                  status === 'finalized'
                     ? 'bg-emerald-500/5 border-emerald-500/20'
-                    : orderStatus.status === 'failed'
+                    : status === 'failed'
                     ? 'bg-red-500/5 border-red-500/20'
                     : 'bg-surface-0 border-border'
                 }`}>
                   <div className="flex justify-between items-center">
                     <span className="text-gray-400">Order Status</span>
                     <span className={`font-semibold uppercase tracking-wider ${
-                      orderStatus.status === 'finalized' ? 'text-emerald-400'
-                      : orderStatus.status === 'failed' ? 'text-red-400'
+                      status === 'finalized' ? 'text-emerald-400'
+                      : status === 'failed' ? 'text-red-400'
                       : 'text-amber-400'
                     }`}>
-                      {orderStatus.status === 'finalized' ? 'Completed' : orderStatus.status}
-                      {step === 'polling' && orderStatus.status !== 'finalized' && orderStatus.status !== 'failed' && (
+                      {status === 'finalized' ? 'Completed' : status}
+                      {step === 'polling' && status !== 'finalized' && status !== 'failed' && (
                         <Spinner size={12} />
                       )}
                     </span>
@@ -442,7 +456,8 @@ export default function App() {
                     </div>
                   )}
                 </div>
-              )}
+                )
+              })()}
 
               {/* Error display */}
               {error && (
