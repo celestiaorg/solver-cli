@@ -35,7 +35,7 @@ start:
 	@echo "Local chains ready!"
 .PHONY: start
 
-## stop: Stop local chains, solver, and oracle operator
+## stop: Stop local chains, solver, oracle operator, and aggregator
 stop:
 	@if [ -f .anvil1.pid ]; then \
 		kill $$(cat .anvil1.pid) 2>/dev/null || true; \
@@ -49,6 +49,7 @@ stop:
 	fi
 	@$(SOLVER_CLI) solver stop 2>/dev/null || true
 	@pkill -f oracle-operator 2>/dev/null || true
+	@pkill -f oif-aggregator 2>/dev/null || true
 	@echo "All services stopped"
 .PHONY: stop
 
@@ -148,6 +149,16 @@ operator-start:
 operator: operator-start
 .PHONY: operator
 
+## aggregator-start: Start the OIF aggregator service
+aggregator-start:
+	@echo "Starting OIF aggregator on port 4000..."
+	@cd oif-aggregator && CONFIG_PATH=../config/aggregator.json RUST_LOG=info cargo run --release
+.PHONY: aggregator-start
+
+# Alias for convenience
+aggregator: aggregator-start
+.PHONY: aggregator
+
 ## intent: Submit a test intent. Use FROM=, TO=, AMOUNT=, ASSET= to customize
 intent: build
 	@$(SOLVER_CLI) intent submit \
@@ -196,10 +207,11 @@ reset: clean
 setup: init deploy configure fund fund-operator mint-user
 	@echo ""
 	@echo "Setup complete! Next steps:"
-	@echo "  1. make solver - Start solver service (in separate terminal)"
-	@echo "  2. make operator - Start oracle operator service (in another terminal)"
-	@echo "  3. make intent - Submit a test intent"
-	@echo "  4. make balances - Check balances"
+	@echo "  1. make aggregator - Start OIF aggregator (in separate terminal)"
+	@echo "  2. make solver - Start solver service (in another terminal)"
+	@echo "  3. make operator - Start oracle operator service (in another terminal)"
+	@echo "  4. make intent - Submit a test intent"
+	@echo "  5. make balances - Check balances"
 .PHONY: setup
 
 ## clean: Remove generated files

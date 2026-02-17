@@ -1,0 +1,457 @@
+
+
+                             _   _
+                            (_) | |
+      __ _   _ __   __   __  _  | |
+     / _` | | '_ \  \ \ / / | | | |
+    | (_| | | | | |  \ V /  | | | |
+     \__,_| |_| |_|   \_/   |_| |_|
+
+    1.5.1-stable (b0a9dd9ced 2025-12-22T11:41:09.812070000Z)
+    https://github.com/foundry-rs/foundry
+
+Available Accounts
+==================
+
+(0) 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 (10000.000000000000000000 ETH)
+(1) 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 (10000.000000000000000000 ETH)
+(2) 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC (10000.000000000000000000 ETH)
+(3) 0x90F79bf6EB2c4f870365E785982E1f101E93b906 (10000.000000000000000000 ETH)
+(4) 0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65 (10000.000000000000000000 ETH)
+(5) 0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc (10000.000000000000000000 ETH)
+(6) 0x976EA74026E726554dB657fA54763abd0C3a0aa9 (10000.000000000000000000 ETH)
+(7) 0x14dC79964da2C08b23698B3D3cc7Ca32193d9955 (10000.000000000000000000 ETH)
+(8) 0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f (10000.000000000000000000 ETH)
+(9) 0xa0Ee7A142d267C1f36714E4a8F75612F20a79720 (10000.000000000000000000 ETH)
+
+Private Keys
+==================
+
+(0) 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+(1) 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+(2) 0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a
+(3) 0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6
+(4) 0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a
+(5) 0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba
+(6) 0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e
+(7) 0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356
+(8) 0xdbda1821b80551c9d65939329250298aa3472ba22feea921c0cf5d620ea67b97
+(9) 0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6
+
+Wallet
+==================
+Mnemonic:          test test test test test test test test test test test junk
+Derivation path:   m/44'/60'/0'/0/
+
+
+Chain ID
+==================
+
+1234
+
+Base Fee
+==================
+
+1000000000
+
+Gas Limit
+==================
+
+30000000
+
+Genesis Timestamp
+==================
+
+1771287820
+
+Genesis Number
+==================
+
+0
+
+Listening on 127.0.0.1:8545
+
+    Block Number: 1
+    Block Hash: 0xb0158c278847ecfddf5dfb0c1292453da4dfcbdd79563e216d1a321dc71fc01b
+    Block Time: "Tue, 17 Feb 2026 00:23:41 +0000"
+
+
+    Block Number: 2
+    Block Hash: 0x17a316ad4c5d57c46f0c7e645ed7d483e8c605ea488676952163ab3de279dab6
+    Block Time: "Tue, 17 Feb 2026 00:23:42 +0000"
+
+
+    Block Number: 3
+    Block Hash: 0xb62749e8a3a66a8fba7badf27253b021e7bc57b00994ca8e9e27e87b657492c3
+    Block Time: "Tue, 17 Feb 2026 00:23:43 +0000"
+
+
+    Block Number: 4
+    Block Hash: 0x9a51112758ab0c43980c2bd1d2abf1a979d1f076445b8a4e85278b55b2dd446f
+    Block Time: "Tue, 17 Feb 2026 00:23:44 +0000"
+
+
+    Block Number: 5
+    Block Hash: 0x195870e05a5115d2083a3cea98473130a7702e0bcb64239c55c119aec22aa915
+    Block Time: "Tue, 17 Feb 2026 00:23:45 +0000"
+
+
+    Block Number: 6
+    Block Hash: 0x6d361ed30ebfecebdf5047bc8abe701c485a2b0e430a0b286368ac11f72e39c3
+    Block Time: "Tue, 17 Feb 2026 00:23:46 +0000"
+
+
+    Block Number: 7
+    Block Hash: 0x2c2fad796701f4095faed3413e19674fd37ced9d6795b01405af287cae5d5e2f
+    Block Time: "Tue, 17 Feb 2026 00:23:47 +0000"
+
+
+    Block Number: 8
+    Block Hash: 0xbc3b09b1de6f2110247f6999e73c3a26fb79deca3a6a701d048e8d6dbe90a038
+    Block Time: "Tue, 17 Feb 2026 00:23:48 +0000"
+
+
+    Block Number: 9
+    Block Hash: 0xe34c5dda6b11ba2ecc24bb1846e6206c8f565dab1afee5db5a2b86c3736c61c6
+    Block Time: "Tue, 17 Feb 2026 00:23:49 +0000"
+
+
+    Block Number: 10
+    Block Hash: 0xbfb81834b32627bbffe8633158ca4e39955d9268a932b367a325d65a22bbd7fb
+    Block Time: "Tue, 17 Feb 2026 00:23:50 +0000"
+
+
+    Block Number: 11
+    Block Hash: 0x70aee37a1d52cbcbb9e4dda1f4fd5a43c6a99799ed2447f8a00dbcf8ceed1e71
+    Block Time: "Tue, 17 Feb 2026 00:23:51 +0000"
+
+
+    Block Number: 12
+    Block Hash: 0xf88739e786245c5655b3de164a76114ed4cae1a5e941e8d0f4d150952cea0208
+    Block Time: "Tue, 17 Feb 2026 00:23:52 +0000"
+
+
+    Block Number: 13
+    Block Hash: 0x491262d40dbce5950b9e1436d71bff76f8b667c5fffe0fd43b232a8c0424c234
+    Block Time: "Tue, 17 Feb 2026 00:23:53 +0000"
+
+
+    Block Number: 14
+    Block Hash: 0x13ef6949d8299b4741bf3adbf649e48356eeff0203a95f284db3169fad0dd735
+    Block Time: "Tue, 17 Feb 2026 00:23:54 +0000"
+
+
+    Block Number: 15
+    Block Hash: 0xd8479dd27f8116aca53354754978055eed7519cea0507db02f54ed747e423782
+    Block Time: "Tue, 17 Feb 2026 00:23:55 +0000"
+
+
+    Block Number: 16
+    Block Hash: 0x0575f5a0b7ce35826cf58f20a7bfb3e265caadb5b231263b1a023a0dbd640682
+    Block Time: "Tue, 17 Feb 2026 00:23:56 +0000"
+
+
+    Block Number: 17
+    Block Hash: 0xd1488c05cf13e55e1a9b8dc304e57684916659d6526d4aab742b99d3cf502ff7
+    Block Time: "Tue, 17 Feb 2026 00:23:57 +0000"
+
+
+    Block Number: 18
+    Block Hash: 0xf2681e01a61c77bfa8521c84c8abe2e3ef03871bf77c118ca4a86667f04ece67
+    Block Time: "Tue, 17 Feb 2026 00:23:58 +0000"
+
+
+    Block Number: 19
+    Block Hash: 0xf8f2327b49ef28789a4a0254f6cf2cda2edc57ae3c52fa857492dcdf3aa992b5
+    Block Time: "Tue, 17 Feb 2026 00:23:59 +0000"
+
+
+    Block Number: 20
+    Block Hash: 0xd2171a9ef0e595b4bb44e2c7de048e0aec9ce092e9433439bcb272b5f452ee8d
+    Block Time: "Tue, 17 Feb 2026 00:24:00 +0000"
+
+
+    Block Number: 21
+    Block Hash: 0xe2a811bcf9264d9d34f990990d729f716e1dcf9bed6474065478b946af95a07d
+    Block Time: "Tue, 17 Feb 2026 00:24:01 +0000"
+
+
+    Block Number: 22
+    Block Hash: 0xac025637709d333d06b8baa3f9d72ce8d0bff8b8ab952c52ac8ca1c17f97f788
+    Block Time: "Tue, 17 Feb 2026 00:24:02 +0000"
+
+
+    Block Number: 23
+    Block Hash: 0x576ca23bf749c83630cfbf65ff6602642022b222c591b76ea7a273d00d9b3bb3
+    Block Time: "Tue, 17 Feb 2026 00:24:03 +0000"
+
+
+    Block Number: 24
+    Block Hash: 0x1a228793d44b34deefbecc149d4034e385e70aa0d94c5e33131292c066df926b
+    Block Time: "Tue, 17 Feb 2026 00:24:04 +0000"
+
+
+    Block Number: 25
+    Block Hash: 0x985acec187f0831bd244162cd9f0adc6a4433826dcd8cdfe1e2d518453584041
+    Block Time: "Tue, 17 Feb 2026 00:24:05 +0000"
+
+
+    Block Number: 26
+    Block Hash: 0x0733ca9b8df0512b0c93c470b2d52c2f2b0e340d764be3d056beb8ef1decf5af
+    Block Time: "Tue, 17 Feb 2026 00:24:06 +0000"
+
+
+    Block Number: 27
+    Block Hash: 0xd31152b3d981b811cf6382a827b10654d464f8c9e91b4ffdbb32741880fd5dbf
+    Block Time: "Tue, 17 Feb 2026 00:24:07 +0000"
+
+
+    Block Number: 28
+    Block Hash: 0xbca08f556671c70e09ecd4cf9c8878ad51ef765d4786153629800fcd9875de9f
+    Block Time: "Tue, 17 Feb 2026 00:24:08 +0000"
+
+
+    Block Number: 29
+    Block Hash: 0xab055090640195afcb6c6999f239c2525e51e782d8a1ec19078a0e04003f8992
+    Block Time: "Tue, 17 Feb 2026 00:24:09 +0000"
+
+
+    Block Number: 30
+    Block Hash: 0x0be54a0ebfc15c125d39e32e532afe7bd3c136a2bc1b701e883b92549835a959
+    Block Time: "Tue, 17 Feb 2026 00:24:10 +0000"
+
+
+    Block Number: 31
+    Block Hash: 0xdebdc50396e03cfdd83d3c468803486596cd1546e69814846b56e9691244b674
+    Block Time: "Tue, 17 Feb 2026 00:24:11 +0000"
+
+
+    Block Number: 32
+    Block Hash: 0x62649f21da24253d11c4454363d39f7d93ec6bef0d81700e05c324b9dcb00552
+    Block Time: "Tue, 17 Feb 2026 00:24:12 +0000"
+
+
+    Block Number: 33
+    Block Hash: 0x17e8a2d7789d3e02dac7add0ac666e51f5ae0f4b16656a9f3f4e11aee5adfdf7
+    Block Time: "Tue, 17 Feb 2026 00:24:13 +0000"
+
+
+    Block Number: 34
+    Block Hash: 0x233087ada1a2c4896038264e4c124cbd35aae6113c752dd1785f03d62c6fcb99
+    Block Time: "Tue, 17 Feb 2026 00:24:14 +0000"
+
+
+    Block Number: 35
+    Block Hash: 0x43a8ee0ebc6a6b815cf1b4b2628dcc92e8b845f1375ba7acb8de35b5dbf6a0e4
+    Block Time: "Tue, 17 Feb 2026 00:24:15 +0000"
+
+
+    Block Number: 36
+    Block Hash: 0xa49bcdf259a244466fd1a219d5bfc20766a74d39f75061e4d2ae8164efc41dbd
+    Block Time: "Tue, 17 Feb 2026 00:24:16 +0000"
+
+
+    Block Number: 37
+    Block Hash: 0xb1a5462711e65e57316fe880a2bdcb3014f7ffa2661172729e991cec4967093a
+    Block Time: "Tue, 17 Feb 2026 00:24:17 +0000"
+
+
+    Block Number: 38
+    Block Hash: 0x8ffbcb125116883550935a31b8d737dd32a5b9ceb315c52ff86f3d1e5f1a427d
+    Block Time: "Tue, 17 Feb 2026 00:24:18 +0000"
+
+
+    Block Number: 39
+    Block Hash: 0x8af4bbaca5cdd140e9a4f9b16b1990c1e0cb4b2cd834f2f07ed27dc69dce1a32
+    Block Time: "Tue, 17 Feb 2026 00:24:19 +0000"
+
+
+    Block Number: 40
+    Block Hash: 0xb77e08a92f83bcaf96d2493e59fce9f136a7ca0d21bc7f333b0f9f59d506dda6
+    Block Time: "Tue, 17 Feb 2026 00:24:20 +0000"
+
+
+    Block Number: 41
+    Block Hash: 0x1a544293bc7975337b7945e7435c2acbf63e6f64fbb9b88c8546c9673136f98e
+    Block Time: "Tue, 17 Feb 2026 00:24:21 +0000"
+
+
+    Block Number: 42
+    Block Hash: 0x57d5d40179cd6653a776eefd23f465f338ef18f52db60168d7cd004149c3da7e
+    Block Time: "Tue, 17 Feb 2026 00:24:22 +0000"
+
+
+    Block Number: 43
+    Block Hash: 0xb5e60c1f93c8ae31028daf7e6c740493b0f24cf0ea4babed06eb657822f7ee33
+    Block Time: "Tue, 17 Feb 2026 00:24:23 +0000"
+
+
+    Block Number: 44
+    Block Hash: 0x9267979be6cceabc71949b00a0e2ba08e309ae96ef8af0a9a51d61e8d3fd1307
+    Block Time: "Tue, 17 Feb 2026 00:24:24 +0000"
+
+
+    Block Number: 45
+    Block Hash: 0xfb57acc6a26edceeda29835c9ca97c4bb5b946935984afa73407ad0630c4e828
+    Block Time: "Tue, 17 Feb 2026 00:24:25 +0000"
+
+
+    Block Number: 46
+    Block Hash: 0x33e7c240b60b2ab0b565fefd04fe2b8e8e1ad285dc047ea30b0df3c0dcf1c792
+    Block Time: "Tue, 17 Feb 2026 00:24:26 +0000"
+
+
+    Block Number: 47
+    Block Hash: 0xc6ef5496c3b4243d87c0451b9e5d2b7bfd194372e756ebf516e291028e813c52
+    Block Time: "Tue, 17 Feb 2026 00:24:27 +0000"
+
+
+    Block Number: 48
+    Block Hash: 0x6307cfc89775291e02a556076f7759c480127db6a9b65cc38447b7f872ea8939
+    Block Time: "Tue, 17 Feb 2026 00:24:28 +0000"
+
+
+    Block Number: 49
+    Block Hash: 0x97165aae77aed2cabfe24d91d2ad87148a4eaf8b313a1c8f30ea268a4c0da287
+    Block Time: "Tue, 17 Feb 2026 00:24:29 +0000"
+
+
+    Block Number: 50
+    Block Hash: 0xf017297efe8b25ef947bda377e6bebe5b09a014f80ea3632d1eb9951830b6112
+    Block Time: "Tue, 17 Feb 2026 00:24:30 +0000"
+
+
+    Block Number: 51
+    Block Hash: 0xa3c33ac599bda0739252852585aa8868a879b80ca921b4ef39dc2c8ad14546f5
+    Block Time: "Tue, 17 Feb 2026 00:24:31 +0000"
+
+
+    Block Number: 52
+    Block Hash: 0xbae2acd00cfab8c5d11c3972c99364777b5849355225764c94ace6b106fb7cd6
+    Block Time: "Tue, 17 Feb 2026 00:24:32 +0000"
+
+
+    Block Number: 53
+    Block Hash: 0xca5e8105ffe0eaabb7c7403ba13b58ba4d3fa6a699034e461a47f97dfea646be
+    Block Time: "Tue, 17 Feb 2026 00:24:33 +0000"
+
+
+    Block Number: 54
+    Block Hash: 0x0d20faab3c0aa427ccc6edaf79f52dc076c0feb9e029f4d608492815105f0230
+    Block Time: "Tue, 17 Feb 2026 00:24:34 +0000"
+
+
+    Block Number: 55
+    Block Hash: 0x5a5fbc58c21253d8c0b9859df655ce18a845956b5ce0ac500d4e5b8afbfee2a0
+    Block Time: "Tue, 17 Feb 2026 00:24:35 +0000"
+
+
+    Block Number: 56
+    Block Hash: 0xf301c2da7f793a6ae5190a58661cb3e332fee5b9796a5e974410a9f78f99313b
+    Block Time: "Tue, 17 Feb 2026 00:24:36 +0000"
+
+
+    Block Number: 57
+    Block Hash: 0x302fce94cbe5bb309b12deec76ae6bf6fc67b07090f6afa994325993d18f64cc
+    Block Time: "Tue, 17 Feb 2026 00:24:37 +0000"
+
+
+    Block Number: 58
+    Block Hash: 0xa77248163f36c614677d7e683b1d1c7cdd483236f2f6193c92f87fdcf19df1cd
+    Block Time: "Tue, 17 Feb 2026 00:24:38 +0000"
+
+
+    Block Number: 59
+    Block Hash: 0x15673b865e8d858ee80fd57c6c6c2c143e7c4855ce42fd8f09fc1587d04ac200
+    Block Time: "Tue, 17 Feb 2026 00:24:39 +0000"
+
+
+    Block Number: 60
+    Block Hash: 0xe4b00acc719ed081fd5fd06647a3f5db70e50a36c860560473b17de9549f7d09
+    Block Time: "Tue, 17 Feb 2026 00:24:40 +0000"
+
+
+    Block Number: 61
+    Block Hash: 0x738312fbe5c5dd94d246dd7877487f3a7cea38fbe7ffca31a627d1055de899c8
+    Block Time: "Tue, 17 Feb 2026 00:24:41 +0000"
+
+
+    Block Number: 62
+    Block Hash: 0x411581df00cc796d9b54c1a7ba23e757b492a99bfcd48b51ee5c2a685947b0ed
+    Block Time: "Tue, 17 Feb 2026 00:24:42 +0000"
+
+
+    Block Number: 63
+    Block Hash: 0x4b6c097430fd60c6852a978df627d047d4507cc01318e844f71631293d855c6f
+    Block Time: "Tue, 17 Feb 2026 00:24:43 +0000"
+
+
+    Block Number: 64
+    Block Hash: 0x2e71a71a14cf27e2266741614d7c9e535a13ec8841bb0e5dcd63bd37b930204a
+    Block Time: "Tue, 17 Feb 2026 00:24:44 +0000"
+
+
+    Block Number: 65
+    Block Hash: 0x894333bffdc073e6dd6e750a922525ff3e3c795a76ee99d4352c24f37c1975e2
+    Block Time: "Tue, 17 Feb 2026 00:24:45 +0000"
+
+
+    Block Number: 66
+    Block Hash: 0x7a29a0af860d99ade28c1e6d990c25788e40622cf5e82030c3ed7dc30cf4d082
+    Block Time: "Tue, 17 Feb 2026 00:24:46 +0000"
+
+
+    Block Number: 67
+    Block Hash: 0x76d9ac6f97d2867ac420e596a442f064eaefddf49aa0454ef1bfdd83cf53f5bd
+    Block Time: "Tue, 17 Feb 2026 00:24:47 +0000"
+
+
+    Block Number: 68
+    Block Hash: 0xc6ae46661613e23e30af6e92f99e3189a8f249d38cb462a46f5a64973bdaec8a
+    Block Time: "Tue, 17 Feb 2026 00:24:48 +0000"
+
+
+    Block Number: 69
+    Block Hash: 0x45cb690c86ad80ec3f7311fcd600d13d9aabf8e914384106436e05230d53425b
+    Block Time: "Tue, 17 Feb 2026 00:24:49 +0000"
+
+
+    Block Number: 70
+    Block Hash: 0x1d1bba47b269bc7ec394bc86efb90c5326ecacdc86daedc8a88ee72bf94e87ac
+    Block Time: "Tue, 17 Feb 2026 00:24:50 +0000"
+
+
+    Block Number: 71
+    Block Hash: 0xa13bd78d2fc4e379f99e02774c5e5d1c9fe4f9136e00e9c3782d84a85eb3c55d
+    Block Time: "Tue, 17 Feb 2026 00:24:51 +0000"
+
+
+    Block Number: 72
+    Block Hash: 0xbcf464948844149f36af422fbe596eaa4bc762440622e645d70a7f22d1cec825
+    Block Time: "Tue, 17 Feb 2026 00:24:52 +0000"
+
+
+    Block Number: 73
+    Block Hash: 0x517388baa1ba399a3a5606fb6c66a27b9fa84028aa6112da000af61dda8e33e4
+    Block Time: "Tue, 17 Feb 2026 00:24:53 +0000"
+
+
+    Block Number: 74
+    Block Hash: 0x403df698beb58193361811a001cb7211d3ebfedb0463b1497ddfa1d6dcdbb219
+    Block Time: "Tue, 17 Feb 2026 00:24:54 +0000"
+
+
+    Block Number: 75
+    Block Hash: 0x4be0bd3b3c2215fcbbb3a9686459576c1dbdde989a8192445e951314c224e1d9
+    Block Time: "Tue, 17 Feb 2026 00:24:55 +0000"
+
+
+    Block Number: 76
+    Block Hash: 0x8e51bf8e25512da6e50248d0ada1001b6b21c131265f5a379aecc3ce6e653c85
+    Block Time: "Tue, 17 Feb 2026 00:24:56 +0000"
+
+
+    Block Number: 77
+    Block Hash: 0x808ceb75a05f28a5b83c41680b9a44b76c221f7c092c2ed8d1a016448e70c7e2
+    Block Time: "Tue, 17 Feb 2026 00:24:57 +0000"
+
