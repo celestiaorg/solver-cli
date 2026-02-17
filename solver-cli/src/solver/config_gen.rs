@@ -43,6 +43,7 @@ impl ConfigGenerator {
 [networks.{}]
 input_settler_address = "{}"
 output_settler_address = "{}"
+permit2_address = "{}"
 
 [[networks.{}.rpc_urls]]
 http = "{}"
@@ -56,6 +57,11 @@ http = "{}"
                 chain
                     .contracts
                     .output_settler_simple
+                    .as_deref()
+                    .unwrap_or(""),
+                chain
+                    .contracts
+                    .permit2
                     .as_deref()
                     .unwrap_or(""),
                 chain.chain_id,
@@ -478,6 +484,149 @@ poll_interval_seconds = 3
         fs::write(path, &content)
             .await
             .context("Failed to write oracle config file")?;
+
+        Ok(())
+    }
+
+    /// Generate aggregator config.json with routes from state
+    pub fn generate_aggregator_json(state: &SolverState) -> Result<String> {
+        if state.chains.is_empty() {
+            anyhow::bail!("No chains configured");
+        }
+
+        // Build routes array
+        let chain_ids: Vec<u64> = state.chain_ids();
+        let mut routes = Vec::new();
+
+        for &from_id in &chain_ids {
+            let from_chain = &state.chains[&from_id];
+            for &to_id in &chain_ids {
+                if from_id == to_id {
+                    continue;
+                }
+                let to_chain = &state.chains[&to_id];
+
+                // Create routes for each token
+                for (token_symbol, from_token) in &from_chain.tokens {
+                    if let Some(to_token) = to_chain.tokens.get(token_symbol) {
+                        routes.push(format!(
+                            r#"          {{
+            "originChainId": {},
+            "originTokenAddress": "{}",
+            "originTokenSymbol": "{}",
+            "destinationChainId": {},
+            "destinationTokenAddress": "{}",
+            "destinationTokenSymbol": "{}"
+          }}"#,
+                            from_id,
+                            from_token.address,
+                            token_symbol,
+                            to_id,
+                            to_token.address,
+                            token_symbol
+                        ));
+                    }
+                }
+            }
+        }
+
+        let routes_str = if routes.is_empty() {
+            String::new()
+        } else {
+            routes.join(",\n")
+        };
+
+        let config = format!(
+            r#"{{
+  "server": {{
+    "host": "0.0.0.0",
+    "port": 4000
+  }},
+  "solvers": {{
+    "local-oif-solver": {{
+      "solver_id": "local-oif-solver",
+      "adapter_id": "oif-v1",
+      "endpoint": "http://127.0.0.1:5001/api/v1",
+      "enabled": true,
+      "headers": null,
+      "name": "Local OIF Solver",
+      "description": "Local OIF solver for cross-chain intents",
+      "supported_assets": {{
+        "type": "routes",
+        "assets": [
+{}
+        ]
+      }}
+    }}
+  }},
+  "aggregation": {{
+    "global_timeout_ms": 10000,
+    "per_solver_timeout_ms": 5000,
+    "max_concurrent_solvers": 10,
+    "max_retries_per_solver": 2,
+    "retry_delay_ms": 500,
+    "include_unknown_compatibility": false
+  }},
+  "environment": {{
+    "rate_limiting": {{
+      "enabled": false,
+      "requests_per_minute": 1000,
+      "burst_size": 100
+    }}
+  }},
+  "logging": {{
+    "level": "info",
+    "format": "compact",
+    "structured": false
+  }},
+  "security": {{
+    "integrity_secret": {{
+      "type": "env",
+      "value": "INTEGRITY_SECRET"
+    }}
+  }},
+  "circuit_breaker": {{
+    "enabled": true,
+    "failure_threshold": 5,
+    "success_rate_threshold": 0.3,
+    "min_requests_for_rate_check": 20,
+    "base_timeout_seconds": 30,
+    "max_timeout_seconds": 600,
+    "half_open_max_calls": 3,
+    "max_recovery_attempts": 10,
+    "persistent_failure_action": "ExtendTimeout",
+    "metrics_max_age_minutes": 30,
+    "service_error_threshold": 0.5,
+    "metrics_window_duration_minutes": 15,
+    "metrics_max_window_age_minutes": 60
+  }},
+  "metrics": {{
+    "retention_hours": 168,
+    "cleanup_interval_hours": 24,
+    "aggregation_interval_minutes": 5,
+    "min_timeout_for_metrics_ms": 5000
+  }}
+}}
+"#,
+            routes_str
+        );
+
+        Ok(config)
+    }
+
+    /// Write aggregator configuration to a file
+    pub async fn write_aggregator_config(state: &SolverState, path: &Path) -> Result<()> {
+        let content = Self::generate_aggregator_json(state)?;
+
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .await
+                .context("Failed to create config directory")?;
+        }
+
+        fs::write(path, &content)
+            .await
+            .context("Failed to write aggregator config file")?;
 
         Ok(())
     }

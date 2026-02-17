@@ -12,7 +12,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use commands::{
     balances::BalancesCommand, chain::ChainCommand, configure::ConfigureCommand,
     deploy::DeployCommand, fund::FundCommand, init::InitCommand, intent::IntentCommand,
-    solver::SolverCommand, token::TokenCommand,
+    order::OrderCommand, solver::SolverCommand, token::TokenCommand,
 };
 
 #[derive(Parser)]
@@ -68,6 +68,10 @@ enum Commands {
     #[command(subcommand)]
     Intent(IntentCommand),
 
+    /// Order submission via aggregator
+    #[command(subcommand)]
+    Order(OrderCommand),
+
     /// Check token balances on all chains
     Balances(BalancesCommand),
 }
@@ -102,6 +106,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Token(cmd) => cmd.run(cli.output).await,
         Commands::Solver(cmd) => cmd.run(cli.output).await,
         Commands::Intent(cmd) => cmd.run(cli.output).await,
+        Commands::Order(cmd) => cmd.run(cli.output).await,
         Commands::Balances(cmd) => cmd.run(cli.output).await,
     };
 

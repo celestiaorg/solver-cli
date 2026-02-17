@@ -5,5 +5,6 @@ pub mod deploy;
 pub mod fund;
 pub mod init;
 pub mod intent;
+pub mod order;
 pub mod solver;
 pub mod token;

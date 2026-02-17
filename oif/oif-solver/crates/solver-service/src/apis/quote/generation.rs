@@ -1224,6 +1224,7 @@ impl QuoteGenerator {
 		// The client will compute the domainSeparator using these fields
 		Ok(serde_json::json!({
 			"name": token_name,
+			"version": "1",
 			"chainId": chain_id.to_string(),
 			"verifyingContract": format!("0x{:040x}", alloy_token_address)
 		}))
@@ -1484,6 +1485,7 @@ impl QuoteGenerator {
 		serde_json::json!({
 			"EIP712Domain": [
 				{"name": "name", "type": "string"},
+				{"name": "version", "type": "string"},
 				{"name": "chainId", "type": "uint256"},
 				{"name": "verifyingContract", "type": "address"}
 			],
