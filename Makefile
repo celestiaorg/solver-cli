@@ -225,10 +225,10 @@ reset: clean
 ## setup: Full setup (init + deploy + configure + fund + mint tokens to user)
 setup: init deploy configure fund fund-operator fund-user mint-user
 	@echo ""
-	@echo "⚠️  IMPORTANT: Stop all running services before setup!"
+	@echo "IMPORTANT: Stop all running services before setup!"
 	@echo "    Run 'make stop' first if services are running"
 	@echo ""
-	@echo "✓ Setup complete! Next steps:"
+	@echo "Setup complete! Next steps:"
 	@echo "  1. make aggregator - Start OIF aggregator (in separate terminal)"
 	@echo "  2. make solver - Start solver service (in another terminal)"
 	@echo "  3. make operator - Start oracle operator service (in another terminal)"

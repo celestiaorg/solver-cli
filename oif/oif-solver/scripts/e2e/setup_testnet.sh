@@ -120,7 +120,7 @@ init_config_files() {
         if [ -f "$PROJECT_ROOT/.env.example" ]; then
             cp "$PROJECT_ROOT/.env.example" "$PROJECT_ROOT/.env"
             echo -e "${GREEN}✓${NC} Created .env from .env.example"
-            echo -e "${YELLOW}  ⚠️  Please edit .env and add your private keys${NC}"
+            echo -e "${YELLOW}   Please edit .env and add your private keys${NC}"
         fi
     else
         echo -e "${BLUE}ℹ${NC} .env already exists"
@@ -128,7 +128,7 @@ init_config_files() {
     
     # Check if testnet-config.json exists
     if [ ! -f "$CONFIG_FILE" ]; then
-        echo -e "${RED}❌ testnet-config.json not found${NC}"
+        echo -e "${RED}testnet-config.json not found${NC}"
         echo "  Please ensure testnet-config.json exists in $SCRIPT_DIR"
     else
         echo -e "${BLUE}ℹ${NC} testnet-config.json exists"
@@ -204,7 +204,7 @@ generate_solver_configs() {
     # Generate gas config
     generate_gas_config
     
-    echo -e "${GREEN}✅ Configuration files generated${NC}"
+    echo -e "${GREEN}Configuration files generated${NC}"
 }
 
 # Generate main config file
@@ -576,7 +576,7 @@ show_summary() {
     local dest_name="$4"
     
     echo
-    echo -e "${GREEN}✅ Setup complete!${NC}"
+    echo -e "${GREEN}Setup complete!${NC}"
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo
     
@@ -615,7 +615,7 @@ show_summary() {
     # Show enabled settlement methods
     local enabled_settlements=$(get_enabled_settlements "$ORIGIN_CHAIN" "$DEST_CHAIN")
     if [ -n "$enabled_settlements" ]; then
-        echo -e "${BLUE}🔄 Enabled Settlement Methods:${NC}"
+        echo -e "${BLUE}Enabled Settlement Methods:${NC}"
         for method in $enabled_settlements; do
             echo "  - $method"
         done
@@ -625,7 +625,7 @@ show_summary() {
 
 # Main function
 main() {
-    echo -e "${BLUE}🔧 OIF Solver Testnet Setup (v2)${NC}"
+    echo -e "${BLUE}OIF Solver Testnet Setup (v2)${NC}"
     echo "========================================"
     echo
     
@@ -634,7 +634,7 @@ main() {
     
     # Validate required arguments
     if [ -z "$ORIGIN_CHAIN" ] || [ -z "$DEST_CHAIN" ]; then
-        echo -e "${RED}❌ Missing required arguments${NC}"
+        echo -e "${RED}Missing required arguments${NC}"
         echo "Usage: $0 --origin <chain> --dest <chain>"
         echo "Use --help for more information"
         exit 1

@@ -152,7 +152,18 @@ pub fn parse_address(hex_str: &str) -> Result<Address, String> {
 			// Other missing zeros cases - pad to 64 chars (32 bytes)
 			format!("{:0>64}", hex_clean)
 		},
-		_ => hex_clean.to_string(),
+		_ if hex_clean.len() <= 40 => {
+			// Short addresses - pad to 40 chars (20 bytes)
+			format!("{:0>40}", hex_clean)
+		},
+		_ => {
+			// Fallback: ensure even length by padding with a leading zero if needed
+			if hex_clean.len() % 2 == 1 {
+				format!("0{}", hex_clean)
+			} else {
+				hex_clean.to_string()
+			}
+		},
 	};
 
 	hex::decode(&padded_hex)

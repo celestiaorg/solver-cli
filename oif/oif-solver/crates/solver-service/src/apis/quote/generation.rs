@@ -489,10 +489,6 @@ impl QuoteGenerator {
 			})?;
 
 		match lock_type {
-			LockType::Permit2Escrow => {
-				self.generate_permit2_order(request, config, input_oracle, output_oracle)
-					.await
-			},
 			LockType::Eip3009Escrow => {
 				self.generate_eip3009_order(request, config, input_oracle, output_oracle)
 					.await
@@ -504,39 +500,6 @@ impl QuoteGenerator {
 		}
 	}
 
-	async fn generate_permit2_order(
-		&self,
-		request: &GetQuoteRequest,
-		config: &Config,
-		input_oracle: solver_types::Address,
-		output_oracle: solver_types::Address,
-	) -> Result<OifOrder, QuoteError> {
-		let chain_id = request.intent.inputs[0]
-			.asset
-			.ethereum_chain_id()
-			.map_err(|e| {
-				QuoteError::InvalidRequest(format!("Invalid chain ID in asset address: {}", e))
-			})?;
-
-		// Build structured domain object for Permit2
-		let domain_object = self.build_permit2_domain_object(config, chain_id).await?;
-
-		// Generate the message object without pre-computed digest
-		let message_obj =
-			self.build_permit2_message_object(request, config, input_oracle, output_oracle)?;
-
-		let order = OifOrder::OifEscrowV0 {
-			payload: OrderPayload {
-				signature_type: SignatureType::Eip712,
-				domain: serde_json::to_value(domain_object).unwrap_or(serde_json::Value::Null),
-				primary_type: "PermitBatchWitnessTransferFrom".to_string(),
-				message: message_obj,
-				types: Some(self.build_permit2_eip712_types()),
-			},
-		};
-
-		Ok(order)
-	}
 
 	async fn generate_eip3009_order(
 		&self,
@@ -1272,73 +1235,8 @@ impl QuoteGenerator {
 	}
 
 	/// Build structured domain object for Permit2
-	async fn build_permit2_domain_object(
-		&self,
-		_config: &Config,
-		chain_id: u64,
-	) -> Result<serde_json::Value, QuoteError> {
-		use crate::apis::quote::registry::PROTOCOL_REGISTRY;
-
-		// Get Permit2 contract address for this chain
-		let permit2_address = PROTOCOL_REGISTRY
-			.get_permit2_address(chain_id)
-			.ok_or_else(|| {
-				QuoteError::InvalidRequest(format!("Permit2 not deployed on chain {}", chain_id))
-			})?;
-
-		// Build domain object similar to TheCompact and EIP-3009 structure
-		Ok(serde_json::json!({
-			"name": "Permit2",
-			"chainId": chain_id.to_string(),
-			"verifyingContract": format!("0x{:040x}", permit2_address)
-		}))
-	}
 
 	/// Build Permit2 message object
-	fn build_permit2_message_object(
-		&self,
-		request: &GetQuoteRequest,
-		config: &Config,
-		input_oracle: solver_types::Address,
-		output_oracle: solver_types::Address,
-	) -> Result<serde_json::Value, QuoteError> {
-		use crate::apis::quote::permit2::build_permit2_batch_witness_digest;
-
-		// Generate the complete message structure
-		let (_final_digest, message_obj) =
-			build_permit2_batch_witness_digest(request, config, input_oracle, output_oracle)?;
-
-		// Extract only the EIP-712 message fields (no metadata like "signing", "digest")
-		let permitted = message_obj
-			.get("permitted")
-			.cloned()
-			.unwrap_or(serde_json::Value::Null);
-		let spender = message_obj
-			.get("spender")
-			.cloned()
-			.unwrap_or(serde_json::Value::Null);
-		let nonce = message_obj
-			.get("nonce")
-			.cloned()
-			.unwrap_or(serde_json::Value::Null);
-		let deadline = message_obj
-			.get("deadline")
-			.cloned()
-			.unwrap_or(serde_json::Value::Null);
-		let witness = message_obj
-			.get("witness")
-			.cloned()
-			.unwrap_or(serde_json::Value::Null);
-
-		// Return clean message with only EIP-712 fields (no wrapper)
-		Ok(serde_json::json!({
-			"permitted": permitted,
-			"spender": spender,
-			"nonce": nonce,
-			"deadline": deadline,
-			"witness": witness
-		}))
-	}
 
 	fn calculate_eta(&self, preference: &Option<QuotePreference>) -> u64 {
 		let base_eta = 120u64;
@@ -1404,41 +1302,6 @@ impl QuoteGenerator {
 	}
 
 	/// Generates EIP-712 types definition for Permit2 orders
-	fn build_permit2_eip712_types(&self) -> serde_json::Value {
-		serde_json::json!({
-			"EIP712Domain": [
-				{"name": "name", "type": "string"},
-				{"name": "chainId", "type": "uint256"},
-				{"name": "verifyingContract", "type": "address"}
-			],
-			"PermitBatchWitnessTransferFrom": [
-				{"name": "permitted", "type": "TokenPermissions[]"},
-				{"name": "spender", "type": "address"},
-				{"name": "nonce", "type": "uint256"},
-				{"name": "deadline", "type": "uint256"},
-				{"name": "witness", "type": "Permit2Witness"}
-			],
-			"MandateOutput": [
-				{"name": "oracle", "type": "bytes32"},
-				{"name": "settler", "type": "bytes32"},
-				{"name": "chainId", "type": "uint256"},
-				{"name": "token", "type": "bytes32"},
-				{"name": "amount", "type": "uint256"},
-				{"name": "recipient", "type": "bytes32"},
-				{"name": "callbackData", "type": "bytes"},
-				{"name": "context", "type": "bytes"}
-			],
-			"Permit2Witness": [
-				{"name": "expires", "type": "uint32"},
-				{"name": "inputOracle", "type": "address"},
-				{"name": "outputs", "type": "MandateOutput[]"}
-			],
-			"TokenPermissions": [
-				{"name": "token", "type": "address"},
-				{"name": "amount", "type": "uint256"}
-			]
-		})
-	}
 
 	/// Generates EIP-712 types definition for TheCompact BatchCompact orders
 	fn build_compact_eip712_types(&self) -> serde_json::Value {
