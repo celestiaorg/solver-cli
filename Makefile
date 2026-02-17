@@ -128,6 +128,24 @@ fund-operator:
 		echo "Oracle operator funded"
 .PHONY: fund-operator
 
+## fund-user: Fund user with ETH on all chains for gas
+fund-user:
+	@echo "Funding user with ETH on all chains..."
+	@. ./.env && \
+		USER_ADDR=$$(cast wallet address --private-key $$USER_PK) && \
+		echo "  User address: $$USER_ADDR" && \
+		echo "  Funding on Evolve (10 ETH)..." && \
+		cast send --rpc-url $$EVOLVE_RPC --private-key $$EVOLVE_PK --value 10ether $$USER_ADDR 2>/dev/null && \
+		if [ ! -z "$$EVOLVE2_RPC" ]; then \
+			echo "  Funding on Evolve2 (10 ETH)..." && \
+			cast send --rpc-url $$EVOLVE2_RPC --private-key $$EVOLVE2_PK --value 10ether $$USER_ADDR 2>/dev/null; \
+		fi && \
+		echo "  Funding on Sepolia (0.01 ETH)..." && \
+		cast send --rpc-url $$SEPOLIA_RPC --private-key $$SEPOLIA_PK --value 0.01ether $$USER_ADDR 2>/dev/null || \
+		echo "  Warning: Could not fund on Sepolia (may need testnet ETH)" && \
+		echo "User funded"
+.PHONY: fund-user
+
 ## solver-start: Start the solver service (with retry for nonce issues)
 solver-start: build
 	@for i in 1 2 3; do \
@@ -204,7 +222,7 @@ reset: clean
 .PHONY: reset
 
 ## setup: Full setup (init + deploy + configure + fund + mint tokens to user)
-setup: init deploy configure fund fund-operator mint-user
+setup: init deploy configure fund fund-operator fund-user mint-user
 	@echo ""
 	@echo "Setup complete! Next steps:"
 	@echo "  1. make aggregator - Start OIF aggregator (in separate terminal)"
@@ -218,5 +236,6 @@ setup: init deploy configure fund fund-operator mint-user
 clean:
 	@rm -rf .solver config/*.toml config/*.yaml
 	@rm -f .anvil1.pid .anvil1.log .anvil2.pid .anvil2.log
+	@rm -f config/oracle-state.json
 	@echo "Cleaned!"
 .PHONY: clean
