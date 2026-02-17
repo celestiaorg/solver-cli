@@ -190,6 +190,7 @@ impl ChainCommand {
             input_settler_escrow: Some(input_settler.clone()),
             output_settler_simple: Some(output_settler.clone()),
             oracle: Some(oracle.clone()),
+            permit2: None, // TODO: Add permit2 parameter to chain add command
         };
 
         print_address("InputSettlerEscrow", &input_settler);

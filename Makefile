@@ -17,8 +17,8 @@ start:
 	@if [ -f .anvil1.pid ] && kill -0 $$(cat .anvil1.pid) 2>/dev/null; then \
 		echo "Anvil 1 (evolve) already running (PID: $$(cat .anvil1.pid))"; \
 	else \
-		echo "Starting Anvil 1 (evolve) on port 8545, chain-id 1234..."; \
-		anvil --chain-id 1234 --block-time 1 --port 8545 > .anvil1.log 2>&1 & \
+		echo "Starting Anvil 1 (evolve) on port 8545, chain-id 31337..."; \
+		anvil --chain-id 31337 --block-time 1 --port 8545 > .anvil1.log 2>&1 & \
 		echo $$! > .anvil1.pid; \
 		sleep 2; \
 		echo "Anvil 1 started (PID: $$(cat .anvil1.pid))"; \
@@ -26,8 +26,8 @@ start:
 	@if [ -f .anvil2.pid ] && kill -0 $$(cat .anvil2.pid) 2>/dev/null; then \
 		echo "Anvil 2 (evolve2) already running (PID: $$(cat .anvil2.pid))"; \
 	else \
-		echo "Starting Anvil 2 (evolve2) on port 8546, chain-id 5678..."; \
-		anvil --chain-id 5678 --block-time 1 --port 8546 > .anvil2.log 2>&1 & \
+		echo "Starting Anvil 2 (evolve2) on port 8546, chain-id 31338..."; \
+		anvil --chain-id 31338 --block-time 1 --port 8546 > .anvil2.log 2>&1 & \
 		echo $$! > .anvil2.pid; \
 		sleep 2; \
 		echo "Anvil 2 started (PID: $$(cat .anvil2.pid))"; \
@@ -48,8 +48,9 @@ stop:
 		echo "Anvil 2 (evolve2) stopped"; \
 	fi
 	@$(SOLVER_CLI) solver stop 2>/dev/null || true
-	@pkill -f oracle-operator 2>/dev/null || true
-	@pkill -f oif-aggregator 2>/dev/null || true
+	@pkill -9 -f "solver-cli solver start" 2>/dev/null || true
+	@pkill -9 -f oracle-operator 2>/dev/null || true
+	@pkill -9 -f oif-aggregator 2>/dev/null || true
 	@echo "All services stopped"
 .PHONY: stop
 
@@ -224,7 +225,10 @@ reset: clean
 ## setup: Full setup (init + deploy + configure + fund + mint tokens to user)
 setup: init deploy configure fund fund-operator fund-user mint-user
 	@echo ""
-	@echo "Setup complete! Next steps:"
+	@echo "⚠️  IMPORTANT: Stop all running services before setup!"
+	@echo "    Run 'make stop' first if services are running"
+	@echo ""
+	@echo "✓ Setup complete! Next steps:"
 	@echo "  1. make aggregator - Start OIF aggregator (in separate terminal)"
 	@echo "  2. make solver - Start solver service (in another terminal)"
 	@echo "  3. make operator - Start oracle operator service (in another terminal)"
@@ -234,7 +238,7 @@ setup: init deploy configure fund fund-operator fund-user mint-user
 
 ## clean: Remove generated files
 clean:
-	@rm -rf .solver config/*.toml config/*.yaml
+	@rm -rf .solver config/*.toml config/*.yaml config/config.json
 	@rm -f .anvil1.pid .anvil1.log .anvil2.pid .anvil2.log
 	@rm -f config/oracle-state.json
 	@echo "Cleaned!"
