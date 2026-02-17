@@ -109,6 +109,17 @@ min_profitability_pct = -1000.0  # Allow massive losses for testing
 monitoring_timeout_seconds = 28800
 
 # ============================================================================
+# HTTP API
+# ============================================================================
+[api]
+enabled = true
+host = "127.0.0.1"
+port = 5001
+
+[api.implementations]
+discovery = "offchain_eip7683"
+
+# ============================================================================
 # STORAGE
 # ============================================================================
 [storage]
@@ -149,6 +160,12 @@ network_ids = [{chain_ids_str}]
 [discovery.implementations.onchain_eip7683]
 network_ids = [{chain_ids_str}]
 polling_interval_secs = 2
+
+[discovery.implementations.offchain_eip7683]
+# Offchain discovery runs its own API server for order submission
+api_host = "127.0.0.1"
+api_port = 5002
+network_ids = [{chain_ids_str}]
 
 # ============================================================================
 # ORDER

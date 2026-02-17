@@ -23,6 +23,20 @@ make solver
 make operator
 ```
 
+## Quick Test
+
+To quickly test the aggregator API with correct ERC-7930 format:
+
+```bash
+./scripts/test_aggregator.sh
+```
+
+This script will:
+- Convert your deployed addresses to ERC-7930 hex format
+- Check solver status
+- Request a quote for 1 USDC from evolve → sepolia
+- Display the results
+
 ## API Endpoints
 
 ### Health Check
@@ -34,7 +48,7 @@ curl http://localhost:4000/health
 ### List Solvers
 
 ```bash
-curl http://localhost:4000/api/v1/solvers | jq
+curl -s http://localhost:4000/api/v1/solvers | jq
 ```
 
 **Response:**
@@ -62,36 +76,56 @@ curl http://localhost:4000/api/v1/solvers/local-oif-solver | jq
 
 **How it works:** This queries **all enabled solvers** for quotes. Each solver returns their best offer.
 
-First, get your deployed token addresses:
+**Important:** The aggregator uses **ERC-7930 InteropAddress format** (hex-encoded), not CAIP-19 text format.
+
+#### Address Conversion Helper
+
+A conversion script is provided at [`scripts/convert_address.py`](../scripts/convert_address.py):
+
 ```bash
-# Get USDC address on evolve (chain 1234)
-USDC_EVOLVE=$(cat .solver/state.json | jq -r '.chains."1234".tokens.USDC.address')
+# Usage
+python3 scripts/convert_address.py "eip155:chainId:0xaddress"
 
-# Get USDC address on sepolia (chain 11155111)
-USDC_SEPOLIA=$(cat .solver/state.json | jq -r '.chains."11155111".tokens.USDC.address')
-
-# Get user address
-USER_ADDR=$(cast wallet address --private-key $USER_PK)
-
-echo "USDC on evolve: $USDC_EVOLVE"
-echo "USDC on sepolia: $USDC_SEPOLIA"
-echo "User address: $USER_ADDR"
+# Example
+python3 scripts/convert_address.py "eip155:1234:0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
+# Output: 0x000100000204d214cf7ed3acca5a467e9e704c703e8d87f634fb0fc9
 ```
 
-Request quotes for 1 USDC from evolve → sepolia:
+#### Get Addresses and Convert
+
 ```bash
-curl -X POST http://localhost:4000/api/v1/quotes \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"input\": {
-      \"asset\": \"eip155:1234/erc20:$USDC_EVOLVE\",
-      \"amount\": \"1000000\"
-    },
-    \"output\": {
-      \"asset\": \"eip155:11155111/erc20:$USDC_SEPOLIA\",
-      \"recipient\": \"$USER_ADDR\"
-    }
-  }" | jq
+# Get deployed token addresses
+USDC_EVOLVE=$(cat .solver/state.json | jq -r '.chains."1234".tokens.USDC.address')
+USDC_SEPOLIA=$(cat .solver/state.json | jq -r '.chains."11155111".tokens.USDC.address')
+USER_ADDR=$(cast wallet address --private-key $USER_PK)
+
+echo "Text format:"
+echo "  USDC evolve:  eip155:1234:$USDC_EVOLVE"
+echo "  USDC sepolia: eip155:11155111:$USDC_SEPOLIA"
+echo "  User address: eip155:1234:$USER_ADDR"
+
+# Convert to ERC-7930 hex format
+USER_EVOLVE_HEX=$(python3 scripts/convert_address.py "eip155:1234:$USER_ADDR")
+USDC_EVOLVE_HEX=$(python3 scripts/convert_address.py "eip155:1234:$USDC_EVOLVE")
+USER_SEPOLIA_HEX=$(python3 scripts/convert_address.py "eip155:11155111:$USER_ADDR")
+USDC_SEPOLIA_HEX=$(python3 scripts/convert_address.py "eip155:11155111:$USDC_SEPOLIA")
+
+echo ""
+echo "ERC-7930 hex format:"
+echo "  USER_EVOLVE_HEX=$USER_EVOLVE_HEX"
+echo "  USDC_EVOLVE_HEX=$USDC_EVOLVE_HEX"
+echo "  USER_SEPOLIA_HEX=$USER_SEPOLIA_HEX"
+echo "  USDC_SEPOLIA_HEX=$USDC_SEPOLIA_HEX"
+```
+
+#### Request Quote
+
+Request quotes for 1 USDC from evolve → sepolia:
+
+```bash
+QUOTE_RESPONSE=$(curl -s -X POST http://localhost:4000/api/v1/quotes -H "Content-Type: application/json" -d "{\"user\":\"$USER_EVOLVE_HEX\",\"intent\":{\"intentType\":\"oif-swap\",\"inputs\":[{\"user\":\"$USER_EVOLVE_HEX\",\"asset\":\"$USDC_EVOLVE_HEX\",\"amount\":\"1000000\"}],\"outputs\":[{\"receiver\":\"$USER_SEPOLIA_HEX\",\"asset\":\"$USDC_SEPOLIA_HEX\"}],\"swapType\":\"exact-input\"},\"supportedTypes\":[\"oif-escrow-v0\"]}")
+
+echo "$QUOTE_RESPONSE" | jq
 ```
 
 **Response Example:**
@@ -99,56 +133,86 @@ curl -X POST http://localhost:4000/api/v1/quotes \
 {
   "quotes": [
     {
-      "quote_id": "0x1a2b3c4d5e6f...",
-      "solver_id": "local-oif-solver",
-      "input": {
-        "asset": "eip155:1234/erc20:0x5fbdb2315678afecb367f032d93f642f64180aa3",
-        "amount": "1000000"
+      "quoteId": "550e8400-e29b-41d4-a716-446655440000",
+      "order": {
+        "type": "oif-escrow-v0",
+        "payload": {
+          "signatureType": "eip712",
+          "domain": { ... },
+          "primaryType": "Intent",
+          "message": { ... },
+          "types": { ... }
+        }
       },
-      "output": {
-        "asset": "eip155:11155111/erc20:0x5fbdb2315678afecb367f032d93f642f64180aa3",
-        "amount": "1000000",
-        "recipient": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8"
-      },
-      "deadline": 1708473600,
-      "integrity_hash": "0x7f8e9d..."
+      "validUntil": 1708473600,
+      "eta": 30,
+      "provider": "local-oif-solver",
+      "partialFill": false,
+      "preview": {
+        "inputs": [{
+          "user": "0x000100000204d2148e220e86a7c0c2bca8fa457a571aa01eb324fc46",
+          "asset": "0x000100000204d214cf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+          "amount": "1000000"
+        }],
+        "outputs": [{
+          "receiver": "0x0001000003aa36a7148e220e86a7c0c2bca8fa457a571aa01eb324fc46",
+          "asset": "0x0001000003aa36a714227c22c05db33e5a88bf587e9febad36c6f92e2b",
+          "amount": "1000000"
+        }]
+      }
     }
-  ],
-  "metadata": {
-    "quote_count": 1,
-    "best_quote_id": "0x1a2b3c4d5e6f...",
-    "total_solvers_queried": 1
-  }
+  ]
 }
 ```
 
-**Important:** Save the `quote_id` - you'll need it to submit the order to this specific solver.
+**Important:** Save the `quoteId` - you'll need it to submit the order to this specific solver.
 
 ### Submit Order
 
-**How it works:** The order goes **only to the solver that provided the quote**. Use the `quote_id` from the previous step.
+**How it works:** The order goes **only to the solver that provided the quote**. Orders require a valid EIP-712 signature from the user.
+
+#### Step 1: Extract EIP-712 Payload
 
 ```bash
-# Get the quote_id from previous response
-QUOTE_ID="0x1a2b3c4d5e6f..."
+# Save the quote for signing
+QUOTE=$(echo $QUOTE_RESPONSE | jq -c '.quotes[0]')
 
-# Sign the quote (this would normally be done by your wallet)
-# For testing, the aggregator may accept unsigned orders
-curl -X POST http://localhost:4000/api/v1/orders \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"quote_id\": \"$QUOTE_ID\"
-  }" | jq
+# Extract the EIP-712 payload from the quote
+echo $QUOTE | jq '.order.payload' > /tmp/eip712_payload.json
+
+# View what we're signing
+echo "EIP-712 Payload to sign:"
+cat /tmp/eip712_payload.json | jq
+```
+
+#### Step 2: Sign with EIP-712
+
+The quote contains an EIP-712 typed data structure that needs to be signed with the user's private key:
+
+```bash
+# Sign the EIP-712 payload using cast
+SIGNATURE=$(cast wallet sign-typed-data --private-key $USER_PK --data "$(cat /tmp/eip712_payload.json)")
+
+echo "Signature: $SIGNATURE"
+```
+
+**What's being signed:** The EIP-712 payload is a `ReceiveWithAuthorization` message (ERC-3009 permit) that authorizes the InputSettlerEscrow contract to pull tokens from your address.
+
+#### Step 3: Submit Order with Signature
+
+```bash
+# Submit the order with the signature
+ORDER_RESPONSE=$(curl -s -X POST http://localhost:4000/api/v1/orders -H "Content-Type: application/json" -d "{\"quoteResponse\":$QUOTE,\"signature\":\"$SIGNATURE\"}")
+
+echo "$ORDER_RESPONSE" | jq
 ```
 
 **Response Example:**
 ```json
 {
-  "order_id": "0xa1b2c3d4e5f6...",
-  "status": "Pending",
-  "quote_id": "0x1a2b3c4d5e6f...",
-  "solver_id": "local-oif-solver",
-  "created_at": 1708473500
+  "orderId": "0xa1b2c3d4e5f6...",
+  "status": "accepted",
+  "message": "Order accepted and forwarded to solver"
 }
 ```
 
@@ -162,36 +226,59 @@ curl -X POST http://localhost:4000/api/v1/orders \
 ### Get Order Status
 
 ```bash
-# Use the order_id from the submit response
-ORDER_ID="0xa1b2c3d4e5f6..."
+# Use the orderId from the submit response
+ORDER_ID=$(echo $ORDER_RESPONSE | jq -r '.orderId')
 
-curl http://localhost:4000/api/v1/orders/$ORDER_ID | jq
+curl -s http://localhost:4000/api/v1/orders/$ORDER_ID | jq
 ```
 
 **Response Example (Pending):**
 ```json
 {
-  "order_id": "0xa1b2c3d4e5f6...",
-  "status": "Pending",
-  "solver_id": "local-oif-solver",
-  "quote_id": "0x1a2b3c4d5e6f...",
-  "created_at": 1708473500,
-  "updated_at": 1708473500
+  "id": "0xa1b2c3d4e5f6...",
+  "status": "pending",
+  "createdAt": 1708473500,
+  "updatedAt": 1708473500,
+  "quoteId": "550e8400-e29b-41d4-a716-446655440000",
+  "inputAmounts": [
+    {
+      "asset": "0x000100000204d214cf7ed3acca5a467e9e704c703e8d87f634fb0fc9",
+      "amount": "1000000"
+    }
+  ],
+  "outputAmounts": [
+    {
+      "asset": "0x0001000003aa36a714227c22c05db33e5a88bf587e9febad36c6f92e2b",
+      "amount": "1000000"
+    }
+  ],
+  "settlement": {
+    "status": "pending"
+  }
 }
 ```
 
 **Response Example (Finalized):**
 ```json
 {
-  "order_id": "0xa1b2c3d4e5f6...",
-  "status": "Finalized",
-  "solver_id": "local-oif-solver",
-  "quote_id": "0x1a2b3c4d5e6f...",
-  "fill_hash": "0x9f8e7d6c5b4a3210...",
-  "claim_hash": "0x1234567890abcdef...",
-  "created_at": 1708473500,
-  "updated_at": 1708473530,
-  "finalized_at": 1708473530
+  "id": "0xa1b2c3d4e5f6...",
+  "status": "finalized",
+  "createdAt": 1708473500,
+  "updatedAt": 1708473530,
+  "quoteId": "550e8400-e29b-41d4-a716-446655440000",
+  "inputAmounts": [...],
+  "outputAmounts": [...],
+  "settlement": {
+    "status": "finalized",
+    "fillTransaction": {
+      "hash": "0x9f8e7d6c5b4a3210...",
+      "chainId": 11155111
+    },
+    "claimTransaction": {
+      "hash": "0x1234567890abcdef...",
+      "chainId": 1234
+    }
+  }
 }
 ```
 
@@ -199,6 +286,166 @@ curl http://localhost:4000/api/v1/orders/$ORDER_ID | jq
 ```bash
 make balances
 ```
+
+## Complete End-to-End Test
+
+This section provides a complete script to test the full order flow through the aggregator's `/orders` endpoint.
+
+### Prerequisites
+
+1. All services running:
+   ```bash
+   # Terminal 1
+   make aggregator
+
+   # Terminal 2
+   make solver
+
+   # Terminal 3
+   make operator
+   ```
+
+2. Wait 5-10 seconds after starting the aggregator for asset discovery to complete
+
+3. Verify solver is available:
+   ```bash
+   curl -s http://localhost:4000/api/v1/solvers/local-oif-solver | jq '.supportedAssets'
+   ```
+
+### Complete Test Script
+
+```bash
+#!/bin/bash
+set -e
+
+# Load environment
+. ./.env
+
+echo "=== E2E Order Submission Test ==="
+echo ""
+
+# 1. Get deployed addresses
+USDC_EVOLVE=$(cat .solver/state.json | jq -r '.chains."1234".tokens.USDC.address')
+USDC_SEPOLIA=$(cat .solver/state.json | jq -r '.chains."11155111".tokens.USDC.address')
+USER_ADDR=$(cast wallet address --private-key $USER_PK)
+
+echo "Deployed addresses:"
+echo "  USDC evolve:  $USDC_EVOLVE"
+echo "  USDC sepolia: $USDC_SEPOLIA"
+echo "  User:         $USER_ADDR"
+echo ""
+
+# 2. Convert to ERC-7930 hex format
+USER_EVOLVE_HEX=$(python3 scripts/convert_address.py "eip155:1234:$USER_ADDR")
+USDC_EVOLVE_HEX=$(python3 scripts/convert_address.py "eip155:1234:$USDC_EVOLVE")
+USER_SEPOLIA_HEX=$(python3 scripts/convert_address.py "eip155:11155111:$USER_ADDR")
+USDC_SEPOLIA_HEX=$(python3 scripts/convert_address.py "eip155:11155111:$USDC_SEPOLIA")
+
+echo "Converted to ERC-7930:"
+echo "  USER_EVOLVE_HEX:  $USER_EVOLVE_HEX"
+echo "  USDC_EVOLVE_HEX:  $USDC_EVOLVE_HEX"
+echo "  USER_SEPOLIA_HEX: $USER_SEPOLIA_HEX"
+echo "  USDC_SEPOLIA_HEX: $USDC_SEPOLIA_HEX"
+echo ""
+
+# 3. Request quote
+echo "=== Requesting Quote ==="
+QUOTE_RESPONSE=$(curl -s -X POST http://localhost:4000/api/v1/quotes \
+  -H "Content-Type: application/json" \
+  -d "{\"user\":\"$USER_EVOLVE_HEX\",\"intent\":{\"intentType\":\"oif-swap\",\"inputs\":[{\"user\":\"$USER_EVOLVE_HEX\",\"asset\":\"$USDC_EVOLVE_HEX\",\"amount\":\"1000000\"}],\"outputs\":[{\"receiver\":\"$USER_SEPOLIA_HEX\",\"asset\":\"$USDC_SEPOLIA_HEX\"}],\"swapType\":\"exact-input\"},\"supportedTypes\":[\"oif-escrow-v0\"]}")
+
+QUOTE_ID=$(echo $QUOTE_RESPONSE | jq -r '.quotes[0].quoteId // empty')
+
+if [ -z "$QUOTE_ID" ]; then
+  echo "ERROR: Failed to get quote"
+  echo $QUOTE_RESPONSE | jq
+  exit 1
+fi
+
+echo "✓ Quote received: $QUOTE_ID"
+echo ""
+
+# 4. Extract and sign EIP-712 payload
+echo "=== Signing Order ==="
+QUOTE=$(echo $QUOTE_RESPONSE | jq -c '.quotes[0]')
+echo $QUOTE | jq '.order.payload' > /tmp/eip712_payload.json
+
+SIGNATURE=$(cast wallet sign-typed-data --private-key $USER_PK --data "$(cat /tmp/eip712_payload.json)")
+echo "✓ Order signed: $SIGNATURE"
+echo ""
+
+# 5. Submit order
+echo "=== Submitting Order ==="
+ORDER_RESPONSE=$(curl -s -X POST http://localhost:4000/api/v1/orders \
+  -H "Content-Type: application/json" \
+  -d "{\"quoteResponse\":$QUOTE,\"signature\":\"$SIGNATURE\"}")
+
+ORDER_ID=$(echo $ORDER_RESPONSE | jq -r '.orderId // .error // empty')
+
+if echo $ORDER_RESPONSE | jq -e '.error' > /dev/null; then
+  echo "ERROR: Order submission failed"
+  echo $ORDER_RESPONSE | jq
+  exit 1
+fi
+
+echo "✓ Order submitted: $ORDER_ID"
+echo ""
+
+# 6. Monitor order status
+echo "=== Monitoring Order ==="
+echo "Waiting for solver to fill order..."
+sleep 5
+
+for i in {1..30}; do
+  STATUS=$(curl -s http://localhost:4000/api/v1/orders/$ORDER_ID | jq -r '.status // "unknown"')
+  echo "[$i/30] Order status: $STATUS"
+
+  if [ "$STATUS" = "finalized" ]; then
+    echo ""
+    echo "✓ Order finalized!"
+    curl -s http://localhost:4000/api/v1/orders/$ORDER_ID | jq
+    break
+  fi
+
+  sleep 2
+done
+
+echo ""
+echo "=== Final Balances ==="
+make balances
+```
+
+Save this as `scripts/test_orders_e2e.sh` and run:
+
+```bash
+chmod +x scripts/test_orders_e2e.sh
+./scripts/test_orders_e2e.sh
+```
+
+### Expected Flow
+
+1. **Quote**: Aggregator queries solver, receives quote with EIP-712 payload
+2. **Sign**: User signs the EIP-712 typed data with their private key
+3. **Submit**: Order sent to aggregator → forwarded to solver's `/orders` endpoint (port 5001 → port 5002)
+4. **Fill**: Solver fills order on destination chain
+5. **Attest**: Oracle operator signs attestation of fill
+6. **Claim**: Solver claims escrowed funds on origin chain
+7. **Finalize**: Order status updated to "finalized"
+
+### Troubleshooting
+
+**"No solvers available for quote aggregation"**
+- Wait 5-10 seconds after starting aggregator for asset discovery
+- Check solver status: `curl -s http://localhost:4000/api/v1/solvers/local-oif-solver | jq`
+- Ensure solver API is responding: `curl -s http://localhost:5001/api/v1/tokens | jq`
+
+**"Failed to extract sponsor: Empty signature provided"**
+- Signature is required! Use `cast wallet sign-typed-data` to sign the EIP-712 payload
+- Don't use `"signature":"0x"` - that will be rejected
+
+**Quote succeeds but order fails with HTTP 400**
+- Your environment variables may have stale addresses from a previous deployment
+- Regenerate hex addresses from current `state.json` (see script above)
 
 ## Configuration
 
@@ -244,11 +491,32 @@ INTEGRITY_SECRET=your_secret_key_here_min_32_characters_required
 
 ## Asset Format
 
-Assets use the CAIP-19 format: `eip155:{chainId}/{namespace}:{address}`
+**Important:** The aggregator uses **ERC-7930 InteropAddress format** (hex-encoded binary), not CAIP-19 text format.
+
+### ERC-7930 InteropAddress Structure
+
+Binary format (encoded as hex string):
+```
+Version(2 bytes) | ChainType(2 bytes) | ChainRefLen(1 byte) | ChainRef(variable) | AddrLen(1 byte) | Address(20 bytes)
+```
 
 **Examples:**
-- `eip155:1234/erc20:0x5FbDB2315678afecb367f032d93F642f64180aa3` - USDC on local chain (1234)
-- `eip155:11155111/erc20:0x5FbDB2315678afecb367f032d93F642f64180aa3` - USDC on Sepolia
+- Chain 1234, address 0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9:
+  - Text: `eip155:1234:0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9`
+  - Hex: `0x000100000204d214cf7ed3acca5a467e9e704c703e8d87f634fb0fc9`
+
+- Chain 11155111, address 0x227c22c05Db33E5A88Bf587E9fEbAd36c6f92e2B:
+  - Text: `eip155:11155111:0x227c22c05Db33E5A88Bf587E9fEbAd36c6f92e2B`
+  - Hex: `0x0001000003aa36a714227c22c05db33e5a88bf587e9febad36c6f92e2b`
+
+### Conversion Helper
+
+Use the provided Python script to convert addresses:
+
+```bash
+python3 scripts/convert_address.py "eip155:1234:0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
+# Output: 0x000100000204d214cf7ed3acca5a467e9e704c703e8d87f634fb0fc9
+```
 
 **Find your deployed token addresses:**
 ```bash
@@ -260,176 +528,84 @@ cat .solver/state.json | jq '.chains'
 Here's a complete end-to-end example using the aggregator:
 
 ```bash
-# 1. Get token addresses
+# 1. Ensure conversion script exists
+if [ ! -f scripts/convert_address.py ]; then
+  echo "Error: scripts/convert_address.py not found. See 'Request Quotes' section to create it."
+  exit 1
+fi
+
+# 2. Get token addresses from deployment
 USDC_EVOLVE=$(cat .solver/state.json | jq -r '.chains."1234".tokens.USDC.address')
 USDC_SEPOLIA=$(cat .solver/state.json | jq -r '.chains."11155111".tokens.USDC.address')
 USER_ADDR=$(cast wallet address --private-key $USER_PK)
 
-# 2. Request quotes
-QUOTE_RESPONSE=$(curl -s -X POST http://localhost:4000/api/v1/quotes \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"input\": {
-      \"asset\": \"eip155:1234/erc20:$USDC_EVOLVE\",
-      \"amount\": \"1000000\"
-    },
-    \"output\": {
-      \"asset\": \"eip155:11155111/erc20:$USDC_SEPOLIA\",
-      \"recipient\": \"$USER_ADDR\"
-    }
-  }")
+echo "Deployed addresses:"
+echo "  USDC evolve:  $USDC_EVOLVE"
+echo "  USDC sepolia: $USDC_SEPOLIA"
+echo "  User:         $USER_ADDR"
+
+# 3. Convert to ERC-7930 hex format
+USER_EVOLVE_HEX=$(python3 scripts/convert_address.py "eip155:1234:$USER_ADDR")
+USDC_EVOLVE_HEX=$(python3 scripts/convert_address.py "eip155:1234:$USDC_EVOLVE")
+USER_SEPOLIA_HEX=$(python3 scripts/convert_address.py "eip155:11155111:$USER_ADDR")
+USDC_SEPOLIA_HEX=$(python3 scripts/convert_address.py "eip155:11155111:$USDC_SEPOLIA")
+
+echo ""
+echo "Converted to ERC-7930:"
+echo "  USER_EVOLVE_HEX:  $USER_EVOLVE_HEX"
+echo "  USDC_EVOLVE_HEX:  $USDC_EVOLVE_HEX"
+echo "  USER_SEPOLIA_HEX: $USER_SEPOLIA_HEX"
+echo "  USDC_SEPOLIA_HEX: $USDC_SEPOLIA_HEX"
+
+# 4. Request quotes
+echo "Requesting quotes..."
+QUOTE_RESPONSE=$(curl -s -X POST http://localhost:4000/api/v1/quotes -H "Content-Type: application/json" -d "{\"user\":\"$USER_EVOLVE_HEX\",\"intent\":{\"intentType\":\"oif-swap\",\"inputs\":[{\"user\":\"$USER_EVOLVE_HEX\",\"asset\":\"$USDC_EVOLVE_HEX\",\"amount\":\"1000000\"}],\"outputs\":[{\"receiver\":\"$USER_SEPOLIA_HEX\",\"asset\":\"$USDC_SEPOLIA_HEX\"}],\"swapType\":\"exact-input\"},\"supportedTypes\":[\"oif-escrow-v0\"]}")
 
 echo "Quotes received:"
 echo $QUOTE_RESPONSE | jq
 
-# 3. Extract quote_id from best quote
-QUOTE_ID=$(echo $QUOTE_RESPONSE | jq -r '.metadata.best_quote_id')
-echo "Best quote ID: $QUOTE_ID"
+# 5. Extract quoteId and order from first quote
+QUOTE_ID=$(echo $QUOTE_RESPONSE | jq -r '.quotes[0].quoteId')
+QUOTE_ORDER=$(echo $QUOTE_RESPONSE | jq '.quotes[0].order')
+echo ""
+echo "Selected quote ID: $QUOTE_ID"
 
-# 4. Submit order
-ORDER_RESPONSE=$(curl -s -X POST http://localhost:4000/api/v1/orders \
-  -H "Content-Type: application/json" \
-  -d "{\"quote_id\": \"$QUOTE_ID\"}")
+# 6. Submit order
+echo ""
+echo "Submitting order..."
+ORDER_RESPONSE=$(curl -s -X POST http://localhost:4000/api/v1/orders -H "Content-Type: application/json" -d "{\"quoteResponse\":$(echo $QUOTE_RESPONSE | jq -c '.quotes[0]'),\"signature\":\"0x\"}")
 
 echo "Order submitted:"
 echo $ORDER_RESPONSE | jq
 
-# 5. Extract order_id
-ORDER_ID=$(echo $ORDER_RESPONSE | jq -r '.order_id')
+# 7. Extract orderId
+ORDER_ID=$(echo $ORDER_RESPONSE | jq -r '.orderId')
+echo ""
 echo "Order ID: $ORDER_ID"
 
-# 6. Poll for order status
+# 8. Poll for order status
+echo ""
 echo "Waiting for order to finalize..."
 while true; do
-  STATUS=$(curl -s http://localhost:4000/api/v1/orders/$ORDER_ID | jq -r '.status')
+  ORDER_STATUS_RESPONSE=$(curl -s http://localhost:4000/api/v1/orders/$ORDER_ID)
+  STATUS=$(echo $ORDER_STATUS_RESPONSE | jq -r '.status')
   echo "Status: $STATUS"
 
-  if [ "$STATUS" = "Finalized" ] || [ "$STATUS" = "Failed" ]; then
+  if [ "$STATUS" = "finalized" ] || [ "$STATUS" = "failed" ]; then
+    echo ""
+    echo "Final order details:"
+    echo $ORDER_STATUS_RESPONSE | jq
     break
   fi
 
   sleep 5
 done
 
-# 7. Check final balances
+# 9. Check final balances
+echo ""
+echo "Checking balances..."
 make balances
 ```
-
-## Architecture
-
-### How Orders Are Routed
-
-```
-User
-  │
-  │ 1. Request quotes
-  ▼
-Aggregator (port 4000)
-  │
-  │ 2. Query all enabled solvers
-  ├──────┬──────┬──────┐
-  │      │      │      │
-  ▼      ▼      ▼      ▼
-Solver1 Solver2 Solver3 Solver4
-  │      │      │      │
-  └──────┴──────┴──────┘
-  │
-  │ 3. All solvers respond with quotes
-  ▼
-Aggregator
-  │
-  │ 4. User selects a quote
-  ▼
-Aggregator
-  │
-  │ 5. Routes order ONLY to the solver that provided the quote
-  ▼
-Selected Solver
-  │
-  │ 6. Fills order on destination chain
-  ▼
-Chain B
-```
-
-### Benefits
-
-**Price Competition:**
-- Multiple solvers compete for orders
-- Users get best available prices
-- Market-driven solver selection
-
-**Reliability:**
-- Circuit breakers automatically disable failing solvers
-- Health checks every 5 minutes
-- Orders only route to healthy solvers
-
-**Transparency:**
-- Each order tracked with specific solver
-- Full order history with fill/claim hashes
-- Real-time status updates
-
-## Troubleshooting
-
-### Aggregator won't start
-
-**Error: Configuration validation failed**
-```bash
-# Check INTEGRITY_SECRET is set
-grep INTEGRITY_SECRET .env
-
-# If missing, add it:
-echo "INTEGRITY_SECRET=$(openssl rand -hex 32)" >> .env
-```
-
-**Error: Port 4000 already in use**
-```bash
-# Find what's using the port
-lsof -i :4000
-
-# Stop the aggregator if it's already running
-pkill -f oif-aggregator
-```
-
-### Solver not appearing in aggregator
-
-1. **Check solver is running:**
-   ```bash
-   curl http://localhost:3000/tokens
-   ```
-
-2. **Check aggregator config:**
-   ```bash
-   cat config/config.json | jq '.solvers'
-   ```
-
-3. **Check aggregator logs:**
-   Look for health check failures or connection errors.
-
-### Quotes request returns empty
-
-1. **Check solver status:**
-   ```bash
-   curl http://localhost:4000/api/v1/solvers | jq
-   ```
-
-   Look for `"status": "Active"`. If solver is in another state, check:
-   - Solver is running and healthy
-   - Solver has supported assets for the requested route
-   - Circuit breaker hasn't opened due to failures
-
-2. **Check asset addresses are correct:**
-   ```bash
-   cat .solver/state.json | jq '.chains'
-   ```
-
-### Order stuck in Pending
-
-1. **Check solver logs** for fill errors
-2. **Check oracle operator is running** and attesting fills
-3. **Check solver has funds** on destination chain:
-   ```bash
-   make balances
-   ```
 
 ## Advanced Configuration
 
