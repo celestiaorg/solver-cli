@@ -51,6 +51,8 @@ stop:
 	@pkill -9 -f "solver-cli solver start" 2>/dev/null || true
 	@pkill -9 -f oracle-operator 2>/dev/null || true
 	@pkill -9 -f oif-aggregator 2>/dev/null || true
+	@pkill -9 -f "node server.js" 2>/dev/null || true
+	@pkill -9 -f "vite" 2>/dev/null || true
 	@echo "All services stopped"
 .PHONY: stop
 
@@ -235,6 +237,22 @@ setup: init deploy configure fund fund-operator fund-user mint-user
 	@echo "  4. make intent - Submit a test intent"
 	@echo "  5. make balances - Check balances"
 .PHONY: setup
+
+## frontend: Start the frontend (backend API + Vite dev server)
+frontend:
+	@echo "Installing frontend dependencies..."
+	@cd frontend && npm install --silent 2>/dev/null
+	@echo "Starting frontend backend (port 3001)..."
+	@cd frontend && node server.js &
+	@sleep 2
+	@echo "Starting Vite dev server (port 5173)..."
+	@cd frontend && npx vite --host
+.PHONY: frontend
+
+## mvp: Run the full MVP demo (all services + frontend)
+mvp:
+	@./mvp.sh
+.PHONY: mvp
 
 ## clean: Remove generated files
 clean:
