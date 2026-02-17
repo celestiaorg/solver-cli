@@ -335,7 +335,50 @@ Solver automatically:
 
 ---
 
-## 8) Output Formatting
+## 8) OIF Aggregator Integration
+
+The system includes an **OIF Aggregator** service that provides:
+- Quote aggregation from multiple solvers
+- Unified HTTP API for quotes and orders
+- Solver health monitoring and circuit breakers
+- Automatic asset discovery
+
+### Architecture
+
+```
+User/Client → Aggregator (port 4000) → Solver(s) (port 3000+)
+```
+
+### Aggregator Configuration
+
+Generated at `config/aggregator.json`:
+- Server settings (host, port)
+- Registered solver endpoints
+- Aggregation settings (timeouts, retries)
+- Circuit breaker configuration
+- Metrics and monitoring
+
+### Running with Aggregator
+
+```bash
+# Terminal 1: Start aggregator
+make aggregator
+
+# Terminal 2: Start solver
+make solver
+
+# Terminal 3: Start oracle operator
+make operator
+
+# Terminal 4: Submit intents (via CLI or aggregator API)
+make intent
+```
+
+See [AGGREGATOR_INTEGRATION.md](AGGREGATOR_INTEGRATION.md) for detailed integration guide.
+
+---
+
+## 9) Output Formatting
 
 CLI outputs formatted summaries (for any number of chains):
 
@@ -354,20 +397,22 @@ CLI outputs formatted summaries (for any number of chains):
 
 ---
 
-## 9) Quick Start
+## 10) Quick Start
+
+### Standard Setup (Direct to Chain)
 
 ```bash
-# 1. Start local Evolve node
+# 1. Start local chains
 make start
 
-# 2. Deploy contracts to both chains
+# 2. Deploy contracts
 make deploy
 
 # 3. Start solver (in separate terminal)
-make solver-start
+make solver
 
 # 4. Start oracle operator (in another terminal)
-make operator-start
+make operator
 
 # 5. Submit intent
 make intent
@@ -376,17 +421,44 @@ make intent
 make balances
 ```
 
-**Note**: Both solver and oracle operator must be running for the full flow to work. The solver fills orders, the oracle operator signs attestations, and the solver claims funds once attested.
+### With Aggregator (Recommended)
 
-**Aliases**: You can use `make solver` instead of `make solver-start` and `make operator` instead of `make operator-start` for convenience.
+```bash
+# 1. Start local chains
+make start
+
+# 2. Deploy contracts
+make deploy
+
+# 3. Start aggregator (Terminal 1)
+make aggregator
+
+# 4. Start solver (Terminal 2)
+make solver
+
+# 5. Start oracle operator (Terminal 3)
+make operator
+
+# 6. Submit intent
+make intent
+
+# 7. Verify balances
+make balances
+```
+
+**Note**: All services must be running for the full flow to work:
+- **Solver**: Fills orders on destination chain
+- **Oracle Operator**: Signs attestations
+- **Aggregator** (optional): Aggregates quotes from multiple solvers
 
 ---
 
-## 10) Acceptance Checklist
+## 11) Acceptance Checklist
 
 - [x] `make deploy`: deploys fresh contracts (including CentralizedOracle), prints addresses
-- [x] `make solver-start`: starts solver watching both chains
-- [x] `make operator-start`: starts oracle operator (separate service)
+- [x] `make aggregator`: starts OIF aggregator on port 4000
+- [x] `make solver`: starts solver watching all chains (with HTTP API on port 3000)
+- [x] `make operator`: starts oracle operator (separate service)
 - [x] `make intent`: submits intent
   - Solver fills on destination
   - Oracle operator signs attestation
@@ -394,3 +466,11 @@ make balances
 - [x] `make balances`: shows correct balance changes
   - User: source decreased, destination increased
   - Solver: source increased, destination decreased
+
+### Aggregator Features
+
+- [x] Quote aggregation from multiple solvers
+- [x] Automatic solver health monitoring
+- [x] Circuit breaker for failing solvers
+- [x] Asset discovery and caching
+- [x] Unified REST API
