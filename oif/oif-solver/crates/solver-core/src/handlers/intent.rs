@@ -196,7 +196,7 @@ impl IntentHandler {
 							Ok(simulation_result) => {
 								if simulation_result.has_callback {
 									tracing::info!(
-										"✅ Callback simulation passed for order {} - estimated gas: {} units on chain {}",
+										"Callback simulation passed for order {} - estimated gas: {} units on chain {}",
 										order.id,
 										simulation_result.estimated_gas_units,
 										simulation_result.chain_id

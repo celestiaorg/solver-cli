@@ -20,18 +20,18 @@ AUTH_TYPE="${2:-permit2}"
 
 # Validate arguments
 if [[ "$LOCK_TYPE" != "compact" && "$LOCK_TYPE" != "escrow" ]]; then
-    echo "❌ Invalid lock_type: $LOCK_TYPE (must be 'compact' or 'escrow')"
+    echo "Invalid lock_type: $LOCK_TYPE (must be 'compact' or 'escrow')"
     exit 1
 fi
 
 if [[ "$AUTH_TYPE" != "permit2" && "$AUTH_TYPE" != "eip3009" ]]; then
-    echo "❌ Invalid auth_type: $AUTH_TYPE (must be 'permit2' or 'eip3009')"
+    echo "Invalid auth_type: $AUTH_TYPE (must be 'permit2' or 'eip3009')"
     exit 1
 fi
 
 # Validate combination
 if [[ "$LOCK_TYPE" == "compact" && "$AUTH_TYPE" == "eip3009" ]]; then
-    echo "❌ Invalid combination: compact lock doesn't support EIP-3009"
+    echo "Invalid combination: compact lock doesn't support EIP-3009"
     echo "   Compact resource lock only works with Permit2"
     exit 1
 fi
@@ -52,16 +52,16 @@ case "${LOCK_TYPE}_${AUTH_TYPE}" in
         ;;
 esac
 
-echo "🚀 Gas Estimation: $DESCRIPTION"
+echo "Gas Estimation: $DESCRIPTION"
 echo "===================================================="
-echo "🔧 Lock Type: $LOCK_TYPE"
+echo "Lock Type: $LOCK_TYPE"
 if [[ "$LOCK_TYPE" == "compact" ]]; then
-    echo "🔧 Auth Type: BatchCompact"
+    echo "Auth Type: BatchCompact"
 else
-    echo "🔧 Auth Type: $AUTH_TYPE"
+    echo "Auth Type: $AUTH_TYPE"
 fi
-echo "🔧 Solver address: $SOLVER_ADDR"
-echo "🔧 Normalized: $(echo "$SOLVER_ADDR" | tr '[:upper:]' '[:lower:]')"
+echo "Solver address: $SOLVER_ADDR"
+echo "Normalized: $(echo "$SOLVER_ADDR" | tr '[:upper:]' '[:lower:]')"
 
 # Function to find transaction by specific nonce - efficient search
 find_tx_by_nonce() {
@@ -69,7 +69,7 @@ find_tx_by_nonce() {
     local rpc_url=$2
     local chain_name=$3
     
-    echo "    🔍 Searching for $chain_name nonce $target_nonce..." >&2
+    echo "    Searching for $chain_name nonce $target_nonce..." >&2
     
     local current_block=$(cast block-number --rpc-url "$rpc_url")
     local search_blocks=800
@@ -86,18 +86,18 @@ find_tx_by_nonce() {
                 '.transactions[]? | select(((.from // "") | ascii_downcase) == $from and (.nonce // "") == $nonce) | .hash' \
             | head -n 1 | tr -d '\r')
         if [ -n "$tx_hash" ]; then
-            echo "    ✅ Found $chain_name TX: $tx_hash (block $block, nonce $target_nonce)" >&2
+            echo "    Found $chain_name TX: $tx_hash (block $block, nonce $target_nonce)" >&2
             echo "$tx_hash"
             return 0
         fi
         if [ $((block % 100)) -eq 0 ]; then echo "      ... searching block $block" >&2; fi
     done
-    echo "    ❌ Could not find transaction with nonce $target_nonce in recent $search_blocks blocks" >&2
+    echo "    Could not find transaction with nonce $target_nonce in recent $search_blocks blocks" >&2
     return 1
 }
 
 # Get baseline nonces
-echo "📊 Getting baseline nonces..."
+echo "Getting baseline nonces..."
 origin_nonce_before=$(cast nonce "$SOLVER_ADDR" --rpc-url http://localhost:8545)
 dest_nonce_before=$(cast nonce "$SOLVER_ADDR" --rpc-url http://localhost:8546)
 origin_before_dec=$(cast to-dec "$origin_nonce_before")
@@ -115,19 +115,19 @@ if [ -x "./oif-demo" ]; then
 elif command -v oif-demo > /dev/null 2>&1; then
     OIF_DEMO_CMD="oif-demo"
 else
-    echo "❌ Error: oif-demo not found. Please run from project root or ensure oif-demo is built."
+    echo "Error: oif-demo not found. Please run from project root or ensure oif-demo is built."
     exit 1
 fi
 
 $OIF_DEMO_CMD intent test "$LOCK_TYPE" "$AUTH_TYPE" A2B
 
 # Wait for transactions to be mined
-echo "⏳ Waiting for transactions to be mined..."
+echo "Waiting for transactions to be mined..."
 echo "   (This may take 30-60 seconds for all transactions to complete)"
 sleep 35
 
 # Get new nonces
-echo "📊 Getting new nonces..."
+echo "Getting new nonces..."
 origin_nonce_after=$(cast nonce "$SOLVER_ADDR" --rpc-url http://localhost:8545)
 dest_nonce_after=$(cast nonce "$SOLVER_ADDR" --rpc-url http://localhost:8546)
 origin_after_dec=$(cast to-dec "$origin_nonce_after")
@@ -140,7 +140,7 @@ origin_tx_count=$((origin_after_dec - origin_before_dec))
 dest_tx_count=$((dest_after_dec - dest_before_dec))
 
 echo ""
-echo "📊 Transactions created:"
+echo "Transactions created:"
 echo "   Origin: $origin_tx_count transaction(s)"
 echo "   Destination: $dest_tx_count transaction(s)"
 
@@ -160,7 +160,7 @@ claim_gas=0
 # Find origin transactions
 if [ $origin_tx_count -gt 0 ]; then
     echo ""
-    echo "🔍 Finding Origin chain transactions..."
+    echo "Finding Origin chain transactions..."
     for i in $(seq 0 $((origin_tx_count - 1))); do
         nonce=$((origin_before_dec + i))
         echo "  Looking for Origin nonce $nonce..."
@@ -168,7 +168,7 @@ if [ $origin_tx_count -gt 0 ]; then
             origin_txs+=("$tx_hash")
             gas_used=$(cast receipt "$tx_hash" --rpc-url http://localhost:8545 --json 2>/dev/null | jq -r '.gasUsed' | cast to-dec)
             origin_total_gas=$((origin_total_gas + gas_used))
-            echo "    💰 Gas used: $gas_used"
+            echo "    Gas used: $gas_used"
         fi
     done
 fi
@@ -176,7 +176,7 @@ fi
 # Find destination transactions  
 if [ $dest_tx_count -gt 0 ]; then
     echo ""
-    echo "🔍 Finding Destination chain transactions..."
+    echo "Finding Destination chain transactions..."
     for i in $(seq 0 $((dest_tx_count - 1))); do
         nonce=$((dest_before_dec + i))
         echo "  Looking for Dest nonce $nonce..."
@@ -184,7 +184,7 @@ if [ $dest_tx_count -gt 0 ]; then
             dest_txs+=("$tx_hash")
             gas_used=$(cast receipt "$tx_hash" --rpc-url http://localhost:8546 --json 2>/dev/null | jq -r '.gasUsed' | cast to-dec)
             dest_total_gas=$((dest_total_gas + gas_used))
-            echo "    💰 Gas used: $gas_used"
+            echo "    Gas used: $gas_used"
         fi
     done
 fi
@@ -244,7 +244,7 @@ echo "   Origin:      $origin_total_gas gas"
 echo "   Destination: $dest_total_gas gas"
 
 echo ""
-echo "🎯 Total Gas Used:"
+echo "Total Gas Used:"
 echo "   Origin:      $origin_total_gas gas"
 echo "   Destination: $dest_total_gas gas"
 echo "   Grand Total: $((origin_total_gas + dest_total_gas)) gas"
@@ -252,7 +252,7 @@ echo "============================================="
 
 # Update config suggestion for testnet-config.json
 echo ""
-echo "📝 Suggested config update for testnet-config.json:"
+echo "Suggested config update for testnet-config.json:"
 echo ""
 echo "  \"gas_estimates\": {"
 
@@ -287,4 +287,4 @@ esac
 
 echo "  }"
 echo ""
-echo "✅ Gas estimation complete!"
+echo "Gas estimation complete!"

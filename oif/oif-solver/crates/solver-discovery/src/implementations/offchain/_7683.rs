@@ -423,7 +423,7 @@ impl Eip7683OffchainDiscovery {
 					})?;
 				AlloyAddress::from_slice(&addr.0)
 			},
-			LockType::Permit2Escrow | LockType::Eip3009Escrow => {
+			LockType::Eip3009Escrow => {
 				AlloyAddress::from_slice(&network.input_settler_address.0)
 			},
 		};
@@ -555,7 +555,7 @@ impl Eip7683OffchainDiscovery {
 					})?;
 				Ok(resp.0)
 			},
-			LockType::Permit2Escrow | LockType::Eip3009Escrow => {
+			LockType::Eip3009Escrow => {
 				// Escrow types - use IInputSettlerEscrow
 				// Decode the order bytes to StandardOrder
 				let std_order = StandardOrder::abi_decode_validate(order_bytes).map_err(|e| {
