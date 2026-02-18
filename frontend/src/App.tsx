@@ -76,7 +76,7 @@ function ChainBadge({ name }: { name: string }) {
 
 export default function App() {
   // Wallet
-  const { open } = useAppKit()
+  const { open, close } = useAppKit()
   const { address: connectedAddress, isConnected } = useAccount()
   const { disconnect } = useDisconnect()
   const { writeContractAsync } = useWriteContract()
@@ -144,6 +144,11 @@ export default function App() {
       setHealth({ backend: 'down', aggregator: 'down' })
     }
   }, [])
+
+  // Close AppKit modal when wallet connects
+  useEffect(() => {
+    if (isConnected) close()
+  }, [isConnected, close])
 
   useEffect(() => {
     Promise.all([loadConfig(), loadBalances(), checkHealth()]).finally(() => setLoading(false))

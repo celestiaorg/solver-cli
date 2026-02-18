@@ -80,19 +80,26 @@ pub struct EnvConfig {
     pub sepolia_pk: String,
 }
 
-/// Known chain names to auto-detect from environment
-const KNOWN_CHAINS: &[&str] = &[
-    "evolve", "evolve2", "sepolia", "arbitrum", "optimism", "base", "polygon",
-];
-
 impl EnvConfig {
     /// Load configuration from environment
-    /// Auto-detects chains based on {CHAIN}_RPC + {CHAIN}_PK pattern
+    /// Auto-detects chains by scanning env vars for the {NAME}_RPC + {NAME}_PK pattern
     pub fn from_env() -> Result<Self> {
         let mut chains = HashMap::new();
 
-        // Auto-detect known chains from environment
-        for &chain_name in KNOWN_CHAINS {
+        // If CHAINS is set explicitly, use that list
+        // Otherwise, scan all env vars for the {NAME}_RPC pattern
+        let chain_names: Vec<String> = if let Ok(list) = env::var("CHAINS") {
+            list.split(',').map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()).collect()
+        } else {
+            // Scan env vars for *_RPC and derive chain names
+            env::vars()
+                .filter_map(|(key, _)| {
+                    key.strip_suffix("_RPC").map(|name| name.to_lowercase())
+                })
+                .collect()
+        };
+
+        for chain_name in &chain_names {
             let upper = chain_name.to_uppercase();
             let rpc_var = format!("{}_RPC", upper);
             let pk_var = format!("{}_PK", upper);
@@ -102,9 +109,9 @@ impl EnvConfig {
                 if !rpc.is_empty() && !pk.is_empty() {
                     let chain_id = env::var(&chain_id_var).ok().and_then(|s| s.parse().ok());
                     chains.insert(
-                        chain_name.to_lowercase(),
+                        chain_name.clone(),
                         ChainEnvConfig {
-                            name: chain_name.to_lowercase(),
+                            name: chain_name.clone(),
                             rpc_url: rpc,
                             private_key: pk,
                             chain_id,
