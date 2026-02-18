@@ -138,6 +138,41 @@ fn encode_fill_description(
     Ok(payload)
 }
 
+fn receipt_is_success(status: bool) -> bool {
+    status
+}
+
+fn choose_origin_chain(
+    discovered_origin_chain: Option<u64>,
+    fill_chain_id: u64,
+    configured_chain_ids: &[u64],
+) -> Result<u64> {
+    if let Some(origin_chain_id) = discovered_origin_chain {
+        return Ok(origin_chain_id);
+    }
+
+    // Fallback for 2-chain setup: use the other chain.
+    if configured_chain_ids.len() == 2 {
+        return configured_chain_ids
+            .iter()
+            .copied()
+            .find(|&chain_id| chain_id != fill_chain_id)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No fallback origin chain found for fill_chain={} in configured_chains={:?}",
+                    fill_chain_id,
+                    configured_chain_ids
+                )
+            });
+    }
+
+    Err(anyhow::anyhow!(
+        "Could not find origin chain for fill_chain={} in configured_chains={:?}",
+        fill_chain_id,
+        configured_chain_ids
+    ))
+}
+
 #[derive(Debug, Clone)]
 struct FillEvent {
     order_id: [u8; 32],
@@ -150,6 +185,63 @@ struct FillEvent {
     call_data: Vec<u8>,
     context: Vec<u8>,
     fill_chain_id: u64, // Chain where this fill happened (destination)
+}
+
+fn decode_output_filled(
+    source_chain_id: u64,
+    log: &alloy::rpc::types::Log,
+) -> Result<FillEvent> {
+    // Topics: [signature, orderId]
+    if log.topics().len() < 2 {
+        return Err(anyhow::anyhow!(
+            "Malformed OutputFilled log on chain {}: expected at least 2 topics, got {}",
+            source_chain_id,
+            log.topics().len()
+        ));
+    }
+
+    let order_id: [u8; 32] = log.topics()[1].0;
+
+    // Convert alloy RPC log to alloy primitives log for decoding.
+    let prim_log = alloy_primitives::Log {
+        address: AlloyAddress::from_slice(log.address().as_ref()),
+        data: alloy_primitives::LogData::new(
+            log.topics().iter().map(|t| FixedBytes::from(t.0)).collect(),
+            log.data().data.clone(),
+        )
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Malformed log payload for order {} on chain {}",
+                hex::encode(order_id),
+                source_chain_id
+            )
+        })?,
+    };
+
+    let decoded = IOutputSettlerSimple::OutputFilled::decode_log(&prim_log, true).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to decode OutputFilled for order {} on chain {}: {}",
+            hex::encode(order_id),
+            source_chain_id,
+            e
+        )
+    })?;
+
+    let output = &decoded.output;
+    let application_id = output.settler.0;
+
+    Ok(FillEvent {
+        order_id,
+        application_id,
+        timestamp: decoded.timestamp,
+        solver: decoded.solver.0,
+        token: output.token.0,
+        amount: output.amount,
+        recipient: output.recipient.0,
+        call_data: output.callbackData.to_vec(),
+        context: output.context.to_vec(),
+        fill_chain_id: source_chain_id,
+    })
 }
 
 pub struct OracleOperator {
@@ -325,10 +417,13 @@ impl OracleOperator {
         source_chain_id: u64,
         log: &alloy::rpc::types::Log,
     ) -> Result<()> {
-        // Parse OutputFilled event
-        // Topics: [signature, orderId]
+        // Parse OutputFilled event topics: [signature, orderId]
         if log.topics().len() < 2 {
-            return Ok(());
+            return Err(anyhow::anyhow!(
+                "Malformed OutputFilled log on chain {}: expected at least 2 topics, got {}",
+                source_chain_id,
+                log.topics().len()
+            ));
         }
 
         let order_id: [u8; 32] = log.topics()[1].0;
@@ -345,71 +440,48 @@ impl OracleOperator {
             }
         }
 
-        // Convert alloy RPC log to alloy primitives log for decoding
-        let prim_log = alloy_primitives::Log {
-            address: AlloyAddress::from_slice(log.address().as_ref()),
-            data: alloy_primitives::LogData::new(
-                log.topics().iter().map(|t| FixedBytes::from(t.0)).collect(),
-                log.data().data.clone(),
-            )
-            .unwrap(),
-        };
-
-        // Try to decode the event using alloy
-        let decoded = match IOutputSettlerSimple::OutputFilled::decode_log(&prim_log, true) {
-            Ok(d) => d,
+        let fill = match decode_output_filled(source_chain_id, log) {
+            Ok(fill) => fill,
             Err(e) => {
-                warn!("Failed to decode OutputFilled event: {}", e);
-                return Ok(());
+                warn!(
+                    "Retryable decode failure: order={} fill_chain={} error={}",
+                    hex::encode(order_id),
+                    source_chain_id,
+                    e
+                );
+                return Err(e);
             }
         };
 
-        let timestamp = decoded.timestamp;
-        let output = &decoded.output;
-
-        // Extract fields from MandateOutput (correct order), converting FixedBytes to [u8; 32]
-        let settler = output.settler.0;
-        let token = output.token.0;
-        let amount = output.amount;
-        let recipient = output.recipient.0;
-        let call_data = output.callbackData.to_vec();
-        let context = output.context.to_vec();
-
-        // The solver is in the top-level event, not in MandateOutput
-        let solver = decoded.solver.0;
-
-        // Use settler as application_id (this is what the oracle contract uses)
-        let application_id = settler;
-
-        let fill = FillEvent {
-            order_id,
-            application_id,
-            timestamp,
-            solver,
-            token,
-            amount,
-            recipient,
-            call_data,
-            context,
-            fill_chain_id: source_chain_id,
-        };
-
-        info!(
-            "Found fill on chain {}: order={}, timestamp={}, amount={}",
-            source_chain_id,
-            hex::encode(order_id),
-            timestamp,
-            amount
-        );
-
         // Submit attestation to origin chain (where funds are escrowed)
-        self.submit_attestation(&fill).await?;
+        if let Err(e) = self.submit_attestation(&fill).await {
+            warn!(
+                "Retryable attestation failure: order={} fill_chain={} error={}",
+                hex::encode(fill.order_id),
+                source_chain_id,
+                e
+            );
+            return Err(e).with_context(|| {
+                format!(
+                    "Attestation submission failed for order={} fill_chain={}",
+                    hex::encode(fill.order_id),
+                    source_chain_id
+                )
+            });
+        }
 
         // Mark as processed (persistently)
         {
             let mut state = self.state.lock().await;
             state.mark_processed(&order_id);
         }
+
+        info!(
+            "Successfully attested and marked processed: order={} fill_chain={} amount={}",
+            hex::encode(fill.order_id),
+            source_chain_id,
+            fill.amount
+        );
 
         Ok(())
     }
@@ -484,26 +556,21 @@ impl OracleOperator {
         let fill_chain_id = fill.fill_chain_id;
 
         // Find the origin chain by querying escrows
-        let origin_chain_id = match self.find_origin_chain(&fill.order_id, fill_chain_id).await {
-            Some(id) => id,
-            None => {
-                // Fallback for 2-chain setup: use the other chain
-                if self.config.chains.len() == 2 {
-                    self.config
-                        .chains
-                        .iter()
-                        .find(|c| c.chain_id != fill_chain_id)
-                        .map(|c| c.chain_id)
-                        .ok_or_else(|| anyhow::anyhow!("No other chain found"))?
-                } else {
-                    warn!(
-                        "Could not find origin chain for order {}, skipping",
-                        hex::encode(fill.order_id)
-                    );
-                    return Ok(());
-                }
-            }
-        };
+        let configured_chain_ids: Vec<u64> =
+            self.config.chains.iter().map(|c| c.chain_id).collect();
+        let discovered_origin_chain = self.find_origin_chain(&fill.order_id, fill_chain_id).await;
+        let origin_chain_id = choose_origin_chain(
+            discovered_origin_chain,
+            fill_chain_id,
+            &configured_chain_ids,
+        )
+        .with_context(|| {
+            format!(
+                "order={} fill_chain={}",
+                hex::encode(fill.order_id),
+                fill_chain_id
+            )
+        })?;
 
         info!(
             "Relaying attestation: fill on chain {} -> origin chain {}",
@@ -566,8 +633,8 @@ impl OracleOperator {
         let signature = self.operator_signer.sign_message(&message_hash).await?;
         let signature_bytes = signature.as_bytes();
 
-        info!(
-            "✍️  Signed attestation for order {} (fill on chain {}, submitting to escrow chain {})",
+        debug!(
+            "Signed attestation payload for order {} (fill on chain {}, submitting to escrow chain {})",
             hex::encode(fill.order_id),
             fill_chain_id,
             escrow_chain_config.chain_id
@@ -603,13 +670,70 @@ impl OracleOperator {
         // Send transaction (wallet handles signing)
         let pending = provider.send_transaction(tx).await?;
         let receipt = pending.get_receipt().await?;
+        let tx_hash = receipt.transaction_hash;
+        let status = receipt.status();
+
+        if !receipt_is_success(status) {
+            return Err(anyhow::anyhow!(
+                "Attestation tx failed: order={} fill_chain={} origin_chain={} tx_hash={:?} status={}",
+                hex::encode(fill.order_id),
+                fill_chain_id,
+                origin_chain_id,
+                tx_hash,
+                status
+            ));
+        }
 
         info!(
-            "Submitted attestation tx: {:?} (status: {:?})",
-            receipt.transaction_hash,
-            receipt.status()
+            "Submitted attestation tx: order={} fill_chain={} origin_chain={} tx_hash={:?} status={}",
+            hex::encode(fill.order_id),
+            fill_chain_id,
+            origin_chain_id,
+            tx_hash,
+            status
         );
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy_primitives::{Address, B256};
+
+    #[test]
+    fn receipt_is_success_handles_failed_status() {
+        assert!(receipt_is_success(true));
+        assert!(!receipt_is_success(false));
+    }
+
+    #[test]
+    fn choose_origin_chain_errors_for_n_chain_when_not_found() {
+        let err = choose_origin_chain(None, 1, &[1, 2, 3]).expect_err("expected retryable error");
+        assert!(err.to_string().contains("Could not find origin chain"));
+    }
+
+    #[test]
+    fn choose_origin_chain_falls_back_for_two_chain_setup() {
+        let origin_chain = choose_origin_chain(None, 11155111, &[11155111, 1234]).unwrap();
+        assert_eq!(origin_chain, 1234);
+    }
+
+    #[test]
+    fn decode_output_filled_returns_error_for_malformed_event() {
+        let log = alloy::rpc::types::Log {
+            inner: alloy_primitives::Log {
+                address: Address::ZERO,
+                data: alloy_primitives::LogData::new_unchecked(
+                    vec![B256::ZERO, B256::from([1u8; 32])],
+                    Bytes::from(vec![0x01, 0x02]),
+                ),
+            },
+            ..Default::default()
+        };
+
+        let err = decode_output_filled(1, &log).expect_err("expected decode error");
+        assert!(err.to_string().contains("Failed to decode OutputFilled"));
     }
 }

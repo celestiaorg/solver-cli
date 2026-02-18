@@ -188,3 +188,92 @@ impl StateManager {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!(
+            "oracle-operator-{}-{}-{}",
+            label,
+            std::process::id(),
+            nanos
+        ));
+        std::fs::create_dir_all(&dir).expect("should create temp directory");
+        dir
+    }
+
+    #[test]
+    fn mark_processed_sets_dirty_and_persists_on_save_if_dirty() {
+        let temp_dir = unique_temp_dir("mark-processed");
+        let mut manager = StateManager::new(&temp_dir).expect("state manager should initialize");
+        let order_id = [7u8; 32];
+
+        manager.mark_processed(&order_id);
+        assert!(manager.dirty, "dirty should be set after mark_processed");
+
+        manager
+            .save_if_dirty()
+            .expect("save_if_dirty should persist dirty state");
+        assert!(!manager.dirty, "dirty should be cleared after save");
+
+        let state_path = temp_dir.join("oracle-state.json");
+        let raw = std::fs::read_to_string(&state_path).expect("state file should exist");
+        let on_disk: OperatorState =
+            serde_json::from_str(&raw).expect("state file should parse as OperatorState");
+
+        assert!(
+            on_disk.processed_fills.contains(&hex::encode(order_id)),
+            "processed order should be persisted"
+        );
+
+        std::fs::remove_dir_all(&temp_dir).expect("temp directory should be removable");
+    }
+
+    #[test]
+    fn set_last_block_sets_dirty_and_persists_on_save_if_dirty() {
+        let temp_dir = unique_temp_dir("set-last-block");
+        let mut manager = StateManager::new(&temp_dir).expect("state manager should initialize");
+
+        manager.set_last_block(11155111, 42);
+        assert!(manager.dirty, "dirty should be set after set_last_block");
+
+        manager
+            .save_if_dirty()
+            .expect("save_if_dirty should persist dirty state");
+        assert!(!manager.dirty, "dirty should be cleared after save");
+
+        let state_path = temp_dir.join("oracle-state.json");
+        let raw = std::fs::read_to_string(&state_path).expect("state file should exist");
+        let on_disk: OperatorState =
+            serde_json::from_str(&raw).expect("state file should parse as OperatorState");
+
+        assert_eq!(on_disk.last_processed_block.get(&11155111), Some(&42));
+
+        std::fs::remove_dir_all(&temp_dir).expect("temp directory should be removable");
+    }
+
+    #[test]
+    fn save_if_dirty_is_noop_when_clean() {
+        let temp_dir = unique_temp_dir("save-clean");
+        let mut manager = StateManager::new(&temp_dir).expect("state manager should initialize");
+
+        manager
+            .save_if_dirty()
+            .expect("save_if_dirty should not fail for clean state");
+
+        let state_path = temp_dir.join("oracle-state.json");
+        assert!(
+            !state_path.exists(),
+            "no state file should be written when state is clean"
+        );
+
+        std::fs::remove_dir_all(&temp_dir).expect("temp directory should be removable");
+    }
+}
