@@ -55,6 +55,7 @@ Deficit condition:
 
 Transfer sizing target:
 - Move toward `target_weight`, not only `min_weight`, to reduce churn.
+- v1 keeps sizing chain-agnostic and simple: no USD pricing feeds, only per-asset percentage bounds on total effective inventory.
 
 ## 6) Configuration
 
@@ -69,9 +70,9 @@ dry_run = false
 
 [execution]
 cooldown_seconds_per_route = 120
-min_transfer_usd = 25
-max_transfer_usd = 10000
-max_slippage_bps = 100
+settle_buffer_bps = 100
+min_transfer_bps = 50
+max_transfer_bps = 5000
 
 [[chains]]
 name = "evolve"
@@ -115,6 +116,8 @@ Validation rules:
 3. `0 <= min_weight[c] <= target_weight[c] <= 1`.
 4. Token address must be present for every `(asset, chain)` pair used in weights.
 5. At least 2 chains per asset.
+6. `0 <= min_transfer_bps <= max_transfer_bps <= 10000`.
+7. `settle_buffer_bps <= 10000`.
 
 ## 7) Rebalance Algorithm
 
@@ -132,10 +135,21 @@ Per asset:
    - source from largest surplus
    - split if needed.
 7. Apply execution constraints:
-   - min/max transfer size
+   - min/max transfer size as % of effective total inventory for that asset
    - cooldown per `(asset, source_chain, dest_chain)`
    - max concurrent in-flight transfers.
 8. Emit transfer intents and execute via Hyperlane Warp integration.
+
+Transfer size bounds (per asset, per cycle):
+- `effective_total = sum(observed_balance - reserved_outgoing)`.
+- `min_transfer_raw = ceil(effective_total * min_transfer_bps / 10000)`.
+- `max_transfer_raw = floor(effective_total * max_transfer_bps / 10000)`.
+- Candidate transfers below `min_transfer_raw` are skipped.
+- Candidate transfers above `max_transfer_raw` are capped to `max_transfer_raw`.
+
+Design choice (v1 simplicity):
+- No USD conversion and no per-asset price dependency.
+- No slippage guard parameter in v1; keep route safety to existing quote/submit error handling.
 
 Recommended anti-flap controls:
 1. Hysteresis: trigger at `min_weight`, stop once above `target_weight - settle_buffer`.
@@ -321,7 +335,5 @@ Deliverable:
 
 1. Key strategy:
    - reuse solver keys initially vs dedicated rebalancer keys immediately.
-2. Transfer sizing policy:
-   - full target convergence in one move vs capped incremental steps.
-3. Hyperlane confirmation semantics:
+2. Hyperlane confirmation semantics:
    - source tx finality only vs destination receipt proof required before closure.

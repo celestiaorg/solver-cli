@@ -21,9 +21,8 @@ pub struct RebalancerConfig {
 pub struct ExecutionConfig {
     pub cooldown_seconds_per_route: u64,
     pub settle_buffer_bps: u16,
-    pub min_transfer_usd: f64,
-    pub max_transfer_usd: f64,
-    pub max_slippage_bps: u16,
+    pub min_transfer_bps: u16,
+    pub max_transfer_bps: u16,
 }
 
 #[derive(Debug, Clone)]
@@ -96,12 +95,10 @@ struct RawExecutionConfig {
     cooldown_seconds_per_route: u64,
     #[serde(default = "default_settle_buffer_bps")]
     settle_buffer_bps: u16,
-    #[serde(default = "default_min_transfer_usd")]
-    min_transfer_usd: f64,
-    #[serde(default = "default_max_transfer_usd")]
-    max_transfer_usd: f64,
-    #[serde(default = "default_max_slippage_bps")]
-    max_slippage_bps: u16,
+    #[serde(default = "default_min_transfer_bps")]
+    min_transfer_bps: u16,
+    #[serde(default = "default_max_transfer_bps")]
+    max_transfer_bps: u16,
 }
 
 impl Default for RawExecutionConfig {
@@ -109,9 +106,8 @@ impl Default for RawExecutionConfig {
         Self {
             cooldown_seconds_per_route: default_cooldown_seconds(),
             settle_buffer_bps: default_settle_buffer_bps(),
-            min_transfer_usd: default_min_transfer_usd(),
-            max_transfer_usd: default_max_transfer_usd(),
-            max_slippage_bps: default_max_slippage_bps(),
+            min_transfer_bps: default_min_transfer_bps(),
+            max_transfer_bps: default_max_transfer_bps(),
         }
     }
 }
@@ -142,20 +138,16 @@ fn default_cooldown_seconds() -> u64 {
     120
 }
 
-fn default_min_transfer_usd() -> f64 {
-    25.0
-}
-
 fn default_settle_buffer_bps() -> u16 {
     100
 }
 
-fn default_max_transfer_usd() -> f64 {
-    10_000.0
+fn default_min_transfer_bps() -> u16 {
+    50
 }
 
-fn default_max_slippage_bps() -> u16 {
-    100
+fn default_max_transfer_bps() -> u16 {
+    5_000
 }
 
 fn default_hyperlane_timeout_seconds() -> u64 {
@@ -341,6 +333,25 @@ impl RebalancerConfig {
                 raw.execution.settle_buffer_bps
             );
         }
+        if raw.execution.min_transfer_bps > 10_000 {
+            bail!(
+                "execution.min_transfer_bps must be <= 10000 (got {})",
+                raw.execution.min_transfer_bps
+            );
+        }
+        if raw.execution.max_transfer_bps > 10_000 {
+            bail!(
+                "execution.max_transfer_bps must be <= 10000 (got {})",
+                raw.execution.max_transfer_bps
+            );
+        }
+        if raw.execution.max_transfer_bps < raw.execution.min_transfer_bps {
+            bail!(
+                "execution.max_transfer_bps must be >= execution.min_transfer_bps ({} < {})",
+                raw.execution.max_transfer_bps,
+                raw.execution.min_transfer_bps
+            );
+        }
 
         Ok(Self {
             poll_interval_seconds: raw.poll_interval_seconds,
@@ -349,9 +360,8 @@ impl RebalancerConfig {
             execution: ExecutionConfig {
                 cooldown_seconds_per_route: raw.execution.cooldown_seconds_per_route,
                 settle_buffer_bps: raw.execution.settle_buffer_bps,
-                min_transfer_usd: raw.execution.min_transfer_usd,
-                max_transfer_usd: raw.execution.max_transfer_usd,
-                max_slippage_bps: raw.execution.max_slippage_bps,
+                min_transfer_bps: raw.execution.min_transfer_bps,
+                max_transfer_bps: raw.execution.max_transfer_bps,
             },
             chains,
             assets,
@@ -557,5 +567,55 @@ decimals = 6
         let raw: RawRebalancerConfig = toml::from_str(toml).expect("valid TOML");
         let config = RebalancerConfig::from_raw(raw).expect("valid config");
         assert_eq!(config.hyperlane.default_timeout_seconds, 999);
+    }
+
+    #[test]
+    fn rejects_invalid_transfer_bps_bounds() {
+        let toml = r#"
+[execution]
+min_transfer_bps = 6000
+max_transfer_bps = 1000
+
+[accounts]
+rebalancer = "0x000000000000000000000000000000000000dEaD"
+
+[[chains]]
+name = "evolve"
+chain_id = 1234
+rpc_url = "http://127.0.0.1:8545"
+account = "rebalancer"
+
+[[chains]]
+name = "sepolia"
+chain_id = 11155111
+rpc_url = "https://rpc.sepolia.org"
+account = "rebalancer"
+
+[[assets]]
+symbol = "USDC"
+decimals = 6
+
+  [[assets.tokens]]
+  chain_id = 1234
+  address = "0x0000000000000000000000000000000000000001"
+
+  [[assets.tokens]]
+  chain_id = 11155111
+  address = "0x0000000000000000000000000000000000000002"
+
+  [assets.weights]
+  "1234" = 0.50
+  "11155111" = 0.50
+
+  [assets.min_weights]
+  "1234" = 0.40
+  "11155111" = 0.40
+"#;
+
+        let raw: RawRebalancerConfig = toml::from_str(toml).expect("valid TOML");
+        let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
+        assert!(err
+            .to_string()
+            .contains("max_transfer_bps must be >= execution.min_transfer_bps"));
     }
 }

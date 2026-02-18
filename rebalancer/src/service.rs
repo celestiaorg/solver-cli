@@ -60,12 +60,11 @@ impl RebalancerService {
             self.config.dry_run
         );
         info!(
-            "Execution config: cooldown={}s settle_buffer_bps={} min_transfer_usd={} max_transfer_usd={} max_slippage_bps={} max_parallel_transfers={}",
+            "Execution config: cooldown={}s settle_buffer_bps={} min_transfer_bps={} max_transfer_bps={} max_parallel_transfers={}",
             self.config.execution.cooldown_seconds_per_route,
             self.config.execution.settle_buffer_bps,
-            self.config.execution.min_transfer_usd,
-            self.config.execution.max_transfer_usd,
-            self.config.execution.max_slippage_bps,
+            self.config.execution.min_transfer_bps,
+            self.config.execution.max_transfer_bps,
             self.config.max_parallel_transfers
         );
         info!(
@@ -183,12 +182,94 @@ impl RebalancerService {
             },
         )?;
 
+        let (min_transfer_raw, max_transfer_raw) = transfer_size_bounds_raw(
+            plan.effective_total_balance,
+            self.config.execution.min_transfer_bps,
+            self.config.execution.max_transfer_bps,
+        );
+        let mut size_adjusted_transfers = Vec::new();
+        let mut blocked_by_min_size = Vec::new();
+        let mut capped_by_max_size = Vec::new();
+        for transfer in &plan.transfers {
+            if transfer.amount_raw < min_transfer_raw {
+                blocked_by_min_size.push(transfer.clone());
+                continue;
+            }
+
+            let mut adjusted = transfer.clone();
+            if adjusted.amount_raw > max_transfer_raw {
+                adjusted.amount_raw = max_transfer_raw;
+                capped_by_max_size.push((transfer.clone(), adjusted.clone()));
+            }
+
+            if adjusted.amount_raw == 0 {
+                continue;
+            }
+
+            size_adjusted_transfers.push(adjusted);
+        }
+
+        if plan.triggered {
+            info!(
+                "Asset {}: transfer-size bounds from effective_total={} {} => min={} {} ({} bps), max={} {} ({} bps)",
+                asset.symbol,
+                format_token_amount(plan.effective_total_balance, asset.decimals),
+                asset.symbol,
+                format_raw_u128(min_transfer_raw, asset.decimals),
+                asset.symbol,
+                self.config.execution.min_transfer_bps,
+                format_raw_u128(max_transfer_raw, asset.decimals),
+                asset.symbol,
+                self.config.execution.max_transfer_bps
+            );
+        }
+
+        for transfer in &blocked_by_min_size {
+            let source_chain = self
+                .config
+                .chain_by_id(transfer.source_chain_id)
+                .expect("validated chain_id must exist");
+            let destination_chain = self
+                .config
+                .chain_by_id(transfer.destination_chain_id)
+                .expect("validated chain_id must exist");
+            info!(
+                "  min-size block: {} -> {} amount={} {} minimum={} {}",
+                source_chain.name,
+                destination_chain.name,
+                format_raw_u128(transfer.amount_raw, asset.decimals),
+                asset.symbol,
+                format_raw_u128(min_transfer_raw, asset.decimals),
+                asset.symbol
+            );
+        }
+
+        for (original, capped) in &capped_by_max_size {
+            let source_chain = self
+                .config
+                .chain_by_id(original.source_chain_id)
+                .expect("validated chain_id must exist");
+            let destination_chain = self
+                .config
+                .chain_by_id(original.destination_chain_id)
+                .expect("validated chain_id must exist");
+            info!(
+                "  max-size cap: {} -> {} amount={} {} capped_to={} {}",
+                source_chain.name,
+                destination_chain.name,
+                format_raw_u128(original.amount_raw, asset.decimals),
+                asset.symbol,
+                format_raw_u128(capped.amount_raw, asset.decimals),
+                asset.symbol
+            );
+        }
+
         let pending_inflight = self.state.inflight_pending_count();
         let available_slots = self
             .config
             .max_parallel_transfers
             .saturating_sub(pending_inflight);
-        let mut emitted_transfers = plan.transfers.clone();
+        let mut emitted_transfers = size_adjusted_transfers;
         let blocked_by_parallel = if emitted_transfers.len() > available_slots {
             emitted_transfers.split_off(available_slots)
         } else {
@@ -663,4 +744,40 @@ fn now_unix_seconds() -> Result<u64> {
         .duration_since(UNIX_EPOCH)
         .context("System time is before UNIX_EPOCH")?
         .as_secs())
+}
+
+fn transfer_size_bounds_raw(
+    effective_total_balance: U256,
+    min_transfer_bps: u16,
+    max_transfer_bps: u16,
+) -> (u128, u128) {
+    let min_raw = ceil_bps_of_total(effective_total_balance, min_transfer_bps);
+    let max_raw = floor_bps_of_total(effective_total_balance, max_transfer_bps);
+    (
+        u256_to_u128_saturating(min_raw),
+        u256_to_u128_saturating(max_raw),
+    )
+}
+
+fn floor_bps_of_total(total: U256, bps: u16) -> U256 {
+    if bps == 0 {
+        return U256::ZERO;
+    }
+    (total * U256::from(bps)) / U256::from(10_000u64)
+}
+
+fn ceil_bps_of_total(total: U256, bps: u16) -> U256 {
+    if bps == 0 {
+        return U256::ZERO;
+    }
+    let numerator = (total * U256::from(bps)) + U256::from(9_999u64);
+    numerator / U256::from(10_000u64)
+}
+
+fn u256_to_u128_saturating(value: U256) -> u128 {
+    if value > U256::from(u128::MAX) {
+        u128::MAX
+    } else {
+        value.to::<u128>()
+    }
 }
