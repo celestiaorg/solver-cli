@@ -409,7 +409,7 @@ make start
 make deploy
 
 # 3. Start solver (in separate terminal)
-make solver
+make solver-start
 
 # 4. Start oracle operator (in another terminal)
 make operator
