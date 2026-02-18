@@ -14,13 +14,14 @@
 //! ## Flow
 //!
 //! 1. **Solver** fills order on destination chain → OutputFilled event
-//! 2. **Oracle Operator** detects OutputFilled event
+//! 2. **Oracle Operator** detects OutputFilled on the destination (fill) chain
 //! 3. **Oracle Operator** extracts fill details and computes FillDescription payload hash
-//! 4. **Oracle Operator** signs attestation: sign(keccak256(chainId, oracle, settler, payloadHash))
-//! 5. **Oracle Operator** submits attestation to CentralizedOracle on destination chain
-//! 6. Oracle stores attestation
-//! 7. **Solver** polls oracle.isProven() on source chain
-//! 8. **Solver** claims via InputSettlerEscrow.finalise() once oracle confirms
+//! 4. **Oracle Operator** signs attestation over fill context:
+//!    sign(keccak256(remoteChainId=destination, remoteOracle=destinationOracle, application=settler, payloadHash))
+//! 5. **Oracle Operator** submits attestation to `CentralizedOracle` on the origin/source chain (escrow chain)
+//! 6. Source-chain oracle stores the attestation
+//! 7. **Solver** polls `oracle.isProven()` on the source chain (with remote chain/oracle fields pointing to destination)
+//! 8. **Solver** claims via `InputSettlerEscrow.finalise()` on the source chain once oracle confirms
 
 use crate::{utils::parse_oracle_config, OracleConfig, SettlementError, SettlementInterface};
 use alloy_primitives::{hex, Address as AlloyAddress, FixedBytes, U256};
