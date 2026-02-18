@@ -129,6 +129,15 @@ operator-start:
 operator: operator-start
 .PHONY: operator
 
+## rebalancer-start: Start the rebalancer service (phase 1 dry-run planner)
+rebalancer-start: build
+	@$(SOLVER_CLI) rebalancer start
+.PHONY: rebalancer-start
+
+# Alias for convenience
+rebalancer: rebalancer-start
+.PHONY: rebalancer
+
 ## intent: Submit a test intent. Use FROM=, TO=, AMOUNT=, ASSET= to customize
 intent: build
 	@$(SOLVER_CLI) intent submit \

@@ -4,6 +4,7 @@ use std::env;
 use std::path::PathBuf;
 
 use crate::chain::ChainClient;
+use crate::rebalancer::RebalancerConfigGenerator;
 use crate::solver::ConfigGenerator;
 use crate::state::StateManager;
 use crate::utils::*;
@@ -84,6 +85,14 @@ impl ConfigureCommand {
             oracle_config_path
         ));
 
+        // Generate rebalancer config
+        let rebalancer_config_path = project_dir.join("config/rebalancer.toml");
+        RebalancerConfigGenerator::write_config(&state, &rebalancer_config_path).await?;
+        print_success(&format!(
+            "Rebalancer config written to {:?}",
+            rebalancer_config_path
+        ));
+
         // Save state
         state_mgr.save(&state).await?;
 
@@ -91,6 +100,7 @@ impl ConfigureCommand {
         print_kv("Solver ID", &self.solver_id);
         print_address("Solver address", &format!("{:?}", solver_address));
         print_kv("Config file", config_path.display());
+        print_kv("Rebalancer config", rebalancer_config_path.display());
         print_kv("Status", "configured");
         print_summary_end();
 
@@ -103,6 +113,7 @@ impl ConfigureCommand {
                 "solver_id": self.solver_id,
                 "solver_address": format!("{:?}", solver_address),
                 "config_path": config_path.to_string_lossy(),
+                "rebalancer_config_path": rebalancer_config_path.to_string_lossy(),
             }))?;
         }
 

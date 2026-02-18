@@ -8,6 +8,8 @@
 .env
 config/
 .solver
+.docs/
+.DS_STORE
 
 # Nested dependency lockfiles (e.g. oif-contracts libs) — reduces PR diff
 **/lib/**/package-lock.json
