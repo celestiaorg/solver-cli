@@ -35,7 +35,7 @@ NC='\033[0m' # No Color
 # Order type configuration - set to eip7683 for Hyperlane or eipXXXX for direct
 ORDER_TYPE="eip7683"
 
-echo -e "${BLUE}Sequential Batch Intent Processor${NC}"
+echo -e "${BLUE}🔄 Sequential Batch Intent Processor${NC}"
 echo "====================================="
 
 # Default options
@@ -79,23 +79,23 @@ done
 
 # Validate inputs
 if [[ -z "$INTENTS_FILE" ]]; then
-    echo -e "${RED}No intents file specified${NC}"
+    echo -e "${RED}❌ No intents file specified${NC}"
     echo "Usage: $0 [intents.json]"
     exit 1
 fi
 
 if [[ ! -f "$INTENTS_FILE" ]]; then
-    echo -e "${RED}Intents file not found: $INTENTS_FILE${NC}"
+    echo -e "${RED}❌ Intents file not found: $INTENTS_FILE${NC}"
     exit 1
 fi
 
 if ! jq empty "$INTENTS_FILE" 2>/dev/null; then
-    echo -e "${RED}Invalid JSON in intents file${NC}"
+    echo -e "${RED}❌ Invalid JSON in intents file${NC}"
     exit 1
 fi
 
 if [ ! -f "config/testnet.toml" ] || [ ! -f "config/testnet/networks.toml" ]; then
-    echo -e "${RED}Testnet configuration not found!${NC}"
+    echo -e "${RED}❌ Testnet configuration not found!${NC}"
     exit 1
 fi
 
@@ -211,12 +211,12 @@ process_intent() {
     
     # Validate configuration
     if [[ -z "$origin_input_settler" || -z "$dest_output_settler" || -z "$origin_rpc" || -z "$oracle" ]]; then
-        echo -e "${RED}Missing network configuration for chains $origin_chain → $dest_chain${NC}"
+        echo -e "${RED}❌ Missing network configuration for chains $origin_chain → $dest_chain${NC}"
         return 1
     fi
     
     if [[ "$DRY_RUN" == "true" ]]; then
-        echo -e "${GREEN}Would be processed (dry-run mode)${NC}"
+        echo -e "${GREEN}✅ Would be processed (dry-run mode)${NC}"
         return 0
     fi
     
@@ -227,7 +227,7 @@ process_intent() {
     
     # Check/Approve Permit2
     local PERMIT2_ADDRESS="0x000000000022D473030F116dDEE9F6B43aC78BA3"
-    echo -e "${BLUE}Checking Permit2 allowance...${NC}"
+    echo -e "${BLUE}🔐 Checking Permit2 allowance...${NC}"
     
     local current_allowance=$(cast call "$origin_token_addr" \
         "allowance(address,address)" \
@@ -243,17 +243,17 @@ process_intent() {
             "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" \
             --private-key "$USER_PRIVATE_KEY" \
             --rpc-url $origin_rpc > /dev/null 2>&1; then
-            echo -e "${GREEN}   Permit2 approved${NC}"
+            echo -e "${GREEN}   ✅ Permit2 approved${NC}"
         else
-            echo -e "${RED}   Permit2 approval failed${NC}"
+            echo -e "${RED}   ❌ Permit2 approval failed${NC}"
             return 1
         fi
     else
-        echo -e "${GREEN}   Permit2 already approved${NC}"
+        echo -e "${GREEN}   ✅ Permit2 already approved${NC}"
     fi
     
     # Generate order data
-    echo -e "${YELLOW}Building order data...${NC}"
+    echo -e "${YELLOW}🔄 Building order data...${NC}"
     
     local current_time=$(date +%s)
     local nonce=$(perl -MTime::HiRes=time -e 'printf "%.0f\n", time * 1000')
@@ -343,7 +343,7 @@ process_intent() {
     local signature=$(cast wallet sign --no-hash --private-key "$USER_PRIVATE_KEY" "$final_digest" 2>/dev/null)
     
     if [[ -z "$signature" ]]; then
-        echo -e "${RED}Signing failed${NC}"
+        echo -e "${RED}❌ Signing failed${NC}"
         return 1
     fi
     
@@ -359,7 +359,7 @@ EOF
 )
     
     # Send request and wait for response
-    echo -e "${YELLOW}Sending intent to API...${NC}"
+    echo -e "${YELLOW}🚀 Sending intent to API...${NC}"
     
     local response=$(curl -s -w "\n%{http_code}" -X POST "$api_url" \
       -H "Content-Type: application/json" \
@@ -370,7 +370,7 @@ EOF
     
     # Process response
     if [ "$http_code" = "200" ]; then
-        echo -e "${GREEN}Intent processed successfully!${NC}"
+        echo -e "${GREEN}✅ Intent processed successfully!${NC}"
         
         # Extract order ID if available
         local order_id=$(echo "$response_body" | grep -o '"order_id":"[^"]*"' | cut -d'"' -f4 2>/dev/null)
@@ -381,7 +381,7 @@ EOF
         fi
         return 0
     else
-        echo -e "${RED}Intent processing failed${NC}"
+        echo -e "${RED}❌ Intent processing failed${NC}"
         echo -e "${RED}   HTTP Status: $http_code${NC}"
         echo -e "${RED}   Response: $response_body${NC}"
         return 1
@@ -398,10 +398,10 @@ process_batch_sequential() {
     local failed_ids=()
     local skipped_ids=()
     
-    echo -e "${BLUE}Found $total_intents intents to process sequentially${NC}"
+    echo -e "${BLUE}📊 Found $total_intents intents to process sequentially${NC}"
     
     if [[ "$DRY_RUN" == "true" ]]; then
-        echo -e "${YELLOW}Running in dry-run mode${NC}"
+        echo -e "${YELLOW}🔍 Running in dry-run mode${NC}"
     fi
     
     echo ""
@@ -439,7 +439,7 @@ process_batch_sequential() {
     
     # Final summary
     echo ""
-    echo -e "${BLUE}Sequential Processing Complete!${NC}"
+    echo -e "${BLUE}📊 Sequential Processing Complete!${NC}"
     echo "================================="
     echo "   Total Intents: $total_intents"
     echo "   Successful: $successful"
@@ -450,12 +450,12 @@ process_batch_sequential() {
     # Show detailed results with IDs (comma-separated)
     if [[ ${#successful_ids[@]} -gt 0 ]]; then
         local successful_list=$(IFS=,; echo "${successful_ids[*]:-}")
-        echo -e "${GREEN}Successful Intents: ${successful_list}${NC}"
+        echo -e "${GREEN}✅ Successful Intents: ${successful_list}${NC}"
     fi
     
     if [[ ${#failed_ids[@]} -gt 0 ]]; then
         local failed_list=$(IFS=,; echo "${failed_ids[*]:-}")
-        echo -e "${RED}Failed Intents: ${failed_list}${NC}"
+        echo -e "${RED}❌ Failed Intents: ${failed_list}${NC}"
     fi
     
     if [[ ${#skipped_ids[@]} -gt 0 ]]; then
@@ -471,4 +471,4 @@ process_batch_sequential() {
 # Execute main function
 process_batch_sequential
 
-echo -e "${GREEN}All intents processed!${NC}"
+echo -e "${GREEN}🎉 All intents processed!${NC}"

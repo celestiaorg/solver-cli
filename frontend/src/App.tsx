@@ -220,6 +220,10 @@ export default function App() {
         if (typeof domain.chainId === 'string') {
           domain.chainId = Number(domain.chainId)
         }
+        // MockERC20 uses EIP712(name_, "1") - version must be present in domain
+        if (!domain.version) {
+          domain.version = '1'
+        }
 
         const rawSignature = await signTypedDataAsync({
           domain,

@@ -946,9 +946,9 @@ impl CostProfitService {
 			actual_profit_margin,
 			min_profitability_pct,
 			if profit_validation_passed {
-				"PASSED"
+				"✓ PASSED"
 			} else {
-				"FAILED"
+				"✗ FAILED"
 			},
 			if profit_validation_passed {
 				format!(
@@ -1168,7 +1168,7 @@ impl CostProfitService {
 		fill_tx: &Transaction,
 		config: &Config,
 	) -> Result<CallbackSimulationResult, CostProfitError> {
-		tracing::info!("Starting callback simulation for order {}", order.id);
+		tracing::info!("🔍 Starting callback simulation for order {}", order.id);
 
 		let chain_id = fill_tx.chain_id;
 
@@ -1198,17 +1198,17 @@ impl CostProfitService {
 			.is_some_and(|c| !c.is_empty() && c != "0x");
 
 		if !has_callback {
-			tracing::info!("No callback data - using default gas estimate");
+			tracing::info!("✓ No callback data - using default gas estimate");
 			// For orders without callbacks, we still estimate gas but don't enforce whitelist
 			return self.estimate_fill_gas(fill_tx, chain_id, false).await;
 		}
 
-		tracing::info!(" Order has callback data: {:?}", output.calldata);
+		tracing::info!("⚠️  Order has callback data: {:?}", output.calldata);
 
 		// Check if callback simulation is enabled
 		if !config.order.simulate_callbacks {
 			tracing::warn!(
-				"Order has callback but callback simulation is disabled. \
+				"❌ Order has callback but callback simulation is disabled. \
 				Enable 'simulate_callbacks = true' in config to support callbacks."
 			);
 			return Err(CostProfitError::Config(
@@ -1242,7 +1242,7 @@ impl CostProfitService {
 
 		if !is_whitelisted {
 			tracing::warn!(
-				"Callback recipient {} (chain {}) is NOT whitelisted. InteropAddress: {}",
+				"❌ Callback recipient {} (chain {}) is NOT whitelisted. InteropAddress: {}",
 				recipient_eth_address,
 				output_chain_id,
 				recipient_interop_hex
@@ -1254,7 +1254,7 @@ impl CostProfitService {
 		}
 
 		tracing::info!(
-			"Callback recipient {} (chain {}) is whitelisted - simulating gas",
+			"✅ Callback recipient {} (chain {}) is whitelisted - simulating gas",
 			recipient_eth_address,
 			output_chain_id
 		);
@@ -1275,7 +1275,7 @@ impl CostProfitService {
 		has_callback: bool,
 	) -> Result<CallbackSimulationResult, CostProfitError> {
 		tracing::info!(
-			"Estimating gas for fill transaction on chain {} (has_callback: {})",
+			"📊 Estimating gas for fill transaction on chain {} (has_callback: {})",
 			chain_id,
 			has_callback
 		);
@@ -1287,7 +1287,7 @@ impl CostProfitService {
 		{
 			Ok(estimated_gas) => {
 				tracing::info!(
-					"Gas estimation successful: {} units (has_callback: {})",
+					"✅ Gas estimation successful: {} units (has_callback: {})",
 					estimated_gas,
 					has_callback
 				);
@@ -1300,7 +1300,7 @@ impl CostProfitService {
 			},
 			Err(e) => {
 				let error_msg = e.to_string();
-				tracing::warn!("Gas estimation failed (likely revert): {}", error_msg);
+				tracing::warn!("❌ Gas estimation failed (likely revert): {}", error_msg);
 
 				// Check if this is a revert error
 				if error_msg.contains("revert")
@@ -1315,7 +1315,7 @@ impl CostProfitService {
 				} else {
 					// For other errors (network issues, etc.), we might want to retry or use fallback
 					tracing::warn!(
-						" Non-revert error during gas estimation, using fallback: {}",
+						"⚠️  Non-revert error during gas estimation, using fallback: {}",
 						error_msg
 					);
 					// Return success with 0 gas to signal fallback to config default

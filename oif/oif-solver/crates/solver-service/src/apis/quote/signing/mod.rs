@@ -7,17 +7,22 @@
 //! ## Architecture
 //!
 //! The signing module is organized into:
-//! - **Payloads**: Protocol-specific message generation (EIP-3009, etc.)
+//! - **Payloads**: Protocol-specific message generation (Permit2, EIP-3009, etc.)
 //! - **Schemes**: Signature schemes (EIP-712, EIP-191, etc.)
 //! - **Validation**: Signature verification and validation logic
 //!
 //! ## Supported Protocols
 //!
-//! ### EIP-3009
+//! ### Permit2
+//! Uniswap's universal token approval system that enables:
+//! - Gasless approvals through signatures
+//! - Batch transfers with witness data
+//! - Cross-chain intent specification
+//!
+//! ### EIP-3009 (Future)
 //! Transfer with authorization for USDC and similar tokens:
 //! - Native gasless transfers
 //! - Built-in authorization mechanics
-//! - receiveWithAuthorization for secure transfers
 //!
 //! ## Security Model
 //!
@@ -27,4 +32,6 @@
 //! - **Intent Verification**: Oracle addresses for settlement validation
 //! - **Amount Authorization**: Explicit token amounts and recipients
 
-pub mod payloads {}
+pub mod payloads {
+	pub mod permit2;
+}

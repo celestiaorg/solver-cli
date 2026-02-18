@@ -536,10 +536,10 @@ impl OifOrder {
 	/// Derive the lock type from the order variant
 	pub fn get_lock_type(&self) -> LockType {
 		match self {
-			OifOrder::OifEscrowV0 { .. } => LockType::Eip3009Escrow,
+			OifOrder::OifEscrowV0 { .. } => LockType::Permit2Escrow,
 			OifOrder::Oif3009V0 { .. } => LockType::Eip3009Escrow,
 			OifOrder::OifResourceLockV0 { .. } => LockType::ResourceLock,
-			OifOrder::OifGenericV0 { .. } => LockType::Eip3009Escrow, // Default to EIP-3009
+			OifOrder::OifGenericV0 { .. } => LockType::Permit2Escrow, // Default to Permit2
 		}
 	}
 }

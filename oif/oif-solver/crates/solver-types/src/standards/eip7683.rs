@@ -15,10 +15,14 @@ use std::str::FromStr;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum LockType {
-	/// EIP-3009 based escrow mechanism
-	/// Uses receiveWithAuthorization for gasless transfers
-	#[serde(rename = "eip3009_escrow")]
+	/// Permit2-based escrow mechanism
+	/// Uses Permit2 signatures for gasless token approvals
+	#[serde(rename = "permit2_escrow")]
 	#[default]
+	Permit2Escrow = 1,
+	/// EIP-3009 based escrow mechanism  
+	/// Uses transferWithAuthorization for gasless transfers
+	#[serde(rename = "eip3009_escrow")]
 	Eip3009Escrow = 2,
 	/// Resource lock mechanism (TheCompact, Rhinestone, etc.)
 	/// Uses various resource locking protocols
@@ -30,6 +34,7 @@ impl LockType {
 	/// Convert from u8 representation for backward compatibility
 	pub fn from_u8(value: u8) -> Option<Self> {
 		match value {
+			1 => Some(LockType::Permit2Escrow),
 			2 => Some(LockType::Eip3009Escrow),
 			3 => Some(LockType::ResourceLock),
 			_ => None,
@@ -48,12 +53,13 @@ impl LockType {
 
 	/// Returns true if this lock type uses escrow settlement
 	pub fn is_escrow(&self) -> bool {
-		matches!(self, LockType::Eip3009Escrow)
+		matches!(self, LockType::Permit2Escrow | LockType::Eip3009Escrow)
 	}
 
 	/// Get the string representation for this lock type
 	pub fn as_str(&self) -> &'static str {
 		match self {
+			LockType::Permit2Escrow => "permit2_escrow",
 			LockType::Eip3009Escrow => "eip3009_escrow",
 			LockType::ResourceLock => "resource_lock",
 		}
@@ -66,9 +72,11 @@ impl FromStr for LockType {
 	fn from_str(s: &str) -> Result<Self, Self::Err> {
 		match s {
 			// String representations
+			"permit2_escrow" => Ok(LockType::Permit2Escrow),
 			"eip3009_escrow" => Ok(LockType::Eip3009Escrow),
 			"resource_lock" => Ok(LockType::ResourceLock),
 			// Numeric string representations
+			"1" => Ok(LockType::Permit2Escrow),
 			"2" => Ok(LockType::Eip3009Escrow),
 			"3" => Ok(LockType::ResourceLock),
 			_ => Err(format!("Invalid lock type: {}", s)),

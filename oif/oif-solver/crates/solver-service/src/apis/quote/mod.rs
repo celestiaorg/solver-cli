@@ -25,7 +25,8 @@
 //! ## Key Features
 //!
 //! ### Multi-Protocol Support
-//! - EIP-3009 for native gasless transfers (receiveWithAuthorization)
+//! - Permit2 for universal token approvals
+//! - EIP-3009 for native gasless transfers
 //! - TheCompact for resource lock allocations
 //!
 //! ### Optimization Strategies
@@ -69,6 +70,7 @@ pub mod validation;
 
 // Re-export main functionality
 pub use generation::QuoteGenerator;
+pub use signing::payloads::permit2;
 pub use validation::QuoteValidator;
 
 use solver_config::Config;
