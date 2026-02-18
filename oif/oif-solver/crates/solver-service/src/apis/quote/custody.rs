@@ -122,7 +122,7 @@ impl CustodyStrategy {
 				if schemes.contains(&solver_types::AuthScheme::Permit2) {
 					if capabilities.permit2_available {
 						return Ok(CustodyDecision::Escrow {
-							lock_type: LockType::Eip3009Escrow,
+							lock_type: LockType::Permit2Escrow,
 						});
 					} else {
 						return Err(QuoteError::UnsupportedSettlement(
@@ -140,7 +140,7 @@ impl CustodyStrategy {
 			})
 		} else if capabilities.permit2_available {
 			Ok(CustodyDecision::Escrow {
-				lock_type: LockType::Eip3009Escrow,
+				lock_type: LockType::Permit2Escrow,
 			})
 		} else {
 			Err(QuoteError::UnsupportedSettlement(
@@ -279,7 +279,7 @@ mod tests {
 		assert!(result.is_ok());
 		match result.unwrap() {
 			CustodyDecision::Escrow { lock_type } => {
-				assert_eq!(lock_type, LockType::Eip3009Escrow);
+				assert_eq!(lock_type, LockType::Permit2Escrow);
 			},
 			_ => panic!("Expected Escrow decision with Permit2"),
 		}
@@ -316,7 +316,7 @@ mod tests {
 		assert!(result.is_ok());
 		match result.unwrap() {
 			CustodyDecision::Escrow { lock_type } => {
-				assert_eq!(lock_type, LockType::Eip3009Escrow);
+				assert_eq!(lock_type, LockType::Permit2Escrow);
 			},
 			_ => panic!("Expected automatic Permit2 fallback"),
 		}
@@ -490,7 +490,7 @@ mod tests {
 		};
 
 		let escrow = CustodyDecision::Escrow {
-			lock_type: LockType::Eip3009Escrow,
+			lock_type: LockType::Permit2Escrow,
 		};
 
 		// Should not panic when formatting

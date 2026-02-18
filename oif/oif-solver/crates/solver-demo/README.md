@@ -481,7 +481,7 @@ This ensures the solver:
 
 Example log output:
 ```
-Callback simulation passed for order 0x57bc92.. - estimated gas: 79850 units on chain 84532
+✅ Callback simulation passed for order 0x57bc92.. - estimated gas: 79850 units on chain 84532
 Using simulated fill gas: 79850 units (config default was: 77298 units)
 ```
 

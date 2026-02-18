@@ -227,7 +227,7 @@ impl Eip7683Discovery {
 			raw_order_data: Some(with_0x_prefix(&hex::encode(&abi_encoded_bytes))),
 			signature: None,
 			sponsor: None,
-			lock_type: Some(LockType::Eip3009Escrow),
+			lock_type: Some(LockType::Permit2Escrow),
 		};
 
 		Ok(Intent {
@@ -244,7 +244,7 @@ impl Eip7683Discovery {
 			})?,
 			order_bytes: abi_encoded_bytes,
 			quote_id: None,
-			lock_type: LockType::Eip3009Escrow.to_string(),
+			lock_type: LockType::Permit2Escrow.to_string(),
 		})
 	}
 
@@ -1023,7 +1023,7 @@ mod tests {
 			raw_order_data: Some(with_0x_prefix("deadbeef")),
 			signature: None,
 			sponsor: None,
-			lock_type: Some(LockType::Eip3009Escrow),
+			lock_type: Some(LockType::Permit2Escrow),
 		};
 
 		// Test serialization to JSON

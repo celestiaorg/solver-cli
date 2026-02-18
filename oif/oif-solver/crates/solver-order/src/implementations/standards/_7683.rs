@@ -66,7 +66,7 @@ impl Eip7683OrderImpl {
 				let call = IInputSettlerCompact::orderIdentifierCall { order: std_order };
 				Ok(Bytes::from(call.abi_encode()))
 			},
-			LockType::Eip3009Escrow => {
+			LockType::Permit2Escrow | LockType::Eip3009Escrow => {
 				// Decode to StandardOrder for Escrow contracts
 				let std_order = StandardOrder::abi_decode_validate(order_bytes).map_err(|e| {
 					OrderError::ValidationFailed(format!("Failed to decode StandardOrder: {}", e))
@@ -100,7 +100,7 @@ impl Eip7683OrderImpl {
 						))
 					})
 			},
-			LockType::Eip3009Escrow => {
+			LockType::Permit2Escrow | LockType::Eip3009Escrow => {
 				Ok(network.input_settler_address.clone())
 			},
 		}

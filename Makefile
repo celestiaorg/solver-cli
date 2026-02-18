@@ -14,37 +14,38 @@ build:
 
 ## start: Start local EVM chains (Anvil)
 start:
-	@if [ -f .anvil1.pid ] && kill -0 $$(cat .anvil1.pid) 2>/dev/null; then \
-		echo "Anvil 1 (evolve) already running (PID: $$(cat .anvil1.pid))"; \
+	@mkdir -p logs
+	@if [ -f logs/.anvil1.pid ] && kill -0 $$(cat logs/.anvil1.pid) 2>/dev/null; then \
+		echo "Anvil 1 (evolve) already running (PID: $$(cat logs/.anvil1.pid))"; \
 	else \
 		echo "Starting Anvil 1 (evolve) on port 8545, chain-id 31337..."; \
-		anvil --chain-id 31337 --block-time 1 --port 8545 > .anvil1.log 2>&1 & \
-		echo $$! > .anvil1.pid; \
+		anvil --chain-id 31337 --block-time 1 --port 8545 > logs/anvil1.log 2>&1 & \
+		echo $$! > logs/.anvil1.pid; \
 		sleep 2; \
-		echo "Anvil 1 started (PID: $$(cat .anvil1.pid))"; \
+		echo "Anvil 1 started (PID: $$(cat logs/.anvil1.pid))"; \
 	fi
-	@if [ -f .anvil2.pid ] && kill -0 $$(cat .anvil2.pid) 2>/dev/null; then \
-		echo "Anvil 2 (evolve2) already running (PID: $$(cat .anvil2.pid))"; \
+	@if [ -f logs/.anvil2.pid ] && kill -0 $$(cat logs/.anvil2.pid) 2>/dev/null; then \
+		echo "Anvil 2 (evolve2) already running (PID: $$(cat logs/.anvil2.pid))"; \
 	else \
 		echo "Starting Anvil 2 (evolve2) on port 8546, chain-id 31338..."; \
-		anvil --chain-id 31338 --block-time 1 --port 8546 > .anvil2.log 2>&1 & \
-		echo $$! > .anvil2.pid; \
+		anvil --chain-id 31338 --block-time 1 --port 8546 > logs/anvil2.log 2>&1 & \
+		echo $$! > logs/.anvil2.pid; \
 		sleep 2; \
-		echo "Anvil 2 started (PID: $$(cat .anvil2.pid))"; \
+		echo "Anvil 2 started (PID: $$(cat logs/.anvil2.pid))"; \
 	fi
 	@echo "Local chains ready!"
 .PHONY: start
 
 ## stop: Stop local chains, solver, oracle operator, and aggregator
 stop:
-	@if [ -f .anvil1.pid ]; then \
-		kill $$(cat .anvil1.pid) 2>/dev/null || true; \
-		rm .anvil1.pid; \
+	@if [ -f logs/.anvil1.pid ]; then \
+		kill $$(cat logs/.anvil1.pid) 2>/dev/null || true; \
+		rm logs/.anvil1.pid; \
 		echo "Anvil 1 (evolve) stopped"; \
 	fi
-	@if [ -f .anvil2.pid ]; then \
-		kill $$(cat .anvil2.pid) 2>/dev/null || true; \
-		rm .anvil2.pid; \
+	@if [ -f logs/.anvil2.pid ]; then \
+		kill $$(cat logs/.anvil2.pid) 2>/dev/null || true; \
+		rm logs/.anvil2.pid; \
 		echo "Anvil 2 (evolve2) stopped"; \
 	fi
 	@$(SOLVER_CLI) solver stop 2>/dev/null || true
@@ -239,7 +240,7 @@ setup: init deploy configure fund fund-operator fund-user mint-user
 ## clean: Remove generated files
 clean:
 	@rm -rf .solver config/*.toml config/*.yaml config/config.json
-	@rm -f .anvil1.pid .anvil1.log .anvil2.pid .anvil2.log
+	@rm -rf logs/
 	@rm -f config/oracle-state.json
 	@echo "Cleaned!"
 .PHONY: clean

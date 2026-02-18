@@ -59,7 +59,8 @@ echo ""
 # 5. Extract and sign EIP-712 payload
 echo "=== Signing Order ==="
 QUOTE=$(echo $QUOTE_RESPONSE | jq -c '.quotes[0]')
-echo $QUOTE | jq '.order.payload' > /tmp/eip712_payload.json
+# Patch domain: add version="1" (MockERC20 uses EIP712(name_, "1")) and ensure chainId is numeric
+echo $QUOTE | jq '.order.payload | .domain.version = "1" | .domain.chainId = (.domain.chainId | tonumber)' > /tmp/eip712_payload.json
 
 # Sign EIP-712 typed data - aggregator expects just the raw signature
 RAW_SIGNATURE=$(cast wallet sign --data --from-file /tmp/eip712_payload.json --private-key $USER_PK)

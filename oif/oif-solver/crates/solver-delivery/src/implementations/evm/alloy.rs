@@ -24,8 +24,6 @@ use solver_types::{
 	TransactionHash, TransactionReceipt,
 };
 use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 /// Alloy-based EVM delivery implementation.
 ///
@@ -35,8 +33,6 @@ use tokio::sync::Mutex;
 pub struct AlloyDelivery {
 	/// Alloy providers for each supported network.
 	providers: HashMap<u64, DynProvider>,
-	/// Per-chain locks to ensure sequential transaction submission (prevents nonce conflicts)
-	tx_locks: HashMap<u64, Arc<Mutex<()>>>,
 }
 
 impl AlloyDelivery {
@@ -59,7 +55,6 @@ impl AlloyDelivery {
 		}
 
 		let mut providers = HashMap::new();
-		let mut tx_locks = HashMap::new();
 
 		for network_id in &network_ids {
 			// Get network configuration
@@ -125,13 +120,9 @@ impl AlloyDelivery {
 			// Use type erasure to simplify the provider type
 			let dyn_provider = provider.erased();
 			providers.insert(*network_id, dyn_provider);
-
-			// Create a mutex to ensure sequential transaction submission per chain
-			// This prevents nonce conflicts on chains with slower block times (like public testnets)
-			tx_locks.insert(*network_id, Arc::new(Mutex::new(())));
 		}
 
-		Ok(Self { providers, tx_locks })
+		Ok(Self { providers })
 	}
 
 	/// Gets the provider for a specific chain ID.
@@ -227,16 +218,6 @@ impl DeliveryInterface for AlloyDelivery {
 		// Get the chain ID from the transaction
 		let chain_id = tx.chain_id;
 
-		// Get the lock for this chain to ensure sequential transaction submission
-		let lock = self.tx_locks.get(&chain_id).ok_or_else(|| {
-			DeliveryError::Network(format!("No transaction lock configured for chain ID {}", chain_id))
-		})?.clone();
-
-		// Acquire lock - this ensures only one transaction is sent at a time per chain
-		// This prevents nonce conflicts on slower chains (like public testnets)
-		let _guard = lock.lock().await;
-		tracing::debug!("Acquired transaction lock for chain {}", chain_id);
-
 		// Get the appropriate provider for this chain
 		let provider = self.get_provider(chain_id)?;
 
@@ -273,11 +254,6 @@ impl DeliveryInterface for AlloyDelivery {
 		// Get the transaction hash
 		let tx_hash = *pending_tx.tx_hash();
 		let tx_hash_obj = TransactionHash(tx_hash.0.to_vec());
-
-		// Transaction is now in mempool, nonce is consumed
-		// Release lock immediately after successful submission
-		drop(_guard);
-		tracing::debug!("Transaction submitted to chain {}, releasing lock", chain_id);
 
 		// If tracking is provided, set up monitoring
 		if let Some(tracking) = tracking {

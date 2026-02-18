@@ -7,7 +7,6 @@ import { InputSettlerEscrow } from "../src/input/escrow/InputSettlerEscrow.sol";
 import { OutputSettlerSimple } from "../src/output/simple/OutputSettlerSimple.sol";
 import { CentralizedOracle } from "../src/oracles/CentralizedOracle.sol";
 import { MockERC20 } from "../test/mocks/MockERC20.sol";
-import "../../lib/permit2/src/Permit2.sol";
 
 /**
  * @title OIF Deploy Script
@@ -108,10 +107,6 @@ contract DeployAll is Script {
         MockERC20 token = new MockERC20(tokenName, tokenSymbol, tokenDecimals);
         console2.log("MockERC20 (%s):", tokenSymbol, address(token));
 
-        // Deploy Permit2
-        Permit2 permit2 = new Permit2();
-        console2.log("Permit2:", address(permit2));
-
         vm.stopBroadcast();
 
         // Output as JSON
@@ -121,7 +116,6 @@ contract DeployAll is Script {
         console2.log("  \"operator\": \"%s\",", operator);
         console2.log("  \"inputSettler\": \"%s\",", address(inputSettler));
         console2.log("  \"outputSettler\": \"%s\",", address(outputSettler));
-        console2.log("  \"permit2\": \"%s\",", address(permit2));
         console2.log("  \"token\": \"%s\",", address(token));
         console2.log("  \"tokenName\": \"%s\",", tokenName);
         console2.log("  \"tokenSymbol\": \"%s\",", tokenSymbol);
