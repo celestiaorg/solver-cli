@@ -170,7 +170,7 @@ impl DeployCommand {
                 print_address("OutputSettlerSimple", addr);
             }
             if let Some(addr) = &chain.contracts.oracle {
-                print_address("Oracle", addr);
+                print_address("CentralizedOracle", addr);
             }
             for (symbol, token) in &chain.tokens {
                 print_address(&format!("Token ({})", symbol), &token.address);

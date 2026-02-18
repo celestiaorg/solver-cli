@@ -87,28 +87,26 @@ impl ForgeRunner {
         let combined = format!("{}\n{}", stdout, stderr);
         let mut addresses = HashMap::new();
 
-        // Parse lines like "ContractName deployed at: 0x..." (any *Oracle stored as "Oracle")
+        // Parse lines like "AlwaysYesOracle deployed at: 0x..."
         for line in combined.lines() {
             if line.contains("deployed at:") || line.contains("Deployed") {
                 if let Some((name, addr)) = Self::parse_deployment_line(line) {
-                    let key = if name.ends_with("Oracle") { "Oracle".to_string() } else { name };
-                    addresses.insert(key, addr);
+                    addresses.insert(name, addr);
                 }
             }
         }
 
         // Also try parsing console.log output format: "Contract: 0x..."
         for line in combined.lines() {
-            // Format: "  ContractName: 0x..." (*Oracle names normalized to key "Oracle")
+            // Format: "  AlwaysYesOracle: 0x5FbDB2315678afecb367f032d93F642f64180aa3"
             let trimmed = line.trim();
             if trimmed.contains(": 0x") && !trimmed.starts_with("//") {
                 let parts: Vec<&str> = trimmed.splitn(2, ": 0x").collect();
                 if parts.len() == 2 {
                     let name = parts[0].trim().to_string();
-                    let key = if name.ends_with("Oracle") { "Oracle".to_string() } else { name };
                     let addr = format!("0x{}", parts[1].trim());
                     if addr.len() == 42 {
-                        addresses.insert(key, addr);
+                        addresses.insert(name, addr);
                     }
                 }
             }
@@ -124,7 +122,7 @@ impl ForgeRunner {
                     if let Some(addr) = Self::extract_address(trimmed) {
                         // Try to determine contract name from context
                         if trimmed.to_lowercase().contains("oracle") {
-                            addresses.insert("Oracle".to_string(), addr);
+                            addresses.insert("AlwaysYesOracle".to_string(), addr);
                         } else if trimmed.to_lowercase().contains("escrow")
                             || trimmed.to_lowercase().contains("input")
                         {
@@ -234,7 +232,10 @@ impl DeploymentOutput {
     }
 
     pub fn oracle(&self) -> Option<&String> {
-        self.addresses.get("Oracle")
+        self.addresses
+            .get("CentralizedOracle")
+            .or_else(|| self.addresses.get("AlwaysYesOracle"))
+            .or_else(|| self.addresses.get("Oracle"))
     }
 
     pub fn input_settler(&self) -> Option<&String> {

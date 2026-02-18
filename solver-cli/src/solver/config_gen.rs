@@ -183,19 +183,18 @@ primary = "mock"
 [settlement]
 settlement_poll_interval_seconds = 3
 
-[settlement.implementations.direct]
+[settlement.implementations.centralized]
 order = "eip7683"
 network_ids = [{chain_ids_str}]
-dispute_period_seconds = 1
 
-# Oracle configuration
+# Oracle configuration (CentralizedOracle addresses)
 # Attestations are submitted by the separate oracle operator service
-[settlement.implementations.direct.oracles]
+[settlement.implementations.centralized.oracles]
 input = {{ {input_oracles} }}
 output = {{ {output_oracles} }}
 
 # Valid routes (all-to-all)
-[settlement.implementations.direct.routes]
+[settlement.implementations.centralized.routes]
 {routes}
 "#,
             chain_ids.len(),
@@ -351,10 +350,9 @@ pricing:
 settlement:
   settlement_poll_interval_seconds: 3
   implementations:
-    direct:
+    centralized:
       order: eip7683
       network_ids: [{chain_ids_str}]
-      dispute_period_seconds: 1
       oracles:
         input:{oracle_input}
         output:{oracle_output}
@@ -433,7 +431,7 @@ input_settler_address = "{}"
 # Operator private key (signs attestations)
 operator_private_key = "{operator_private_key}"
 
-# Operator address (for oracle operator config)
+# Operator address (must match CentralizedOracle operator)
 operator_address = "{operator_address}"
 
 # Polling interval in seconds

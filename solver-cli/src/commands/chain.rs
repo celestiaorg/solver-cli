@@ -33,7 +33,7 @@ pub enum ChainCommand {
         #[arg(long)]
         output_settler: String,
 
-        /// Oracle contract address
+        /// CentralizedOracle contract address
         #[arg(long)]
         oracle: String,
 
@@ -194,7 +194,7 @@ impl ChainCommand {
 
         print_address("InputSettlerEscrow", &input_settler);
         print_address("OutputSettlerSimple", &output_settler);
-        print_address("Oracle", &oracle);
+        print_address("CentralizedOracle", &oracle);
 
         // Build tokens map
         let mut token_map: HashMap<String, TokenInfo> = HashMap::new();
@@ -357,7 +357,7 @@ impl ChainCommand {
                 print_address("OutputSettlerSimple", addr);
             }
             if let Some(addr) = &chain.contracts.oracle {
-                print_address("Oracle", addr);
+                print_address("CentralizedOracle", addr);
             }
             for (symbol, token) in &chain.tokens {
                 print_address(&format!("Token ({})", symbol), &token.address);

@@ -25,7 +25,7 @@ start:
 	fi
 .PHONY: start
 
-## stop: Stop local Evolve chain and solver
+## stop: Stop local Evolve chain, solver, and oracle operator
 stop:
 	@if [ -f .anvil.pid ]; then \
 		kill $$(cat .anvil.pid) 2>/dev/null || true; \
@@ -33,6 +33,7 @@ stop:
 		echo "Anvil stopped"; \
 	fi
 	@$(SOLVER_CLI) solver stop 2>/dev/null || true
+	@pkill -f oracle-operator 2>/dev/null || true
 	@echo "All services stopped"
 .PHONY: stop
 
@@ -56,7 +57,7 @@ fund: build
 	@$(SOLVER_CLI) fund --amount 10000000 $(if $(CHAIN),--chain $(CHAIN),)
 .PHONY: fund
 
-## chain-add: Add a chain with existing contracts (use make chain-add NAME=arbitrum RPC=... INPUT_SETTLER=... OUTPUT_SETTLER=...)
+## chain-add: Add a chain with existing contracts (use make chain-add NAME=arbitrum RPC=... INPUT_SETTLER=... OUTPUT_SETTLER=... ORACLE=...)
 chain-add: build
 	@$(SOLVER_CLI) chain add \
 		--name $(NAME) \
@@ -64,6 +65,7 @@ chain-add: build
 		$(if $(CHAIN_ID),--chain-id $(CHAIN_ID),) \
 		--input-settler $(INPUT_SETTLER) \
 		--output-settler $(OUTPUT_SETTLER) \
+		--oracle $(ORACLE) \
 		$(if $(TOKEN_ADDR),--token $(TOKEN_SYMBOL)=$(TOKEN_ADDR),)
 .PHONY: chain-add
 
@@ -92,7 +94,21 @@ token-remove: build
 	@$(SOLVER_CLI) token remove --chain $(CHAIN) --symbol $(SYMBOL)
 .PHONY: token-remove
 
-## solver-start: Start the solver service (with retry for nonce issues) Start the solver service (with retry for nonce issues)
+## fund-operator: Fund oracle operator with ETH on evolve
+fund-operator:
+	@echo "Funding oracle operator on all chains..."
+	@. ./.env && \
+		OPERATOR_ADDR=$$(grep 'operator_address' config/oracle.toml | cut -d'"' -f2) && \
+		echo "  Operator address: $$OPERATOR_ADDR" && \
+		echo "  Funding on Evolve (10 ETH)..." && \
+		cast send --rpc-url $$EVOLVE_RPC --private-key $$EVOLVE_PK --value 10ether $$OPERATOR_ADDR 2>/dev/null && \
+		echo "  Funding on Sepolia (0.01 ETH)..." && \
+		cast send --rpc-url $$SEPOLIA_RPC --private-key $$SEPOLIA_PK --value 0.01ether $$OPERATOR_ADDR 2>/dev/null || \
+		echo "  Warning: Could not fund on Sepolia (may need testnet ETH)" && \
+		echo "Oracle operator funded"
+.PHONY: fund-operator
+
+## solver-start: Start the solver service (with retry for nonce issues)
 solver-start: build
 	@for i in 1 2 3; do \
 		$(SOLVER_CLI) solver start && break || \
@@ -103,6 +119,15 @@ solver-start: build
 # Alias for convenience
 solver: solver-start
 .PHONY: solver
+
+## operator-start: Start the oracle operator service
+operator-start:
+	@cd oracle-operator && ORACLE_CONFIG=../config/oracle.toml RUST_LOG=info cargo run --release
+.PHONY: operator-start
+
+# Alias for convenience
+operator: operator-start
+.PHONY: operator
 
 ## intent: Submit a test intent. Use FROM=, TO=, AMOUNT=, ASSET= to customize
 intent: build
@@ -149,12 +174,13 @@ reset: clean
 .PHONY: reset
 
 ## setup: Full setup (init + deploy + configure + fund + mint tokens to user)
-setup: init deploy configure fund mint-user
+setup: init deploy configure fund fund-operator mint-user
 	@echo ""
 	@echo "Setup complete! Next steps:"
 	@echo "  1. make solver - Start solver service (in separate terminal)"
-	@echo "  2. make intent - Submit a test intent"
-	@echo "  3. make balances - Check balances"
+	@echo "  2. make operator - Start oracle operator service (in another terminal)"
+	@echo "  3. make intent - Submit a test intent"
+	@echo "  4. make balances - Check balances"
 .PHONY: setup
 
 ## clean: Remove generated files
