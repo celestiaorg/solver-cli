@@ -183,63 +183,6 @@ struct FillEvent {
     fill_chain_id: u64, // Chain where this fill happened (destination)
 }
 
-fn decode_output_filled(
-    source_chain_id: u64,
-    log: &alloy::rpc::types::Log,
-) -> Result<FillEvent> {
-    // Topics: [signature, orderId]
-    if log.topics().len() < 2 {
-        return Err(anyhow::anyhow!(
-            "Malformed OutputFilled log on chain {}: expected at least 2 topics, got {}",
-            source_chain_id,
-            log.topics().len()
-        ));
-    }
-
-    let order_id: [u8; 32] = log.topics()[1].0;
-
-    // Convert alloy RPC log to alloy primitives log for decoding.
-    let prim_log = alloy_primitives::Log {
-        address: AlloyAddress::from_slice(log.address().as_ref()),
-        data: alloy_primitives::LogData::new(
-            log.topics().iter().map(|t| FixedBytes::from(t.0)).collect(),
-            log.data().data.clone(),
-        )
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "Malformed log payload for order {} on chain {}",
-                hex::encode(order_id),
-                source_chain_id
-            )
-        })?,
-    };
-
-    let decoded = IOutputSettlerSimple::OutputFilled::decode_log(&prim_log, true).map_err(|e| {
-        anyhow::anyhow!(
-            "Failed to decode OutputFilled for order {} on chain {}: {}",
-            hex::encode(order_id),
-            source_chain_id,
-            e
-        )
-    })?;
-
-    let output = &decoded.output;
-    let application_id = output.settler.0;
-
-    Ok(FillEvent {
-        order_id,
-        application_id,
-        timestamp: decoded.timestamp,
-        solver: decoded.solver.0,
-        token: output.token.0,
-        amount: output.amount,
-        recipient: output.recipient.0,
-        call_data: output.callbackData.to_vec(),
-        context: output.context.to_vec(),
-        fill_chain_id: source_chain_id,
-    })
-}
-
 pub struct OracleOperator {
     config: OracleConfig,
     operator_signer: PrivateKeySigner,
@@ -436,7 +379,7 @@ impl OracleOperator {
             }
         }
 
-        let fill = match decode_output_filled(source_chain_id, log) {
+        let fill = match Self::decode_fill_event(source_chain_id, log) {
             Ok(fill) => fill,
             Err(e) => {
                 warn!(
@@ -480,6 +423,61 @@ impl OracleOperator {
         );
 
         Ok(())
+    }
+
+    fn decode_fill_event(source_chain_id: u64, log: &alloy::rpc::types::Log) -> Result<FillEvent> {
+        // Topics: [signature, orderId]
+        if log.topics().len() < 2 {
+            return Err(anyhow::anyhow!(
+                "Malformed OutputFilled log on chain {}: expected at least 2 topics, got {}",
+                source_chain_id,
+                log.topics().len()
+            ));
+        }
+
+        let order_id: [u8; 32] = log.topics()[1].0;
+
+        // Convert alloy RPC log to alloy primitives log for decoding.
+        let prim_log = alloy_primitives::Log {
+            address: AlloyAddress::from_slice(log.address().as_ref()),
+            data: alloy_primitives::LogData::new(
+                log.topics().iter().map(|t| FixedBytes::from(t.0)).collect(),
+                log.data().data.clone(),
+            )
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Malformed log payload for order {} on chain {}",
+                    hex::encode(order_id),
+                    source_chain_id
+                )
+            })?,
+        };
+
+        let decoded =
+            IOutputSettlerSimple::OutputFilled::decode_log(&prim_log, true).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to decode OutputFilled for order {} on chain {}: {}",
+                    hex::encode(order_id),
+                    source_chain_id,
+                    e
+                )
+            })?;
+
+        let output = &decoded.output;
+        let application_id = output.settler.0;
+
+        Ok(FillEvent {
+            order_id,
+            application_id,
+            timestamp: decoded.timestamp,
+            solver: decoded.solver.0,
+            token: output.token.0,
+            amount: output.amount,
+            recipient: output.recipient.0,
+            call_data: output.callbackData.to_vec(),
+            context: output.context.to_vec(),
+            fill_chain_id: source_chain_id,
+        })
     }
 
     /// Find the origin chain by querying escrow contracts for the order status
@@ -711,7 +709,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_output_filled_returns_error_for_malformed_event() {
+    fn decode_fill_event_returns_error_for_malformed_event() {
         let log = alloy::rpc::types::Log {
             inner: alloy_primitives::Log {
                 address: Address::ZERO,
@@ -723,7 +721,7 @@ mod tests {
             ..Default::default()
         };
 
-        let err = decode_output_filled(1, &log).expect_err("expected decode error");
+        let err = OracleOperator::decode_fill_event(1, &log).expect_err("expected decode error");
         assert!(err.to_string().contains("Failed to decode OutputFilled"));
     }
 }
