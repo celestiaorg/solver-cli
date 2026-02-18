@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useAppKit } from '@reown/appkit/react'
+import { useAccount, useDisconnect } from 'wagmi'
 import { api, Config, AllBalances, Quote, OrderStatus } from './api'
 
 // ── Utility ──────────────────────────────────────────────────────────────────
@@ -72,6 +74,11 @@ function ChainBadge({ name }: { name: string }) {
 // ── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
+  // Wallet
+  const { open } = useAppKit()
+  const { address: connectedAddress, isConnected } = useAccount()
+  const { disconnect } = useDisconnect()
+
   // State
   const [config, setConfig] = useState<Config | null>(null)
   const [balances, setBalances] = useState<AllBalances | null>(null)
@@ -117,12 +124,12 @@ export default function App() {
 
   const loadBalances = useCallback(async () => {
     try {
-      const bal = await api.balances()
+      const bal = await api.balances(isConnected ? connectedAddress : undefined)
       setBalances(bal)
     } catch (err) {
       console.error('Failed to load balances:', err)
     }
-  }, [])
+  }, [isConnected, connectedAddress])
 
   const checkHealth = useCallback(async () => {
     try {
@@ -212,7 +219,7 @@ export default function App() {
     setFaucetLoading(key)
     setFaucetMsg('')
     try {
-      const resp = await api.faucet(chainName, type)
+      const resp = await api.faucet(chainName, type, isConnected ? connectedAddress : undefined)
       setFaucetMsg(`Sent ${resp.amount} on ${chainName}`)
       loadBalances()
     } catch (err: any) {
@@ -273,10 +280,25 @@ export default function App() {
               <StatusDot ok={health.aggregator === 'ok'} />
               <span>Aggregator</span>
             </div>
-            {config && (
-              <div className="bg-surface-2 border border-border rounded-lg px-3 py-1.5 text-xs font-mono text-gray-300">
-                {truncAddr(config.userAddress)}
+            {isConnected ? (
+              <div className="flex items-center gap-2">
+                <div className="bg-surface-2 border border-brand/40 rounded-lg px-3 py-1.5 text-xs font-mono text-brand">
+                  {truncAddr(connectedAddress!)}
+                </div>
+                <button
+                  onClick={() => disconnect()}
+                  className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                >
+                  Disconnect
+                </button>
               </div>
+            ) : (
+              <button
+                onClick={() => open()}
+                className="bg-brand hover:bg-brand-light text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors"
+              >
+                Connect Wallet
+              </button>
             )}
           </div>
         </div>
@@ -580,8 +602,19 @@ export default function App() {
               <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
                 Faucet
               </h2>
-              <p className="text-xs text-gray-500 mb-3">
+              <p className="text-xs text-gray-500 mb-1">
                 Claim testnet gas and tokens for local chains.
+              </p>
+              <p className="text-xs mb-3">
+                {isConnected ? (
+                  <span className="text-brand">
+                    Recipient: {truncAddr(connectedAddress!)}
+                  </span>
+                ) : (
+                  <span className="text-gray-600">
+                    Recipient: {config ? truncAddr(config.userAddress) : '—'} (default)
+                  </span>
+                )}
               </p>
 
               {config && chainEntries.map(([chainId, chain]) => {

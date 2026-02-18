@@ -107,10 +107,17 @@ app.get('/api/config', (_req, res) => {
 });
 
 // Balances: all tokens on all chains for user + solver
-app.get('/api/balances', async (_req, res) => {
+app.get('/api/balances', async (req, res) => {
   try {
     const state = readState();
-    const user = getUserAccount();
+    // Use connected wallet address if provided, otherwise fall back to USER_PK
+    const addressParam = req.query.address;
+    let userAddress;
+    if (addressParam && /^0x[0-9a-fA-F]{40}$/.test(addressParam)) {
+      userAddress = addressParam;
+    } else {
+      userAddress = getUserAccount().address;
+    }
     const result = {};
 
     const promises = Object.entries(state.chains).map(async ([chainId, chain]) => {
@@ -122,7 +129,7 @@ app.get('/api/balances', async (_req, res) => {
         try {
           const userBal = await client.readContract({
             address: token.address, abi: erc20Abi,
-            functionName: 'balanceOf', args: [user.address],
+            functionName: 'balanceOf', args: [userAddress],
           });
           chainBal.user[symbol] = { raw: userBal.toString(), formatted: formatUnits(userBal, token.decimals) };
         } catch { chainBal.user[symbol] = { raw: '0', formatted: '0' }; }
@@ -140,7 +147,7 @@ app.get('/api/balances', async (_req, res) => {
 
       // ETH balance
       try {
-        const ethBal = await client.getBalance({ address: user.address });
+        const ethBal = await client.getBalance({ address: userAddress });
         chainBal.user['ETH'] = { raw: ethBal.toString(), formatted: parseFloat(formatUnits(ethBal, 18)).toFixed(4) };
       } catch { chainBal.user['ETH'] = { raw: '0', formatted: '0' }; }
 
@@ -163,13 +170,22 @@ app.get('/api/balances', async (_req, res) => {
 
 // Faucet: send gas or mint USDC
 app.post('/api/faucet', async (req, res) => {
-  const { chainName, type } = req.body;
+  const { chainName, type, address } = req.body;
   try {
     const state = readState();
     const chain = Object.values(state.chains).find(c => c.name === chainName);
     if (!chain) throw new Error(`Chain "${chainName}" not found`);
 
-    const user = getUserAccount();
+    // Use provided address (from connected wallet) or fall back to USER_PK
+    let recipient;
+    if (address) {
+      if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
+        throw new Error('Invalid Ethereum address');
+      }
+      recipient = address;
+    } else {
+      recipient = getUserAccount().address;
+    }
 
     // Resolve deployer key
     const envKey = `${chainName.toUpperCase()}_PK`;
@@ -191,7 +207,7 @@ app.post('/api/faucet', async (req, res) => {
 
     if (type === 'gas') {
       const hash = await walletClient.sendTransaction({
-        to: user.address,
+        to: recipient,
         value: 1000000000000000000n, // 1 ETH
       });
       await publicClient.waitForTransactionReceipt({ hash });
@@ -204,7 +220,7 @@ app.post('/api/faucet', async (req, res) => {
         address: token.address,
         abi: erc20Abi,
         functionName: 'mint',
-        args: [user.address, 10000000n], // 10 USDC (6 decimals)
+        args: [recipient, 10000000n], // 10 USDC (6 decimals)
       });
       await publicClient.waitForTransactionReceipt({ hash });
       res.json({ success: true, hash, amount: '10 USDC' });

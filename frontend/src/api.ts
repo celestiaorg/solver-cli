@@ -101,7 +101,8 @@ export const api = {
 
   config: () => json<Config>(`${BASE}/config`),
 
-  balances: () => json<AllBalances>(`${BASE}/balances`),
+  balances: (address?: string) =>
+    json<AllBalances>(`${BASE}/balances${address ? `?address=${address}` : ''}`),
 
   quote: (fromChainId: number, toChainId: number, amount: string, asset = 'USDC') =>
     json<QuoteResponse>(`${BASE}/quote`, {
@@ -119,10 +120,10 @@ export const api = {
 
   orderStatus: (id: string) => json<OrderStatus>(`${BASE}/order/${id}`),
 
-  faucet: (chainName: string, type: 'gas' | 'usdc') =>
+  faucet: (chainName: string, type: 'gas' | 'usdc', address?: string) =>
     json<{ success: boolean; hash: string; amount: string }>(`${BASE}/faucet`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chainName, type }),
+      body: JSON.stringify({ chainName, type, ...(address ? { address } : {}) }),
     }),
 }
