@@ -11,6 +11,7 @@ export interface ChainInfo {
   chainId: number
   rpc: string
   tokens: Record<string, TokenInfo>
+  contracts: Record<string, string>
 }
 
 export interface Config {
@@ -104,18 +105,25 @@ export const api = {
   balances: (address?: string) =>
     json<AllBalances>(`${BASE}/balances${address ? `?address=${address}` : ''}`),
 
-  quote: (fromChainId: number, toChainId: number, amount: string, asset = 'USDC') =>
+  quote: (fromChainId: number, toChainId: number, amount: string, asset = 'USDC', address?: string) =>
     json<QuoteResponse>(`${BASE}/quote`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fromChainId, toChainId, amount, asset }),
+      body: JSON.stringify({ fromChainId, toChainId, amount, asset, ...(address ? { address } : {}) }),
     }),
 
-  submitOrder: (quote: Quote, fromChainId: number, asset = 'USDC') =>
+  submitOrder: (quote: Quote, fromChainId: number, asset = 'USDC', address?: string) =>
     json<OrderResponse>(`${BASE}/order`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ quote, fromChainId, asset }),
+      body: JSON.stringify({ quote, fromChainId, asset, ...(address ? { address } : {}) }),
+    }),
+
+  submitSignedOrder: (quote: Quote, signature: string) =>
+    json<OrderResponse>(`${BASE}/order/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quote, signature }),
     }),
 
   orderStatus: (id: string) => json<OrderStatus>(`${BASE}/order/${id}`),

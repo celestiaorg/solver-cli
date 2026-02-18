@@ -93,6 +93,7 @@ app.get('/api/config', (_req, res) => {
         chainId: chain.chain_id,
         rpc: chain.rpc,
         tokens: chain.tokens,
+        contracts: chain.contracts || {},
       };
     }
 
@@ -234,10 +235,16 @@ app.post('/api/faucet', async (req, res) => {
 
 // Quote: request quote from aggregator
 app.post('/api/quote', async (req, res) => {
-  const { fromChainId, toChainId, amount, asset = 'USDC' } = req.body;
+  const { fromChainId, toChainId, amount, asset = 'USDC', address } = req.body;
   try {
     const state = readState();
     const user = getUserAccount();
+
+    // Use connected wallet address if provided, otherwise fall back to USER_PK
+    let userAddress = user.address;
+    if (address && /^0x[0-9a-fA-F]{40}$/.test(address)) {
+      userAddress = address;
+    }
 
     const fromChain = state.chains[fromChainId.toString()];
     const toChain = state.chains[toChainId.toString()];
@@ -249,8 +256,8 @@ app.post('/api/quote', async (req, res) => {
     if (!fromToken) throw new Error(`${asset} not found on ${fromChain.name}`);
     if (!toToken) throw new Error(`${asset} not found on ${toChain.name}`);
 
-    const userFrom = encodeERC7930(fromChainId, user.address);
-    const userTo = encodeERC7930(toChainId, user.address);
+    const userFrom = encodeERC7930(fromChainId, userAddress);
+    const userTo = encodeERC7930(toChainId, userAddress);
     const assetFrom = encodeERC7930(fromChainId, fromToken.address);
     const assetTo = encodeERC7930(toChainId, toToken.address);
 
@@ -343,6 +350,26 @@ app.post('/api/order', async (req, res) => {
     const signature = '0x01' + rawSignature.slice(2);
 
     // Step 4: Submit signed order to aggregator
+    const response = await fetch(`${AGGREGATOR_URL}/api/v1/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quoteResponse: quote, signature }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || data.error || JSON.stringify(data));
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Order submit: forward a pre-signed order (for MetaMask / client-side signing flow)
+app.post('/api/order/submit', async (req, res) => {
+  const { quote, signature } = req.body;
+  try {
+    if (!quote || !signature) throw new Error('Missing quote or signature');
+
     const response = await fetch(`${AGGREGATOR_URL}/api/v1/orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

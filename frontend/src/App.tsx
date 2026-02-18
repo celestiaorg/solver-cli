@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAppKit } from '@reown/appkit/react'
-import { useAccount, useDisconnect } from 'wagmi'
+import { useAccount, useDisconnect, useWriteContract, useWaitForTransactionReceipt, useSignTypedData } from 'wagmi'
+import { parseAbi } from 'viem'
 import { api, Config, AllBalances, Quote, OrderStatus } from './api'
 
 // ── Utility ──────────────────────────────────────────────────────────────────
@@ -78,6 +79,8 @@ export default function App() {
   const { open } = useAppKit()
   const { address: connectedAddress, isConnected } = useAccount()
   const { disconnect } = useDisconnect()
+  const { writeContractAsync } = useWriteContract()
+  const { signTypedDataAsync } = useSignTypedData()
 
   // State
   const [config, setConfig] = useState<Config | null>(null)
@@ -163,7 +166,7 @@ export default function App() {
       const fromId = config!.chains[fromChain].chainId
       const toId = config!.chains[toChain].chainId
       const rawAmount = Math.round(parseFloat(amount) * 1_000_000).toString() // USDC 6 decimals
-      const resp = await api.quote(fromId, toId, rawAmount, asset)
+      const resp = await api.quote(fromId, toId, rawAmount, asset, isConnected ? connectedAddress : undefined)
       if (!resp.quotes?.length) throw new Error('No quotes returned. Is the solver running?')
       setQuote(resp.quotes[0])
       setStep('quoted')
@@ -180,10 +183,56 @@ export default function App() {
 
     try {
       const fromId = config!.chains[fromChain].chainId
-      const resp = await api.submitOrder(quote, fromId, asset)
-      setOrderId(resp.orderId)
-      setStep('polling')
-      startPolling(resp.orderId)
+
+      if (isConnected && connectedAddress) {
+        // MetaMask flow: approve + sign client-side
+        const chainInfo = config!.chains[fromChain]
+        const token = chainInfo.tokens['USDC']
+        const inputSettler = chainInfo.contracts?.input_settler_escrow
+
+        // Step 1: Approve token spending
+        if (token && inputSettler) {
+          await writeContractAsync({
+            address: token.address as `0x${string}`,
+            abi: parseAbi(['function approve(address, uint256) returns (bool)']),
+            functionName: 'approve',
+            args: [inputSettler as `0x${string}`, 100000000n],
+            chainId: fromId,
+          })
+        }
+
+        // Step 2: Sign EIP-712 typed data via MetaMask
+        const payload = quote.order.payload as any
+        const types = { ...payload.types }
+        delete types.EIP712Domain
+
+        const domain = { ...payload.domain }
+        if (typeof domain.chainId === 'string') {
+          domain.chainId = Number(domain.chainId)
+        }
+
+        const rawSignature = await signTypedDataAsync({
+          domain,
+          types,
+          primaryType: payload.primaryType,
+          message: payload.message,
+        })
+
+        // Step 3: Prepend ERC-3009 signature type byte (0x01)
+        const signature = '0x01' + rawSignature.slice(2)
+
+        // Step 4: Submit pre-signed order to backend → aggregator
+        const resp = await api.submitSignedOrder(quote, signature)
+        setOrderId(resp.orderId)
+        setStep('polling')
+        startPolling(resp.orderId)
+      } else {
+        // Backend signing flow (no MetaMask)
+        const resp = await api.submitOrder(quote, fromId, asset)
+        setOrderId(resp.orderId)
+        setStep('polling')
+        startPolling(resp.orderId)
+      }
     } catch (err: any) {
       setError(err.message)
       setStep('error')
