@@ -138,37 +138,6 @@ fn encode_fill_description(
     Ok(payload)
 }
 
-fn choose_origin_chain(
-    discovered_origin_chain: Option<u64>,
-    fill_chain_id: u64,
-    configured_chain_ids: &[u64],
-) -> Result<u64> {
-    if let Some(origin_chain_id) = discovered_origin_chain {
-        return Ok(origin_chain_id);
-    }
-
-    // Fallback for 2-chain setup: use the other chain.
-    if configured_chain_ids.len() == 2 {
-        return configured_chain_ids
-            .iter()
-            .copied()
-            .find(|&chain_id| chain_id != fill_chain_id)
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "No fallback origin chain found for fill_chain={} in configured_chains={:?}",
-                    fill_chain_id,
-                    configured_chain_ids
-                )
-            });
-    }
-
-    Err(anyhow::anyhow!(
-        "Could not find origin chain for fill_chain={} in configured_chains={:?}",
-        fill_chain_id,
-        configured_chain_ids
-    ))
-}
-
 #[derive(Debug, Clone)]
 struct FillEvent {
     order_id: [u8; 32],
@@ -351,16 +320,12 @@ impl OracleOperator {
         Ok(())
     }
 
-    async fn process_fill_event(
-        &self,
-        source_chain_id: u64,
-        log: &alloy::rpc::types::Log,
-    ) -> Result<()> {
+    async fn process_fill_event(&self, chain_id: u64, log: &alloy::rpc::types::Log) -> Result<()> {
         // Parse OutputFilled event topics: [signature, orderId]
         if log.topics().len() < 2 {
             return Err(anyhow::anyhow!(
                 "Malformed OutputFilled log on chain {}: expected at least 2 topics, got {}",
-                source_chain_id,
+                chain_id,
                 log.topics().len()
             ));
         }
@@ -379,13 +344,13 @@ impl OracleOperator {
             }
         }
 
-        let fill = match Self::decode_fill_event(source_chain_id, log) {
+        let fill = match Self::decode_fill_event(chain_id, log) {
             Ok(fill) => fill,
             Err(e) => {
                 warn!(
                     "Retryable decode failure: order={} fill_chain={} error={}",
                     hex::encode(order_id),
-                    source_chain_id,
+                    chain_id,
                     e
                 );
                 return Err(e);
@@ -397,14 +362,14 @@ impl OracleOperator {
             warn!(
                 "Retryable attestation failure: order={} fill_chain={} error={}",
                 hex::encode(fill.order_id),
-                source_chain_id,
+                chain_id,
                 e
             );
             return Err(e).with_context(|| {
                 format!(
                     "Attestation submission failed for order={} fill_chain={}",
                     hex::encode(fill.order_id),
-                    source_chain_id
+                    chain_id
                 )
             });
         }
@@ -418,7 +383,7 @@ impl OracleOperator {
         info!(
             "Successfully attested and marked processed: order={} fill_chain={} amount={}",
             hex::encode(fill.order_id),
-            source_chain_id,
+            chain_id,
             fill.amount
         );
 
@@ -550,21 +515,26 @@ impl OracleOperator {
         let fill_chain_id = fill.fill_chain_id;
 
         // Find the origin chain by querying escrows
-        let configured_chain_ids: Vec<u64> =
-            self.config.chains.iter().map(|c| c.chain_id).collect();
-        let discovered_origin_chain = self.find_origin_chain(&fill.order_id, fill_chain_id).await;
-        let origin_chain_id = choose_origin_chain(
-            discovered_origin_chain,
-            fill_chain_id,
-            &configured_chain_ids,
-        )
-        .with_context(|| {
-            format!(
-                "order={} fill_chain={}",
-                hex::encode(fill.order_id),
-                fill_chain_id
-            )
-        })?;
+        let origin_chain_id = match self.find_origin_chain(&fill.order_id, fill_chain_id).await {
+            Some(id) => id,
+            None => {
+                // Fallback for 2-chain setup: use the other chain
+                if self.config.chains.len() == 2 {
+                    self.config
+                        .chains
+                        .iter()
+                        .find(|c| c.chain_id != fill_chain_id)
+                        .map(|c| c.chain_id)
+                        .ok_or_else(|| anyhow::anyhow!("No other chain found"))?
+                } else {
+                    warn!(
+                        "Could not find origin chain for order {}, skipping",
+                        hex::encode(fill.order_id)
+                    );
+                    return Ok(());
+                }
+            }
+        };
 
         info!(
             "Relaying attestation: fill on chain {} -> origin chain {}",
@@ -695,18 +665,6 @@ impl OracleOperator {
 mod tests {
     use super::*;
     use alloy_primitives::{Address, B256};
-
-    #[test]
-    fn choose_origin_chain_errors_for_n_chain_when_not_found() {
-        let err = choose_origin_chain(None, 1, &[1, 2, 3]).expect_err("expected retryable error");
-        assert!(err.to_string().contains("Could not find origin chain"));
-    }
-
-    #[test]
-    fn choose_origin_chain_falls_back_for_two_chain_setup() {
-        let origin_chain = choose_origin_chain(None, 11155111, &[11155111, 1234]).unwrap();
-        assert_eq!(origin_chain, 1234);
-    }
 
     #[test]
     fn decode_fill_event_returns_error_for_malformed_event() {
