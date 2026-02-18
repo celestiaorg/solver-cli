@@ -138,10 +138,6 @@ fn encode_fill_description(
     Ok(payload)
 }
 
-fn receipt_is_success(status: bool) -> bool {
-    status
-}
-
 fn choose_origin_chain(
     discovered_origin_chain: Option<u64>,
     fill_chain_id: u64,
@@ -673,7 +669,7 @@ impl OracleOperator {
         let tx_hash = receipt.transaction_hash;
         let status = receipt.status();
 
-        if !receipt_is_success(status) {
+        if !status {
             return Err(anyhow::anyhow!(
                 "Attestation tx failed: order={} fill_chain={} origin_chain={} tx_hash={:?} status={}",
                 hex::encode(fill.order_id),
@@ -701,12 +697,6 @@ impl OracleOperator {
 mod tests {
     use super::*;
     use alloy_primitives::{Address, B256};
-
-    #[test]
-    fn receipt_is_success_handles_failed_status() {
-        assert!(receipt_is_success(true));
-        assert!(!receipt_is_success(false));
-    }
 
     #[test]
     fn choose_origin_chain_errors_for_n_chain_when_not_found() {
