@@ -92,6 +92,7 @@ dry_run = true
 
 [execution]
 cooldown_seconds_per_route = 120
+settle_buffer_bps = 100
 min_transfer_usd = 25
 max_transfer_usd = 10000
 max_slippage_bps = 100
@@ -100,11 +101,8 @@ max_slippage_bps = 100
 
 {assets_section}
 
-[bridge]
-provider = "hyperlane_warp"
-
-  [bridge.hyperlane_warp]
-  default_timeout_seconds = 1800
+[hyperlane]
+default_timeout_seconds = 1800
 "#,
             chain_count = chains.len(),
             chains_section = chains_section.trim(),

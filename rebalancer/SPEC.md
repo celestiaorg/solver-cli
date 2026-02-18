@@ -12,16 +12,17 @@ Over time this can skew inventory distribution and starve some destination chain
 
 1. Maintain per-asset inventory distribution across configured chains near target weights.
 2. Trigger rebalances when a chain falls below configured lower bounds.
-3. Execute transfers through a bridge abstraction; first implementation uses Hyperlane Warp transfers.
+3. Execute transfers directly through Hyperlane Warp.
 4. Be safe, idempotent, and restart-resilient.
 5. Provide clear observability and deterministic behavior.
 
 ## 3) Non-goals (v1)
 
-1. Price optimization across multiple bridge providers.
-2. Automatic fee token top-ups.
-3. Predictive inventory optimization based on future order flow.
-4. Partial fills across multiple intermediate hops.
+1. Price optimization across multiple transport routes.
+2. Protocol abstraction layer in v1.
+3. Automatic fee token top-ups.
+4. Predictive inventory optimization based on future order flow.
+5. Partial fills across multiple intermediate hops.
 
 ## 4) Service Model
 
@@ -35,7 +36,7 @@ High-level loop:
 2. Compute global distribution per asset.
 3. Detect deficits based on thresholds.
 4. Build a rebalance plan (source -> destination transfers).
-5. Execute bridge transfers.
+5. Execute Hyperlane Warp transfers.
 6. Track pending transfers until completion/failure.
 7. Repeat.
 
@@ -104,12 +105,8 @@ decimals = 6
   "1234" = 0.40
   "11155111" = 0.40
 
-[bridge]
-provider = "hyperlane_warp"
-
-  [bridge.hyperlane_warp]
-  # provider-specific config
-  default_timeout_seconds = 1800
+[hyperlane]
+default_timeout_seconds = 1800
 ```
 
 Validation rules:
@@ -138,38 +135,60 @@ Per asset:
    - min/max transfer size
    - cooldown per `(asset, source_chain, dest_chain)`
    - max concurrent in-flight transfers.
-8. Emit transfer intents and execute via bridge adapter.
+8. Emit transfer intents and execute via Hyperlane Warp integration.
 
 Recommended anti-flap controls:
 1. Hysteresis: trigger at `min_weight`, stop once above `target_weight - settle_buffer`.
 2. Cooldown: avoid repeating same route immediately.
 3. In-flight reservation: subtract pending outgoing amounts from effective source balance.
 
-## 8) Bridge Abstraction
+## 8) Hyperlane Warp Integration (v1)
 
-Define a bridge interface so Hyperlane Warp is only one implementation:
+v1 executes rebalances directly through Hyperlane Warp code paths.
+
+Execution flow:
+1. Build a Hyperlane Warp transfer request from `(asset, source_chain, destination_chain, amount, recipient)`.
+2. Quote fees with `quoteTransferRemote(...)`.
+3. Submit source-chain transaction via `transferRemote(...)` with required `msg.value`.
+4. Track transfer lifecycle until delivered, failed, or timed out.
+
+Required Rust ABI bindings (Alloy `sol!`) for Phase 3:
 
 ```rust
-trait BridgeAdapter {
-    async fn quote(&self, req: BridgeTransferRequest) -> Result<BridgeQuote>;
-    async fn transfer(&self, req: BridgeTransferRequest) -> Result<BridgeTransferHandle>;
-    async fn status(&self, handle: &BridgeTransferHandle) -> Result<BridgeTransferStatus>;
+use alloy::sol;
+
+sol! {
+    struct Quote {
+        address token;
+        uint256 amount;
+    }
+
+    #[sol(rpc)]
+    interface ITokenRouter {
+        function token() external view returns (address);
+
+        function quoteTransferRemote(
+            uint32 _destination,
+            bytes32 _recipient,
+            uint256 _amount
+        ) external view returns (Quote[] memory quotes);
+
+        function transferRemote(
+            uint32 _destination,
+            bytes32 _recipient,
+            uint256 _amount
+        ) external payable returns (bytes32 messageId);
+    }
 }
 ```
 
-`BridgeTransferRequest` fields:
-1. `asset_symbol`
-2. `source_chain_id`
-3. `destination_chain_id`
-4. `token_address_source`
-5. `token_address_destination`
-6. `amount`
-7. `recipient`
+Phase 3 integration notes:
+1. `quoteTransferRemote` returns multiple quotes; v1 should at minimum use the native-fee quote for `msg.value` and log all quote entries.
+2. Recipient passed to router is `bytes32` (address must be converted to bytes32 format expected by Hyperlane).
+3. `token()` should be called to validate expected route token semantics and improve diagnostics.
 
-Hyperlane Warp adapter (v1):
-1. Construct warp transfer for token route.
-2. Submit source-chain tx.
-3. Track lifecycle until delivered or timed out.
+Design note:
+- We intentionally defer protocol abstraction until we have a second real transport integration and concrete integration pressure.
 
 ## 9) State and Persistence
 
@@ -191,12 +210,12 @@ Requirements:
    - mark snapshot as partial
    - skip execution for affected asset this cycle
    - retry next poll.
-2. Bridge submission failure:
+2. Hyperlane submission failure:
    - record failed attempt with reason
    - exponential backoff for same route.
 3. Stuck transfer:
    - timeout to `stalled` state
-   - require manual intervention or retry policy based on adapter capability.
+   - require manual intervention or retry policy based on Hyperlane delivery semantics.
 4. Insufficient source balance at execution time:
    - recalculate plan next cycle.
 
@@ -234,9 +253,7 @@ rebalancer/
     service.rs
     planner.rs
     balance.rs
-    bridge/
-      mod.rs
-      hyperlane_warp.rs
+    hyperlane.rs
 ```
 
 ## 14) Integration Points
@@ -272,9 +289,10 @@ Deliverable:
 - Stable plan generation across restarts and repeated polls.
 
 ### Phase 3: Hyperlane Warp Execution
-1. Implement bridge adapter interface.
-2. Implement Hyperlane Warp transfer submission + status tracking.
+1. Add Alloy `sol!` bindings for `token()`, `quoteTransferRemote(...)`, and `transferRemote(...)`.
+2. Implement direct Hyperlane Warp quote + transfer submission + status tracking.
 3. Execute one transfer at a time per asset route with idempotency guards.
+4. Persist source tx hash / message id / delivery status transitions in `.rebalancer/state.json`.
 
 Deliverable:
 - End-to-end rebalance transfer execution.
@@ -287,10 +305,14 @@ Deliverable:
 Deliverable:
 - Production-usable rebalancer service with operational visibility.
 
+### Phase 5 (Optional): Protocol Abstraction Extraction
+1. If/when a second transport integration is added, extract a protocol interface from the proven Hyperlane implementation.
+2. Keep Hyperlane as the reference implementation and migrate behavior behind the new interface incrementally.
+
 ## 16) Acceptance Criteria
 
 1. For configured assets, service detects weight breaches and plans transfers correctly.
-2. When below thresholds, service submits bridge transfers and tracks them to terminal state.
+2. When below thresholds, service submits Hyperlane transfers and tracks them to terminal state.
 3. Service resumes safely after restart without duplicate transfers.
 4. Distribution converges toward configured target weights over time.
 5. Dry-run mode emits plans with zero on-chain writes.
@@ -301,5 +323,5 @@ Deliverable:
    - reuse solver keys initially vs dedicated rebalancer keys immediately.
 2. Transfer sizing policy:
    - full target convergence in one move vs capped incremental steps.
-3. Bridge confirmation semantics:
+3. Hyperlane confirmation semantics:
    - source tx finality only vs destination receipt proof required before closure.

@@ -14,12 +14,13 @@ pub struct RebalancerConfig {
     pub execution: ExecutionConfig,
     pub chains: Vec<ChainConfig>,
     pub assets: Vec<AssetConfig>,
-    pub bridge: BridgeConfig,
+    pub hyperlane: HyperlaneConfig,
 }
 
 #[derive(Debug, Clone)]
 pub struct ExecutionConfig {
     pub cooldown_seconds_per_route: u64,
+    pub settle_buffer_bps: u16,
     pub min_transfer_usd: f64,
     pub max_transfer_usd: f64,
     pub max_slippage_bps: u16,
@@ -43,14 +44,8 @@ pub struct AssetConfig {
     pub min_weights: HashMap<u64, f64>,
 }
 
-#[derive(Debug, Clone)]
-pub struct BridgeConfig {
-    pub provider: String,
-    pub hyperlane_warp: HyperlaneWarpConfig,
-}
-
 #[derive(Debug, Clone, Default)]
-pub struct HyperlaneWarpConfig {
+pub struct HyperlaneConfig {
     pub default_timeout_seconds: u64,
 }
 
@@ -69,7 +64,7 @@ struct RawRebalancerConfig {
     chains: Vec<RawChainConfig>,
     assets: Vec<RawAssetConfig>,
     #[serde(default)]
-    bridge: RawBridgeConfig,
+    hyperlane: RawHyperlaneConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -99,6 +94,8 @@ struct RawTokenConfig {
 struct RawExecutionConfig {
     #[serde(default = "default_cooldown_seconds")]
     cooldown_seconds_per_route: u64,
+    #[serde(default = "default_settle_buffer_bps")]
+    settle_buffer_bps: u16,
     #[serde(default = "default_min_transfer_usd")]
     min_transfer_usd: f64,
     #[serde(default = "default_max_transfer_usd")]
@@ -111,6 +108,7 @@ impl Default for RawExecutionConfig {
     fn default() -> Self {
         Self {
             cooldown_seconds_per_route: default_cooldown_seconds(),
+            settle_buffer_bps: default_settle_buffer_bps(),
             min_transfer_usd: default_min_transfer_usd(),
             max_transfer_usd: default_max_transfer_usd(),
             max_slippage_bps: default_max_slippage_bps(),
@@ -119,32 +117,15 @@ impl Default for RawExecutionConfig {
 }
 
 #[derive(Debug, Deserialize)]
-struct RawBridgeConfig {
-    #[serde(default = "default_bridge_provider")]
-    provider: String,
-    #[serde(default)]
-    hyperlane_warp: RawHyperlaneWarpConfig,
-}
-
-impl Default for RawBridgeConfig {
-    fn default() -> Self {
-        Self {
-            provider: default_bridge_provider(),
-            hyperlane_warp: RawHyperlaneWarpConfig::default(),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-struct RawHyperlaneWarpConfig {
-    #[serde(default = "default_bridge_timeout_seconds")]
+struct RawHyperlaneConfig {
+    #[serde(default = "default_hyperlane_timeout_seconds")]
     default_timeout_seconds: u64,
 }
 
-impl Default for RawHyperlaneWarpConfig {
+impl Default for RawHyperlaneConfig {
     fn default() -> Self {
         Self {
-            default_timeout_seconds: default_bridge_timeout_seconds(),
+            default_timeout_seconds: default_hyperlane_timeout_seconds(),
         }
     }
 }
@@ -165,6 +146,10 @@ fn default_min_transfer_usd() -> f64 {
     25.0
 }
 
+fn default_settle_buffer_bps() -> u16 {
+    100
+}
+
 fn default_max_transfer_usd() -> f64 {
     10_000.0
 }
@@ -173,11 +158,7 @@ fn default_max_slippage_bps() -> u16 {
     100
 }
 
-fn default_bridge_provider() -> String {
-    "hyperlane_warp".to_string()
-}
-
-fn default_bridge_timeout_seconds() -> u64 {
+fn default_hyperlane_timeout_seconds() -> u64 {
     1800
 }
 
@@ -354,23 +335,28 @@ impl RebalancerConfig {
             });
         }
 
+        if raw.execution.settle_buffer_bps > 10_000 {
+            bail!(
+                "execution.settle_buffer_bps must be <= 10000 (got {})",
+                raw.execution.settle_buffer_bps
+            );
+        }
+
         Ok(Self {
             poll_interval_seconds: raw.poll_interval_seconds,
             max_parallel_transfers: raw.max_parallel_transfers,
             dry_run: raw.dry_run,
             execution: ExecutionConfig {
                 cooldown_seconds_per_route: raw.execution.cooldown_seconds_per_route,
+                settle_buffer_bps: raw.execution.settle_buffer_bps,
                 min_transfer_usd: raw.execution.min_transfer_usd,
                 max_transfer_usd: raw.execution.max_transfer_usd,
                 max_slippage_bps: raw.execution.max_slippage_bps,
             },
             chains,
             assets,
-            bridge: BridgeConfig {
-                provider: raw.bridge.provider,
-                hyperlane_warp: HyperlaneWarpConfig {
-                    default_timeout_seconds: raw.bridge.hyperlane_warp.default_timeout_seconds,
-                },
+            hyperlane: HyperlaneConfig {
+                default_timeout_seconds: raw.hyperlane.default_timeout_seconds,
             },
         })
     }
@@ -524,5 +510,52 @@ decimals = 6
         let raw: RawRebalancerConfig = toml::from_str(toml).expect("valid TOML");
         let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
         assert!(err.to_string().contains("must sum to 1.0"));
+    }
+
+    #[test]
+    fn parses_hyperlane_timeout() {
+        let toml = r#"
+[accounts]
+rebalancer = "0x000000000000000000000000000000000000dEaD"
+
+[hyperlane]
+default_timeout_seconds = 999
+
+[[chains]]
+name = "evolve"
+chain_id = 1234
+rpc_url = "http://127.0.0.1:8545"
+account = "rebalancer"
+
+[[chains]]
+name = "sepolia"
+chain_id = 11155111
+rpc_url = "https://rpc.sepolia.org"
+account = "rebalancer"
+
+[[assets]]
+symbol = "USDC"
+decimals = 6
+
+  [[assets.tokens]]
+  chain_id = 1234
+  address = "0x0000000000000000000000000000000000000001"
+
+  [[assets.tokens]]
+  chain_id = 11155111
+  address = "0x0000000000000000000000000000000000000002"
+
+  [assets.weights]
+  "1234" = 0.50
+  "11155111" = 0.50
+
+  [assets.min_weights]
+  "1234" = 0.40
+  "11155111" = 0.40
+"#;
+
+        let raw: RawRebalancerConfig = toml::from_str(toml).expect("valid TOML");
+        let config = RebalancerConfig::from_raw(raw).expect("valid config");
+        assert_eq!(config.hyperlane.default_timeout_seconds, 999);
     }
 }
