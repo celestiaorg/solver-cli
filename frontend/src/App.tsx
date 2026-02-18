@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useAppKit } from '@reown/appkit/react'
-import { useAccount, useDisconnect, useWriteContract, useWaitForTransactionReceipt, useSignTypedData } from 'wagmi'
+import { useAppKit, AppKitNetworkButton } from '@reown/appkit/react'
+import { useAccount, useDisconnect, useWriteContract, useSignTypedData, useSwitchChain } from 'wagmi'
 import { parseAbi } from 'viem'
 import { api, Config, AllBalances, Quote, OrderStatus } from './api'
 
@@ -81,6 +81,7 @@ export default function App() {
   const { disconnect } = useDisconnect()
   const { writeContractAsync } = useWriteContract()
   const { signTypedDataAsync } = useSignTypedData()
+  const { switchChainAsync } = useSwitchChain()
 
   // State
   const [config, setConfig] = useState<Config | null>(null)
@@ -127,7 +128,8 @@ export default function App() {
 
   const loadBalances = useCallback(async () => {
     try {
-      const bal = await api.balances(isConnected ? connectedAddress : undefined)
+      const addr = isConnected && connectedAddress ? connectedAddress : undefined
+      const bal = await api.balances(addr)
       setBalances(bal)
     } catch (err) {
       console.error('Failed to load balances:', err)
@@ -166,7 +168,7 @@ export default function App() {
       const fromId = config!.chains[fromChain].chainId
       const toId = config!.chains[toChain].chainId
       const rawAmount = Math.round(parseFloat(amount) * 1_000_000).toString() // USDC 6 decimals
-      const resp = await api.quote(fromId, toId, rawAmount, asset, isConnected ? connectedAddress : undefined)
+      const resp = await api.quote(fromId, toId, rawAmount, asset, isConnected && connectedAddress ? connectedAddress : undefined)
       if (!resp.quotes?.length) throw new Error('No quotes returned. Is the solver running?')
       setQuote(resp.quotes[0])
       setStep('quoted')
@@ -189,6 +191,9 @@ export default function App() {
         const chainInfo = config!.chains[fromChain]
         const token = chainInfo.tokens['USDC']
         const inputSettler = chainInfo.contracts?.input_settler_escrow
+
+        // Step 0: Switch MetaMask to source chain if needed
+        await switchChainAsync({ chainId: fromId })
 
         // Step 1: Approve token spending
         if (token && inputSettler) {
@@ -268,7 +273,7 @@ export default function App() {
     setFaucetLoading(key)
     setFaucetMsg('')
     try {
-      const resp = await api.faucet(chainName, type, isConnected ? connectedAddress : undefined)
+      const resp = await api.faucet(chainName, type, isConnected && connectedAddress ? connectedAddress : undefined)
       setFaucetMsg(`Sent ${resp.amount} on ${chainName}`)
       loadBalances()
     } catch (err: any) {
@@ -309,6 +314,8 @@ export default function App() {
   }
 
   const isServicesUp = health.backend === 'ok' && health.aggregator === 'ok'
+  const isSolverWallet = isConnected && connectedAddress && config?.solverAddress
+    && connectedAddress.toLowerCase() === config.solverAddress.toLowerCase()
 
   return (
     <div className="min-h-screen bg-surface-0">
@@ -331,6 +338,7 @@ export default function App() {
             </div>
             {isConnected ? (
               <div className="flex items-center gap-2">
+                <AppKitNetworkButton />
                 <div className="bg-surface-2 border border-brand/40 rounded-lg px-3 py-1.5 text-xs font-mono text-brand">
                   {truncAddr(connectedAddress!)}
                 </div>
@@ -363,6 +371,12 @@ export default function App() {
               <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-5">
                 Cross-Chain Transfer
               </h2>
+
+              {isSolverWallet && (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-4 text-xs text-amber-400">
+                  Your connected wallet is the solver address. Connect a different wallet to submit orders — the solver cannot fill orders to itself.
+                </div>
+              )}
 
               {/* From */}
               <div className="bg-surface-2 border border-border rounded-xl p-4 mb-2">
@@ -541,13 +555,13 @@ export default function App() {
               {step === 'idle' || step === 'error' ? (
                 <button
                   onClick={handleGetQuote}
-                  disabled={!isServicesUp || !fromChain || !toChain || !amount || fromChain === toChain}
+                  disabled={!isServicesUp || !fromChain || !toChain || !amount || fromChain === toChain || !!isSolverWallet}
                   className="w-full py-3.5 rounded-xl font-semibold text-sm transition-all
                     bg-gradient-to-r from-brand to-purple-500 hover:from-brand-light hover:to-purple-400
                     text-white disabled:opacity-30 disabled:cursor-not-allowed
                     hover:shadow-lg hover:shadow-brand/20"
                 >
-                  {!isServicesUp ? 'Services Offline' : 'Get Quote'}
+                  {!isServicesUp ? 'Services Offline' : isSolverWallet ? 'Solver Wallet Connected' : 'Get Quote'}
                 </button>
               ) : step === 'quoting' ? (
                 <button disabled className="w-full py-3.5 rounded-xl font-semibold text-sm bg-surface-3 text-gray-400

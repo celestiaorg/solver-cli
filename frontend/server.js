@@ -119,6 +119,7 @@ app.get('/api/balances', async (req, res) => {
     } else {
       userAddress = getUserAccount().address;
     }
+    console.log(`[balances] user=${userAddress} solver=${state.solver?.address}`);
     const result = {};
 
     const promises = Object.entries(state.chains).map(async ([chainId, chain]) => {
@@ -273,6 +274,10 @@ app.post('/api/quote', async (req, res) => {
       solverOptions: { timeout: 5000, minQuotes: 1 },
     };
 
+    console.log(`[quote] user=${userAddress} from=${fromChainId}(${fromChain.name}) to=${toChainId}(${toChain.name}) amount=${amount}`);
+    console.log(`[quote] ERC7930 userFrom=${userFrom} userTo=${userTo}`);
+    console.log(`[quote] ERC7930 assetFrom=${assetFrom} assetTo=${assetTo}`);
+
     const response = await fetch(`${AGGREGATOR_URL}/api/v1/quotes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -281,6 +286,7 @@ app.post('/api/quote', async (req, res) => {
 
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || data.error || JSON.stringify(data));
+    console.log(`[quote] Got ${data.quotes?.length ?? 0} quotes`);
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -370,6 +376,10 @@ app.post('/api/order/submit', async (req, res) => {
   try {
     if (!quote || !signature) throw new Error('Missing quote or signature');
 
+    console.log(`[order/submit] MetaMask flow — quoteId=${quote.quoteId} provider=${quote.provider}`);
+    console.log(`[order/submit] EIP-712 domain:`, JSON.stringify(quote.order?.payload?.domain));
+    console.log(`[order/submit] signature prefix: ${signature.slice(0, 6)}...`);
+
     const response = await fetch(`${AGGREGATOR_URL}/api/v1/orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -377,6 +387,7 @@ app.post('/api/order/submit', async (req, res) => {
     });
 
     const data = await response.json();
+    console.log(`[order/submit] aggregator response: ${response.status}`, JSON.stringify(data).slice(0, 200));
     if (!response.ok) throw new Error(data.message || data.error || JSON.stringify(data));
     res.json(data);
   } catch (err) {
