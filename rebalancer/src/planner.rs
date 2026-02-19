@@ -223,7 +223,80 @@ mod tests {
         }
     }
 
+    fn sample_asset_three_chains() -> AssetConfig {
+        AssetConfig {
+            symbol: "USDC".to_string(),
+            decimals: 6,
+            tokens: HashMap::from([
+                (
+                    1u64,
+                    "0x0000000000000000000000000000000000000001"
+                        .parse()
+                        .unwrap(),
+                ),
+                (
+                    2u64,
+                    "0x0000000000000000000000000000000000000002"
+                        .parse()
+                        .unwrap(),
+                ),
+                (
+                    3u64,
+                    "0x0000000000000000000000000000000000000003"
+                        .parse()
+                        .unwrap(),
+                ),
+            ]),
+            weights: HashMap::from([
+                (1u64, 1.0 / 3.0),
+                (2u64, 1.0 / 3.0),
+                (3u64, 1.0 / 3.0),
+            ]),
+            min_weights: HashMap::from([(1u64, 0.30), (2u64, 0.30), (3u64, 0.30)]),
+        }
+    }
+
+    fn sample_asset_four_chains() -> AssetConfig {
+        AssetConfig {
+            symbol: "USDC".to_string(),
+            decimals: 6,
+            tokens: HashMap::from([
+                (
+                    1u64,
+                    "0x0000000000000000000000000000000000000001"
+                        .parse()
+                        .unwrap(),
+                ),
+                (
+                    2u64,
+                    "0x0000000000000000000000000000000000000002"
+                        .parse()
+                        .unwrap(),
+                ),
+                (
+                    3u64,
+                    "0x0000000000000000000000000000000000000003"
+                        .parse()
+                        .unwrap(),
+                ),
+                (
+                    4u64,
+                    "0x0000000000000000000000000000000000000004"
+                        .parse()
+                        .unwrap(),
+                ),
+            ]),
+            weights: HashMap::from([(1u64, 0.25), (2u64, 0.25), (3u64, 0.25), (4u64, 0.25)]),
+            min_weights: HashMap::from([(1u64, 0.20), (2u64, 0.20), (3u64, 0.20), (4u64, 0.20)]),
+        }
+    }
+
     #[test]
+    /// Two-chain rebalance scenario in plain terms:
+    /// - Starting balances are: chain1=350, chain2=650.
+    /// - Total balance is 1000, so the target per chain at 50% is 500.
+    /// - Chain1 is short by 150 and chain2 has 150 extra.
+    /// - Expected rebalance transfer: 150 from chain2->chain1.
     fn plans_transfer_when_min_weight_is_violated() {
         let asset = sample_asset();
         let observed = BTreeMap::from([(1u64, U256::from(350u64)), (2u64, U256::from(650u64))]);
@@ -234,6 +307,55 @@ mod tests {
         assert_eq!(plan.transfers[0].source_chain_id, 2);
         assert_eq!(plan.transfers[0].destination_chain_id, 1);
         assert_eq!(plan.transfers[0].amount_raw, 150);
+    }
+
+    #[test]
+    /// Three-chain rebalance scenario in plain terms:
+    /// - Starting balances are: chain1=200, chain2=400, chain3=300.
+    /// - Total balance is 900, so the target per chain at 1/3 is 300.
+    /// - Chain1 is short by 100 and chain2 has 100 extra.
+    /// - Expected rebalance transfer: 100 from chain2->chain1.
+    fn plans_transfer_with_three_chain_setup_when_min_weight_is_violated() {
+        let asset = sample_asset_three_chains();
+        let observed = BTreeMap::from([
+            (1u64, U256::from(200u64)),
+            (2u64, U256::from(400u64)),
+            (3u64, U256::from(300u64)),
+        ]);
+        let plan = AssetPlan::new(&asset, &observed).unwrap();
+
+        assert_eq!(plan.active_deficit_chain_ids, vec![1]);
+        assert_eq!(plan.transfers.len(), 1);
+        assert_eq!(plan.transfers[0].source_chain_id, 2);
+        assert_eq!(plan.transfers[0].destination_chain_id, 1);
+        assert_eq!(plan.transfers[0].amount_raw, 100);
+    }
+
+    #[test]
+    /// Four-chain rebalance scenario in plain terms:
+    /// - Starting balances are: chain1=100, chain2=300, chain3=150, chain4=250.
+    /// - Total balance is 800, so the target per chain at 25% is 200.
+    /// - Deficits are chain1 (-100) and chain3 (-50).
+    /// - Surpluses are chain2 (+100) and chain4 (+50).
+    /// - Expected rebalance transfers: 100 from chain2->chain1 and 50 from chain4->chain3.
+    fn plans_transfer_with_four_chain_setup_when_min_weight_is_violated() {
+        let asset = sample_asset_four_chains();
+        let observed = BTreeMap::from([
+            (1u64, U256::from(100u64)),
+            (2u64, U256::from(300u64)),
+            (3u64, U256::from(150u64)),
+            (4u64, U256::from(250u64)),
+        ]);
+        let plan = AssetPlan::new(&asset, &observed).unwrap();
+
+        assert_eq!(plan.active_deficit_chain_ids, vec![1, 3]);
+        assert_eq!(plan.transfers.len(), 2);
+        assert_eq!(plan.transfers[0].source_chain_id, 2);
+        assert_eq!(plan.transfers[0].destination_chain_id, 1);
+        assert_eq!(plan.transfers[0].amount_raw, 100);
+        assert_eq!(plan.transfers[1].source_chain_id, 4);
+        assert_eq!(plan.transfers[1].destination_chain_id, 3);
+        assert_eq!(plan.transfers[1].amount_raw, 50);
     }
 
     #[test]
