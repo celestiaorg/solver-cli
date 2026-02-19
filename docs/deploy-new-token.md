@@ -55,10 +55,11 @@ The `hyperlane-init` image has the Hyperlane CLI. Run it against the existing re
 ```bash
 docker run --rm \
   --network solver-cli_solver-net \
+  --entrypoint bash \
   -v "$(pwd)/hyperlane:/home/hyperlane" \
   -w /home/hyperlane \
   ghcr.io/celestiaorg/hyperlane-init:local \
-  bash -c "hyperlane warp deploy --config ./configs/warp-config-usdt.yaml --registry ./registry --yes"
+  -c "hyperlane warp deploy --config ./configs/warp-config-usdt.yaml --registry ./registry --key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 --yes"
 ```
 
 This deploys:
@@ -68,25 +69,28 @@ This deploys:
 
 The deployment artifact is written to `hyperlane/registry/deployments/warp_routes/USDT/`.
 
-## 4. Read the deployed addresses
+## 4. Read the HypSynthetic address on anvil2
 
 ```bash
 cat hyperlane/registry/deployments/warp_routes/USDT/warp-config-usdt-config.yaml
 ```
 
-Look for `addressOrDenom` values:
-- First entry = HypCollateral address on anvil1
-- Second entry = HypSynthetic address on anvil2
+This file has two entries:
+- First `addressOrDenom` = HypCollateral on anvil1 (you do NOT need this)
+- Second `addressOrDenom` = **HypSynthetic on anvil2** (you need this one)
 
 ## 5. Register tokens in state
 
-For the solver, register the tokens it actually trades:
-- On anvil1: use the **MockERC20** address (the underlying token, not HypCollateral)
-- On anvil2: use the **HypSynthetic** address (that's the ERC20 on anvil2)
+The solver trades the **underlying ERC20**, not the Hyperlane wrapper:
+- **anvil1**: use the **MockERC20** address from step 1 (e.g. `0xc5a5C42...`)
+- **anvil2**: use the **HypSynthetic** address from step 4
 
 ```bash
-make token-add CHAIN=anvil1 SYMBOL=USDT ADDRESS=<MOCK_USDT_ADDRESS> DECIMALS=6
-make token-add CHAIN=anvil2 SYMBOL=USDT ADDRESS=<HYP_SYNTHETIC_USDT_ADDRESS> DECIMALS=6
+# anvil1: the MockERC20 address from step 1
+make token-add CHAIN=anvil1 SYMBOL=USDT ADDRESS=<MOCK_USDT_ADDRESS_FROM_STEP_1> DECIMALS=6
+
+# anvil2: the HypSynthetic address from step 4
+make token-add CHAIN=anvil2 SYMBOL=USDT ADDRESS=<HYP_SYNTHETIC_ADDRESS_FROM_STEP_4> DECIMALS=6
 ```
 
 ## 6. (Optional) Enroll Celestia routers for 3-chain bridging
@@ -104,8 +108,9 @@ This mirrors what the USDC entrypoint does in steps 4-5 of `hyperlane/scripts/do
 # Regenerate solver config
 make configure
 
-# Fund solver on anvil1 (anvil2 can get tokens via bridging, or mint directly)
+# Fund solver (0x9f2CD91d150236BA9796124F3Dcda305C3a2086C) on anvil1
 make mint SYMBOL=USDT TO=solver
+# Fund user (0x8E220E86a7c0c2bca8fA457a571aA01Eb324fc46) on anvil1
 make mint SYMBOL=USDT TO=user
 
 # If HypSynthetic on anvil2: mint on anvil1 and bridge, or fund solver separately
