@@ -12,7 +12,8 @@ pub struct RebalancerConfigGenerator;
 
 impl RebalancerConfigGenerator {
     /// Generate rebalancer TOML configuration from state.
-    /// Phase 1 defaults to dry-run and equal per-asset weights across chains that support each asset.
+    /// Uses the solver account for all chains, and defaults to dry-run with
+    /// equal per-asset weights across chains that support each asset.
     pub fn generate_toml(state: &SolverState) -> Result<String> {
         if state.chains.is_empty() {
             anyhow::bail!("No chains configured");
@@ -28,9 +29,10 @@ impl RebalancerConfigGenerator {
             );
         }
 
+        let account = derive_rebalancer_account(state)?;
+
         let mut chains_section = String::new();
         for chain in &chains {
-            let account = derive_rebalancer_account(&chain.name)?;
             chains_section.push_str(&format!(
                 r#"
 [[chains]]
@@ -220,37 +222,16 @@ fn equal_weight_distribution(chain_ids: &[u64], precision: u64) -> Vec<(u64, f64
         .collect()
 }
 
-fn derive_rebalancer_account(chain_name: &str) -> Result<String> {
-    let chain_env = normalize_env_key(chain_name);
-    let chain_specific_address_key = format!("REBALANCER_{}_ADDRESS", chain_env);
-    let chain_pk_key = format!("{}_PK", chain_env);
-
-    if let Ok(address) = std::env::var(&chain_specific_address_key) {
-        return normalize_address(&address).with_context(|| {
-            format!(
-                "Invalid address in {} for chain {}",
-                chain_specific_address_key, chain_name
-            )
-        });
-    }
-
-    if let Ok(address) = std::env::var("REBALANCER_ADDRESS") {
-        return normalize_address(&address)
-            .context("Invalid address in REBALANCER_ADDRESS environment variable");
-    }
-
-    if let Ok(private_key) = std::env::var(&chain_pk_key) {
-        let address = ChainClient::address_from_pk(&private_key)
-            .with_context(|| format!("Invalid private key in {}", chain_pk_key))?;
-        return Ok(format!("{:?}", address));
+fn derive_rebalancer_account(state: &SolverState) -> Result<String> {
+    if let Some(address) = state.solver.address.as_deref() {
+        return normalize_address(address).context("Invalid solver.address in state");
     }
 
     let fallback_pk = std::env::var("SOLVER_PRIVATE_KEY")
         .or_else(|_| std::env::var("SEPOLIA_PK"))
         .map_err(|_| {
             anyhow::anyhow!(
-                "Missing {} and no fallback key found (REBALANCER_ADDRESS / SOLVER_PRIVATE_KEY / SEPOLIA_PK)",
-                chain_pk_key
+                "Missing solver address in state and no fallback key found (SOLVER_PRIVATE_KEY / SEPOLIA_PK)"
             )
         })?;
     let address = ChainClient::address_from_pk(&fallback_pk)
@@ -261,17 +242,4 @@ fn derive_rebalancer_account(chain_name: &str) -> Result<String> {
 fn normalize_address(value: &str) -> Result<String> {
     let address: Address = value.parse()?;
     Ok(format!("{:?}", address))
-}
-
-fn normalize_env_key(value: &str) -> String {
-    value
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() {
-                c.to_ascii_uppercase()
-            } else {
-                '_'
-            }
-        })
-        .collect()
 }
