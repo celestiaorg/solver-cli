@@ -171,9 +171,9 @@ mod tests {
         );
 
         let chain = sample_chain("evolve", Some(SignerConfig::Env));
-        let resolved = resolve_signer_for_chain(&chain).await.unwrap();
+        let signer = resolve_signer_for_chain(&chain).await.unwrap();
         assert_eq!(
-            resolved.address,
+            signer.address,
             "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
                 .parse::<Address>()
                 .unwrap()
@@ -189,9 +189,9 @@ mod tests {
                     .to_string(),
             }),
         );
-        let resolved = resolve_signer_for_chain(&chain).await.unwrap();
+        let signer = resolve_signer_for_chain(&chain).await.unwrap();
         assert_eq!(
-            resolved.address,
+            signer.address,
             "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
                 .parse::<Address>()
                 .unwrap()

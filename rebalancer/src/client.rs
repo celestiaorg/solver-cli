@@ -110,23 +110,23 @@ impl ChainClient {
 
         let read_provider = ProviderBuilder::new().connect_http(rpc_url.clone());
         let wallet_provider = if enable_writes {
-            let resolved = resolve_signer_for_chain(chain).await.with_context(|| {
-                format!("Failed to load signer for chain {}", chain.name)
-            })?;
-            let signer_address = resolved.address;
-            if signer_address != chain.account_address {
+            let signer = resolve_signer_for_chain(chain)
+                .await
+                .with_context(|| format!("Failed to load signer for chain {}", chain.name))?;
+
+            if signer.address != chain.account_address {
                 bail!(
                     "Signer/account mismatch for chain {} ({}): signer={} config_account={}",
                     chain.name,
                     chain.chain_id,
-                    signer_address,
+                    signer.address,
                     chain.account_address
                 );
             }
 
             Some(
                 ProviderBuilder::new()
-                    .wallet(resolved.wallet)
+                    .wallet(signer.wallet)
                     .connect_http(rpc_url),
             )
         } else {
@@ -198,7 +198,10 @@ impl ChainClient {
             .to(source_router)
             .input(Bytes::from(call.abi_encode()).into());
         let raw = self.read_provider.call(tx).await.with_context(|| {
-            format!("quoteTransferRemote call failed on router {}", source_router)
+            format!(
+                "quoteTransferRemote call failed on router {}",
+                source_router
+            )
         })?;
         let decoded = ITokenRouter::quoteTransferRemoteCall::abi_decode_returns(&raw)
             .context("Failed to decode quoteTransferRemote return payload")?;
@@ -266,12 +269,15 @@ impl ChainClient {
             .to(source_router)
             .input(call_data.into())
             .value(msg_value);
-        let pending = wallet_provider.send_transaction(tx).await.with_context(|| {
-            format!(
-                "Failed to submit transferRemote tx on router {}",
-                source_router
-            )
-        })?;
+        let pending = wallet_provider
+            .send_transaction(tx)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to submit transferRemote tx on router {}",
+                    source_router
+                )
+            })?;
 
         Ok(SubmittedTransfer {
             source_tx_hash: *pending.tx_hash(),
