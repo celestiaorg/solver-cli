@@ -144,6 +144,13 @@ Transfer size bounds (per asset, per cycle):
 - Candidate transfers below `min_transfer_raw` are skipped.
 - Candidate transfers above `max_transfer_raw` are capped to `max_transfer_raw`.
 
+Concrete example (applies per candidate route transfer):
+- `total_balance = 20 USDC`, `min_transfer_bps = 50`, `max_transfer_bps = 5000`.
+- `min_transfer = 0.1 USDC` and `max_transfer = 10 USDC`.
+- Planned `0.04 USDC` transfer: skipped (below min).
+- Planned `3 USDC` transfer: unchanged.
+- Planned `14 USDC` transfer: capped to `10 USDC`.
+
 Design choice (v1 simplicity):
 - No USD conversion and no per-asset price dependency.
 - No slippage guard parameter in v1; keep route safety to existing quote/submit error handling.

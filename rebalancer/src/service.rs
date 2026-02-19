@@ -7,7 +7,7 @@ use tracing::{debug, info, warn};
 use crate::balance::ChainBalanceClient;
 use crate::config::{AssetConfig, RebalancerConfig};
 use crate::hyperlane::{HyperlaneTransferRequest, HyperlaneWarpClient};
-use crate::planner::{build_asset_plan, format_raw_u128, format_token_amount, TransferPlan};
+use crate::planner::{format_raw_u128, format_token_amount, AssetPlan, TransferPlan};
 
 pub struct RebalancerService {
     config: RebalancerConfig,
@@ -154,7 +154,7 @@ impl RebalancerService {
             return Ok(());
         }
 
-        let plan = build_asset_plan(asset, &observed_balances)?;
+        let plan = AssetPlan::new(asset, &observed_balances)?;
 
         let (min_transfer_raw, max_transfer_raw) = transfer_size_bounds_raw(
             plan.total_balance,
