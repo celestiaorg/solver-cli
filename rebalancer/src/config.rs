@@ -30,6 +30,14 @@ pub struct ChainConfig {
     pub rpc_url: String,
     pub account: String,
     pub account_address: Address,
+    pub signer: Option<SignerConfig>,
+}
+
+#[derive(Debug, Clone)]
+pub enum SignerConfig {
+    Env,
+    File { key: String },
+    AwsKms { key_id: String, region: String },
 }
 
 #[derive(Debug, Clone)]
@@ -70,6 +78,7 @@ struct RawChainConfig {
     chain_id: u64,
     rpc_url: String,
     account: String,
+    signer: Option<RawSignerConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -93,6 +102,25 @@ struct RawExecutionConfig {
     min_transfer_bps: u16,
     #[serde(default = "default_max_transfer_bps")]
     max_transfer_bps: u16,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum RawSignerType {
+    Env,
+    File,
+    AwsKms,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawSignerConfig {
+    #[serde(rename = "type")]
+    signer_type: RawSignerType,
+    key: Option<String>,
+    key_id: Option<String>,
+    region: Option<String>,
+    env_var: Option<String>,
 }
 
 impl Default for RawExecutionConfig {
@@ -162,6 +190,7 @@ impl RebalancerConfig {
         let mut seen_chain_ids = HashSet::new();
         let mut seen_chain_names = HashSet::new();
         let mut chains = Vec::with_capacity(raw.chains.len());
+        let dry_run = raw.dry_run;
 
         for chain in raw.chains {
             if !seen_chain_ids.insert(chain.chain_id) {
@@ -182,6 +211,14 @@ impl RebalancerConfig {
 
             let account_address = resolve_account_address(&chain.account, &raw.accounts)
                 .with_context(|| format!("Failed to resolve account for chain {}", chain.name))?;
+            let signer = parse_signer_config(chain.signer)
+                .with_context(|| format!("Invalid signer config for chain {}", chain.name))?;
+            if !dry_run && signer.is_none() {
+                bail!(
+                    "Missing chains.signer for chain {} in non-dry mode",
+                    chain.name
+                );
+            }
 
             chains.push(ChainConfig {
                 name: chain.name,
@@ -189,6 +226,7 @@ impl RebalancerConfig {
                 rpc_url: chain.rpc_url,
                 account: chain.account,
                 account_address,
+                signer,
             });
         }
 
@@ -334,7 +372,7 @@ impl RebalancerConfig {
         Ok(Self {
             poll_interval_seconds: raw.poll_interval_seconds,
             max_parallel_transfers: raw.max_parallel_transfers,
-            dry_run: raw.dry_run,
+            dry_run,
             execution: ExecutionConfig {
                 min_transfer_bps: raw.execution.min_transfer_bps,
                 max_transfer_bps: raw.execution.max_transfer_bps,
@@ -346,6 +384,58 @@ impl RebalancerConfig {
             },
         })
     }
+}
+
+fn parse_signer_config(value: Option<RawSignerConfig>) -> Result<Option<SignerConfig>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+
+    let signer = match value.signer_type {
+        RawSignerType::Env => {
+            if value.env_var.is_some() {
+                bail!("chains.signer.env_var is not supported for type = \"env\"");
+            }
+            if value.key.is_some() || value.key_id.is_some() || value.region.is_some() {
+                bail!("chains.signer type = \"env\" only accepts field \"type\"");
+            }
+            SignerConfig::Env
+        }
+        RawSignerType::File => {
+            if value.env_var.is_some() || value.key_id.is_some() || value.region.is_some() {
+                bail!("chains.signer type = \"file\" only accepts fields \"type\" and \"key\"");
+            }
+            let key = value
+                .key
+                .ok_or_else(|| anyhow::anyhow!("chains.signer.key is required for type = \"file\""))?;
+            if key.trim().is_empty() {
+                bail!("chains.signer.key cannot be empty for type = \"file\"");
+            }
+            SignerConfig::File { key }
+        }
+        RawSignerType::AwsKms => {
+            if value.env_var.is_some() || value.key.is_some() {
+                bail!(
+                    "chains.signer type = \"aws_kms\" only accepts fields \"type\", \"key_id\", and \"region\""
+                );
+            }
+            let key_id = value.key_id.ok_or_else(|| {
+                anyhow::anyhow!("chains.signer.key_id is required for type = \"aws_kms\"")
+            })?;
+            let region = value.region.ok_or_else(|| {
+                anyhow::anyhow!("chains.signer.region is required for type = \"aws_kms\"")
+            })?;
+            if key_id.trim().is_empty() {
+                bail!("chains.signer.key_id cannot be empty for type = \"aws_kms\"");
+            }
+            if region.trim().is_empty() {
+                bail!("chains.signer.region cannot be empty for type = \"aws_kms\"");
+            }
+            SignerConfig::AwsKms { key_id, region }
+        }
+    };
+
+    Ok(Some(signer))
 }
 
 fn parse_weight_map(values: &HashMap<String, f64>) -> Result<HashMap<u64, f64>> {
@@ -457,6 +547,8 @@ decimals = 6
     #[test]
     fn rejects_invalid_weight_sum() {
         let toml = r#"
+dry_run = true
+
 [accounts]
 rebalancer = "0x000000000000000000000000000000000000dEaD"
 
@@ -501,6 +593,8 @@ decimals = 6
     #[test]
     fn parses_hyperlane_timeout() {
         let toml = r#"
+dry_run = true
+
 [accounts]
 rebalancer = "0x000000000000000000000000000000000000dEaD"
 
@@ -548,6 +642,8 @@ decimals = 6
     #[test]
     fn rejects_invalid_transfer_bps_bounds() {
         let toml = r#"
+dry_run = true
+
 [execution]
 min_transfer_bps = 6000
 max_transfer_bps = 1000
@@ -593,5 +689,102 @@ decimals = 6
         assert!(err
             .to_string()
             .contains("max_transfer_bps must be >= execution.min_transfer_bps"));
+    }
+
+    #[test]
+    fn rejects_missing_signer_in_non_dry_mode() {
+        let toml = r#"
+dry_run = false
+
+[accounts]
+rebalancer = "0x000000000000000000000000000000000000dEaD"
+
+[[chains]]
+name = "evolve"
+chain_id = 1234
+rpc_url = "http://127.0.0.1:8545"
+account = "rebalancer"
+
+[[chains]]
+name = "sepolia"
+chain_id = 11155111
+rpc_url = "https://rpc.sepolia.org"
+account = "rebalancer"
+
+[[assets]]
+symbol = "USDC"
+decimals = 6
+
+  [[assets.tokens]]
+  chain_id = 1234
+  address = "0x0000000000000000000000000000000000000001"
+
+  [[assets.tokens]]
+  chain_id = 11155111
+  address = "0x0000000000000000000000000000000000000002"
+
+  [assets.weights]
+  "1234" = 0.50
+  "11155111" = 0.50
+
+  [assets.min_weights]
+  "1234" = 0.40
+  "11155111" = 0.40
+"#;
+
+        let raw: RawRebalancerConfig = toml::from_str(toml).expect("valid TOML");
+        let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
+        assert!(err.to_string().contains("Missing chains.signer"));
+    }
+
+    #[test]
+    fn rejects_env_var_field_for_env_signer_type() {
+        let toml = r#"
+dry_run = false
+
+[accounts]
+rebalancer = "0x000000000000000000000000000000000000dEaD"
+
+[[chains]]
+name = "evolve"
+chain_id = 1234
+rpc_url = "http://127.0.0.1:8545"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+  env_var = "REBALANCER_EVOLVE_PK"
+
+[[chains]]
+name = "sepolia"
+chain_id = 11155111
+rpc_url = "https://rpc.sepolia.org"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[assets]]
+symbol = "USDC"
+decimals = 6
+
+  [[assets.tokens]]
+  chain_id = 1234
+  address = "0x0000000000000000000000000000000000000001"
+
+  [[assets.tokens]]
+  chain_id = 11155111
+  address = "0x0000000000000000000000000000000000000002"
+
+  [assets.weights]
+  "1234" = 0.50
+  "11155111" = 0.50
+
+  [assets.min_weights]
+  "1234" = 0.40
+  "11155111" = 0.40
+"#;
+
+        let raw: RawRebalancerConfig = toml::from_str(toml).expect("valid TOML");
+        let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
+        assert!(err.to_string().contains("Invalid signer config for chain"));
     }
 }

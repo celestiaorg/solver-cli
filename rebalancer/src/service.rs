@@ -20,6 +20,7 @@ impl RebalancerService {
         let mut clients = HashMap::new();
         for chain in &config.chains {
             let client = ChainClient::new(chain, !config.dry_run)
+                .await
                 .with_context(|| format!("Failed to create client for chain {}", chain.name))?;
             clients.insert(chain.chain_id, client);
         }

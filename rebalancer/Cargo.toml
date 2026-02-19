@@ -17,6 +17,7 @@ alloy = { version = "1.0", features = [
     "sol-types",
     "json-rpc",
     "rpc-types",
+    "signer-aws",
 ] }
 anyhow = "1.0"
 async-trait = "0.1"

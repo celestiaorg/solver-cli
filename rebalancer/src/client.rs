@@ -1,16 +1,16 @@
 use alloy::{
     eips::BlockNumberOrTag,
-    network::{EthereumWallet, TransactionBuilder},
+    network::TransactionBuilder,
     primitives::{Address, Bytes, FixedBytes, TxHash, U256},
     providers::{Provider, ProviderBuilder},
     rpc::types::eth::BlockId,
-    signers::local::PrivateKeySigner,
     sol,
     sol_types::SolCall,
 };
 use anyhow::{bail, Context, Result};
 
 use crate::config::ChainConfig;
+use crate::signer::resolve_signer_for_chain;
 
 type HttpProvider = alloy::providers::fillers::FillProvider<
     alloy::providers::fillers::JoinFill<
@@ -100,7 +100,7 @@ pub struct ChainClient {
 }
 
 impl ChainClient {
-    pub fn new(chain: &ChainConfig, enable_writes: bool) -> Result<Self> {
+    pub async fn new(chain: &ChainConfig, enable_writes: bool) -> Result<Self> {
         let rpc_url: reqwest::Url = chain.rpc_url.parse().with_context(|| {
             format!(
                 "Invalid RPC URL for chain {}: {}",
@@ -110,9 +110,10 @@ impl ChainClient {
 
         let read_provider = ProviderBuilder::new().connect_http(rpc_url.clone());
         let wallet_provider = if enable_writes {
-            let signer = signer_for_chain(chain)
-                .with_context(|| format!("Failed to load signer for chain {}", chain.name))?;
-            let signer_address = signer.address();
+            let resolved = resolve_signer_for_chain(chain).await.with_context(|| {
+                format!("Failed to load signer for chain {}", chain.name)
+            })?;
+            let signer_address = resolved.address;
             if signer_address != chain.account_address {
                 bail!(
                     "Signer/account mismatch for chain {} ({}): signer={} config_account={}",
@@ -123,8 +124,11 @@ impl ChainClient {
                 );
             }
 
-            let wallet = EthereumWallet::from(signer);
-            Some(ProviderBuilder::new().wallet(wallet).connect_http(rpc_url))
+            Some(
+                ProviderBuilder::new()
+                    .wallet(resolved.wallet)
+                    .connect_http(rpc_url),
+            )
         } else {
             None
         };
@@ -306,48 +310,4 @@ fn address_to_bytes32(address: Address) -> FixedBytes<32> {
     let mut out = [0u8; 32];
     out[12..].copy_from_slice(address.as_slice());
     FixedBytes::from(out)
-}
-
-fn signer_for_chain(chain: &ChainConfig) -> Result<PrivateKeySigner> {
-    let chain_env = normalize_env_key(&chain.name);
-    let key_names = [
-        format!("REBALANCER_{}_PK", chain_env),
-        format!("{}_PK", chain_env),
-        "REBALANCER_PRIVATE_KEY".to_string(),
-        "SOLVER_PRIVATE_KEY".to_string(),
-        "SEPOLIA_PK".to_string(),
-    ];
-
-    for key_name in key_names {
-        if let Ok(raw) = std::env::var(&key_name) {
-            let trimmed = raw.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            let pk = trimmed.strip_prefix("0x").unwrap_or(trimmed);
-            let signer = pk.parse().with_context(|| {
-                format!("Invalid private key in environment variable {}", key_name)
-            })?;
-            return Ok(signer);
-        }
-    }
-
-    bail!(
-        "No private key found for chain {}. Tried: REBALANCER_{}_PK, {}_PK, REBALANCER_PRIVATE_KEY, SOLVER_PRIVATE_KEY, SEPOLIA_PK",
-        chain.name,
-        chain_env,
-        chain_env
-    )
-}
-
-fn normalize_env_key(name: &str) -> String {
-    name.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() {
-                c.to_ascii_uppercase()
-            } else {
-                '_'
-            }
-        })
-        .collect()
 }

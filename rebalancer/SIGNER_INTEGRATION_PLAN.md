@@ -7,6 +7,7 @@
   - private key directly in `rebalancer.toml` via `type = "file"`
 - Support remote signing via AWS KMS (and keep extension points for other remote signers later).
 - After signer integration is stable, simplify client internals by collapsing read/write provider split where practical.
+- Use strict startup validation in non-dry mode: any signer init mismatch/failure aborts startup.
 
 ## Current State
 - Rebalancer is stateless for control logic and can run in `dry_run` without write keys.
@@ -78,20 +79,24 @@ account = "0x..."
   - Resolve signer address and enforce `signer_address == chain.account_address`.
   - In dry-run mode, signer config may be omitted.
   - For `type = "env"`, do not accept `env_var` in TOML; resolve from a fixed convention only.
+  - If chain-specific env var is missing for `type = "env"`, allow fallback to `REBALANCER_PRIVATE_KEY`.
+  - Any signer initialization failure in non-dry mode fails whole service startup (no partial mode).
 
 ## Signing Architecture
 
 ### 1) Introduce signer backend abstraction
-- Add a signer backend layer with two implementations:
+- Add a generic remote signer abstraction and two initial implementations:
   - `LocalPrivateKeySignerBackend` (env/file)
-  - `AwsKmsSignerBackend`
+  - `AwsKmsSignerBackend` (first remote backend)
 - Backend responsibilities:
   - expose signer address
   - sign/send transaction payloads needed by `transferRemote`
 
 ### 2) Local signer backend
 - `env`: read from a hardcoded naming convention only.
-  - Example convention: `REBALANCER_<CHAIN_NAME_UPPER>_PK` (no per-chain `env_var` in TOML).
+  - Exact convention: `REBALANCER_<CHAIN_NAME_NORMALIZED>_PK`, where normalization is uppercase and non-alphanumeric chars replaced with `_`.
+  - Example: `arb-sepolia` -> `REBALANCER_ARB_SEPOLIA_PK`.
+  - If missing, fallback to `REBALANCER_PRIVATE_KEY`.
 - `file`: parse `chains.signer.key`.
 - Normalize with `0x` support and strict key format validation.
 
@@ -100,6 +105,7 @@ account = "0x..."
 - Derive Ethereum address from KMS public key and verify against `chain.account`.
 - Add robust retry/backoff for transient AWS errors.
 - Fail closed if KMS signing is unavailable.
+- AWS auth source/profile customization is deferred for a later iteration.
 
 ## ChainClient Refactor Plan
 
@@ -123,8 +129,9 @@ account = "0x..."
 6. Enforce signer/account match at startup in non-dry mode.
 7. Update `solver-cli configure` to emit signer stanzas in generated `config/rebalancer.toml`.
    - Default emission should use `type = "env"` without `env_var`.
-8. Add docs/examples for local and AWS KMS configuration.
-9. Perform Phase B provider simplification.
+8. Add signer log redaction rules (never log key material; log only chain, signer type, and resolved address where safe).
+9. Add docs/examples for local and AWS KMS configuration.
+10. Perform Phase B provider simplification.
 
 ## Test Plan
 
@@ -135,9 +142,10 @@ account = "0x..."
 - Rejects `env_var` under `type = "env"`.
 
 2. Signer resolution:
-- Env var missing -> error.
+- Chain-specific env var missing + no `REBALANCER_PRIVATE_KEY` fallback -> error.
 - `file.key` invalid format -> error.
 - Signer/account mismatch -> startup error.
+- Chain-name normalization for env var lookup matches spec.
 
 3. Dry-run behavior:
 - No signer config required in `dry_run=true`.
@@ -151,11 +159,14 @@ account = "0x..."
 1. Non-dry startup succeeds with valid local signer config.
 2. Non-dry startup fails with mismatched signer/account.
 3. Rebalancer can submit `transferRemote` with env-configured key.
+4. Non-dry startup fails if any chain signer init fails (global fail-fast behavior).
+5. `solver-cli configure` emits `type = "env"` signer stanzas for all chains by default.
 
 ## Security Notes
 1. `file` key support is for local/dev convenience and should not be used in production.
 2. Prefer `env` or `aws_kms` for production.
 3. Never log private keys or full signer material.
+4. Redact signer config values in error and startup logs.
 
 ## Acceptance Criteria
 1. Operator can choose signer source per chain: env, file, or AWS KMS.

@@ -40,6 +40,8 @@ name = "{name}"
 chain_id = {chain_id}
 rpc_url = "{rpc_url}"
 account = "{account}"
+  [chains.signer]
+  type = "env"
 "#,
                 name = chain.name,
                 chain_id = chain.chain_id,
