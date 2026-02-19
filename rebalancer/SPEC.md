@@ -280,8 +280,7 @@ rebalancer/
     config.rs
     service.rs
     planner.rs
-    balance.rs
-    hyperlane.rs
+    client.rs
 ```
 
 ## 14) Integration Points

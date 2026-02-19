@@ -4,15 +4,13 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::time::{sleep, Duration};
 use tracing::{debug, info, warn};
 
-use crate::balance::ChainBalanceClient;
+use crate::client::ChainClient;
 use crate::config::{AssetConfig, RebalancerConfig};
-use crate::hyperlane::{HyperlaneTransferRequest, HyperlaneWarpClient};
 use crate::planner::{format_raw_u128, format_token_amount, AssetPlan, TransferPlan};
 
 pub struct RebalancerService {
     config: RebalancerConfig,
-    clients: HashMap<u64, ChainBalanceClient>,
-    hyperlane: Option<HyperlaneWarpClient>,
+    clients: HashMap<u64, ChainClient>,
     asset_totals: HashMap<String, U256>,
     cycle: u64,
 }
@@ -21,24 +19,14 @@ impl RebalancerService {
     pub async fn new(config: RebalancerConfig) -> Result<Self> {
         let mut clients = HashMap::new();
         for chain in &config.chains {
-            let client = ChainBalanceClient::new(chain)
+            let client = ChainClient::new(chain, !config.dry_run)
                 .with_context(|| format!("Failed to create client for chain {}", chain.name))?;
             clients.insert(chain.chain_id, client);
         }
 
-        let hyperlane = if config.dry_run {
-            None
-        } else {
-            Some(HyperlaneWarpClient::new(
-                config.hyperlane.clone(),
-                &config.chains,
-            )?)
-        };
-
         let mut service = Self {
             config,
             clients,
-            hyperlane,
             asset_totals: HashMap::new(),
             cycle: 0,
         };
@@ -337,11 +325,6 @@ impl RebalancerService {
         asset: &AssetConfig,
         transfers: &[TransferPlan],
     ) -> Result<()> {
-        let hyperlane = self
-            .hyperlane
-            .as_ref()
-            .context("Hyperlane client is not initialized")?;
-
         let blocked_source_chains = self.blocked_source_chains_for_cycle(transfers).await;
 
         for transfer in transfers {
@@ -372,16 +355,26 @@ impl RebalancerService {
                             asset.symbol, transfer.source_chain_id
                         )
                     })?;
+            let source_client = self
+                .clients
+                .get(&transfer.source_chain_id)
+                .with_context(|| {
+                    format!(
+                        "Missing RPC client for source chain {} ({})",
+                        source_chain.name, source_chain.chain_id
+                    )
+                })?;
+            let transfer_amount = U256::from(transfer.amount_raw);
 
-            let request = HyperlaneTransferRequest {
-                source_chain_id: transfer.source_chain_id,
-                destination_chain_id: transfer.destination_chain_id,
-                source_router,
-                destination_recipient: destination_chain.account_address,
-                amount: U256::from(transfer.amount_raw),
-            };
-
-            let quote = match hyperlane.quote_transfer(&request).await {
+            let quote = match source_client
+                .quote_transfer_remote(
+                    source_router,
+                    transfer.destination_chain_id,
+                    destination_chain.account_address,
+                    transfer_amount,
+                )
+                .await
+            {
                 Ok(quote) => quote,
                 Err(err) => {
                     warn!(
@@ -414,7 +407,16 @@ impl RebalancerService {
                 );
             }
 
-            match hyperlane.submit_transfer(&request, quote.native_fee).await {
+            match source_client
+                .submit_transfer_remote(
+                    source_router,
+                    transfer.destination_chain_id,
+                    destination_chain.account_address,
+                    transfer_amount,
+                    quote.native_fee,
+                )
+                .await
+            {
                 Ok(submitted) => {
                     let message_id = submitted
                         .message_id
