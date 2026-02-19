@@ -30,7 +30,7 @@ pub struct ChainConfig {
     pub rpc_url: String,
     pub account: String,
     pub account_address: Address,
-    pub signer: Option<SignerConfig>,
+    pub signer: SignerConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -213,12 +213,6 @@ impl RebalancerConfig {
                 .with_context(|| format!("Failed to resolve account for chain {}", chain.name))?;
             let signer = parse_signer_config(chain.signer)
                 .with_context(|| format!("Invalid signer config for chain {}", chain.name))?;
-            if !dry_run && signer.is_none() {
-                bail!(
-                    "Missing chains.signer for chain {} in non-dry mode",
-                    chain.name
-                );
-            }
 
             chains.push(ChainConfig {
                 name: chain.name,
@@ -386,9 +380,9 @@ impl RebalancerConfig {
     }
 }
 
-fn parse_signer_config(value: Option<RawSignerConfig>) -> Result<Option<SignerConfig>> {
+fn parse_signer_config(value: Option<RawSignerConfig>) -> Result<SignerConfig> {
     let Some(value) = value else {
-        return Ok(None);
+        bail!("Missing chains.signer");
     };
 
     let signer = match value.signer_type {
@@ -405,9 +399,9 @@ fn parse_signer_config(value: Option<RawSignerConfig>) -> Result<Option<SignerCo
             if value.env_var.is_some() || value.key_id.is_some() || value.region.is_some() {
                 bail!("chains.signer type = \"file\" only accepts fields \"type\" and \"key\"");
             }
-            let key = value
-                .key
-                .ok_or_else(|| anyhow::anyhow!("chains.signer.key is required for type = \"file\""))?;
+            let key = value.key.ok_or_else(|| {
+                anyhow::anyhow!("chains.signer.key is required for type = \"file\"")
+            })?;
             if key.trim().is_empty() {
                 bail!("chains.signer.key cannot be empty for type = \"file\"");
             }
@@ -435,7 +429,7 @@ fn parse_signer_config(value: Option<RawSignerConfig>) -> Result<Option<SignerCo
         }
     };
 
-    Ok(Some(signer))
+    Ok(signer)
 }
 
 fn parse_weight_map(values: &HashMap<String, f64>) -> Result<HashMap<u64, f64>> {
@@ -510,12 +504,16 @@ name = "evolve"
 chain_id = 1234
 rpc_url = "http://127.0.0.1:8545"
 account = "rebalancer"
+  [chains.signer]
+  type = "env"
 
 [[chains]]
 name = "sepolia"
 chain_id = 11155111
 rpc_url = "https://rpc.sepolia.org"
 account = "rebalancer"
+  [chains.signer]
+  type = "env"
 
 [[assets]]
 symbol = "USDC"
@@ -557,12 +555,16 @@ name = "evolve"
 chain_id = 1234
 rpc_url = "http://127.0.0.1:8545"
 account = "rebalancer"
+  [chains.signer]
+  type = "env"
 
 [[chains]]
 name = "sepolia"
 chain_id = 11155111
 rpc_url = "https://rpc.sepolia.org"
 account = "rebalancer"
+  [chains.signer]
+  type = "env"
 
 [[assets]]
 symbol = "USDC"
@@ -606,12 +608,16 @@ name = "evolve"
 chain_id = 1234
 rpc_url = "http://127.0.0.1:8545"
 account = "rebalancer"
+  [chains.signer]
+  type = "env"
 
 [[chains]]
 name = "sepolia"
 chain_id = 11155111
 rpc_url = "https://rpc.sepolia.org"
 account = "rebalancer"
+  [chains.signer]
+  type = "env"
 
 [[assets]]
 symbol = "USDC"
@@ -656,12 +662,16 @@ name = "evolve"
 chain_id = 1234
 rpc_url = "http://127.0.0.1:8545"
 account = "rebalancer"
+  [chains.signer]
+  type = "env"
 
 [[chains]]
 name = "sepolia"
 chain_id = 11155111
 rpc_url = "https://rpc.sepolia.org"
 account = "rebalancer"
+  [chains.signer]
+  type = "env"
 
 [[assets]]
 symbol = "USDC"
@@ -692,9 +702,9 @@ decimals = 6
     }
 
     #[test]
-    fn rejects_missing_signer_in_non_dry_mode() {
+    fn rejects_missing_signer_even_in_dry_mode() {
         let toml = r#"
-dry_run = false
+dry_run = true
 
 [accounts]
 rebalancer = "0x000000000000000000000000000000000000dEaD"

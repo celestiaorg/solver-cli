@@ -10,26 +10,9 @@ use alloy::{
 use anyhow::{bail, Context, Result};
 
 use crate::config::ChainConfig;
-use crate::signer::resolve_signer_for_chain;
+use crate::signer::TxSigner;
 
-type HttpProvider = alloy::providers::fillers::FillProvider<
-    alloy::providers::fillers::JoinFill<
-        alloy::providers::Identity,
-        alloy::providers::fillers::JoinFill<
-            alloy::providers::fillers::GasFiller,
-            alloy::providers::fillers::JoinFill<
-                alloy::providers::fillers::BlobGasFiller,
-                alloy::providers::fillers::JoinFill<
-                    alloy::providers::fillers::NonceFiller,
-                    alloy::providers::fillers::ChainIdFiller,
-                >,
-            >,
-        >,
-    >,
-    alloy::providers::RootProvider,
->;
-
-type WalletHttpProvider = alloy::providers::fillers::FillProvider<
+type DefaultProvider = alloy::providers::fillers::FillProvider<
     alloy::providers::fillers::JoinFill<
         alloy::providers::fillers::JoinFill<
             alloy::providers::Identity,
@@ -95,12 +78,11 @@ pub struct SubmittedTransfer {
 }
 
 pub struct ChainClient {
-    read_provider: HttpProvider,
-    wallet_provider: Option<WalletHttpProvider>,
+    provider: DefaultProvider,
 }
 
 impl ChainClient {
-    pub async fn new(chain: &ChainConfig, enable_writes: bool) -> Result<Self> {
+    pub async fn new(chain: &ChainConfig) -> Result<Self> {
         let rpc_url: reqwest::Url = chain.rpc_url.parse().with_context(|| {
             format!(
                 "Invalid RPC URL for chain {}: {}",
@@ -108,35 +90,25 @@ impl ChainClient {
             )
         })?;
 
-        let read_provider = ProviderBuilder::new().connect_http(rpc_url.clone());
-        let wallet_provider = if enable_writes {
-            let signer = resolve_signer_for_chain(chain)
-                .await
-                .with_context(|| format!("Failed to load signer for chain {}", chain.name))?;
+        let signer = TxSigner::new(chain)
+            .await
+            .with_context(|| format!("Failed to load signer for chain {}", chain.name))?;
 
-            if signer.address != chain.account_address {
-                bail!(
-                    "Signer/account mismatch for chain {} ({}): signer={} config_account={}",
-                    chain.name,
-                    chain.chain_id,
-                    signer.address,
-                    chain.account_address
-                );
-            }
+        if signer.address != chain.account_address {
+            bail!(
+                "Signer/account mismatch for chain {} ({}): signer={} config_account={}",
+                chain.name,
+                chain.chain_id,
+                signer.address,
+                chain.account_address
+            );
+        }
 
-            Some(
-                ProviderBuilder::new()
-                    .wallet(signer.wallet)
-                    .connect_http(rpc_url),
-            )
-        } else {
-            None
-        };
+        let provider = ProviderBuilder::new()
+            .wallet(signer.wallet)
+            .connect_http(rpc_url);
 
-        Ok(Self {
-            read_provider,
-            wallet_provider,
-        })
+        Ok(Self { provider })
     }
 
     pub async fn token_balance(&self, token: Address, account: Address) -> Result<U256> {
@@ -148,7 +120,7 @@ impl ChainClient {
             .with_input(call_data);
 
         let result = self
-            .read_provider
+            .provider
             .call(tx)
             .await
             .context("Failed to call ERC20 balanceOf")?;
@@ -157,7 +129,7 @@ impl ChainClient {
     }
 
     pub async fn transaction_count_latest(&self, account: Address) -> Result<u64> {
-        self.read_provider
+        self.provider
             .get_transaction_count(account)
             .block_id(BlockId::latest())
             .await
@@ -165,7 +137,7 @@ impl ChainClient {
     }
 
     pub async fn transaction_count_pending(&self, account: Address) -> Result<u64> {
-        self.read_provider
+        self.provider
             .get_transaction_count(account)
             .block_id(BlockId::Number(BlockNumberOrTag::Pending))
             .await
@@ -197,7 +169,7 @@ impl ChainClient {
         let tx = alloy::rpc::types::TransactionRequest::default()
             .to(source_router)
             .input(Bytes::from(call.abi_encode()).into());
-        let raw = self.read_provider.call(tx).await.with_context(|| {
+        let raw = self.provider.call(tx).await.with_context(|| {
             format!(
                 "quoteTransferRemote call failed on router {}",
                 source_router
@@ -234,7 +206,6 @@ impl ChainClient {
         amount: U256,
         msg_value: U256,
     ) -> Result<SubmittedTransfer> {
-        let wallet_provider = self.wallet_provider()?;
         let destination = u32::try_from(destination_chain_id).with_context(|| {
             format!(
                 "destination chain_id {} does not fit uint32 Hyperlane domain",
@@ -254,7 +225,7 @@ impl ChainClient {
             .to(source_router)
             .input(call_data.clone().into())
             .value(msg_value);
-        let message_id = match wallet_provider.call(preview_tx).await {
+        let message_id = match self.provider.call(preview_tx).await {
             Ok(raw) => {
                 if raw.len() >= 32 {
                     Some(FixedBytes::<32>::from_slice(&raw[raw.len() - 32..]))
@@ -269,15 +240,12 @@ impl ChainClient {
             .to(source_router)
             .input(call_data.into())
             .value(msg_value);
-        let pending = wallet_provider
-            .send_transaction(tx)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to submit transferRemote tx on router {}",
-                    source_router
-                )
-            })?;
+        let pending = self.provider.send_transaction(tx).await.with_context(|| {
+            format!(
+                "Failed to submit transferRemote tx on router {}",
+                source_router
+            )
+        })?;
 
         Ok(SubmittedTransfer {
             source_tx_hash: *pending.tx_hash(),
@@ -291,7 +259,7 @@ impl ChainClient {
             .to(router)
             .input(Bytes::from(call.abi_encode()).into());
         let raw = self
-            .read_provider
+            .provider
             .call(tx)
             .await
             .with_context(|| format!("token() call failed on router {}", router))?;
@@ -303,12 +271,6 @@ impl ChainClient {
             );
         }
         Ok(Address::from_slice(&raw[raw.len() - 20..]))
-    }
-
-    fn wallet_provider(&self) -> Result<&WalletHttpProvider> {
-        self.wallet_provider
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Missing wallet provider for writable operation"))
     }
 }
 

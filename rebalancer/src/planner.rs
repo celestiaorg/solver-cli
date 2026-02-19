@@ -246,11 +246,7 @@ mod tests {
                         .unwrap(),
                 ),
             ]),
-            weights: HashMap::from([
-                (1u64, 1.0 / 3.0),
-                (2u64, 1.0 / 3.0),
-                (3u64, 1.0 / 3.0),
-            ]),
+            weights: HashMap::from([(1u64, 1.0 / 3.0), (2u64, 1.0 / 3.0), (3u64, 1.0 / 3.0)]),
             min_weights: HashMap::from([(1u64, 0.30), (2u64, 0.30), (3u64, 0.30)]),
         }
     }

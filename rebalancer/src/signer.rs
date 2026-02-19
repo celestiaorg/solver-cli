@@ -1,10 +1,14 @@
 use alloy::{
     network::EthereumWallet,
     primitives::Address,
+    signers::aws::{
+        aws_config::{self, BehaviorVersion},
+        aws_sdk_kms::{self, config::Region},
+        AwsSigner,
+    },
     signers::{local::PrivateKeySigner, Signer},
 };
 use anyhow::{bail, Context, Result};
-use async_trait::async_trait;
 
 use crate::config::{ChainConfig, SignerConfig};
 
@@ -14,56 +18,48 @@ pub struct TxSigner {
     pub wallet: EthereumWallet,
 }
 
-pub async fn resolve_signer_for_chain(chain: &ChainConfig) -> Result<TxSigner> {
-    let Some(signer_config) = chain.signer.as_ref() else {
-        bail!(
-            "Missing chains.signer for chain {} in writable mode",
-            chain.name
-        );
-    };
+impl TxSigner {
+    pub async fn new(chain: &ChainConfig) -> Result<Self> {
+        let signer_config = &chain.signer;
 
-    match signer_config {
-        SignerConfig::Env => resolve_env_signer(chain),
-        SignerConfig::File { key } => resolve_local_private_key_signer(key, "chains.signer.key"),
-        SignerConfig::AwsKms { key_id, region } => {
-            let backend = AwsKmsRemoteSignerBackend {
-                key_id: key_id.clone(),
-                region: region.clone(),
-            };
-            backend.resolve(chain).await
+        match signer_config {
+            SignerConfig::Env => Self::from_env(chain),
+            SignerConfig::File { key } => Self::from_file(key, "chains.signer.key"),
+            SignerConfig::AwsKms { key_id, region } => {
+                let backend = AwsKmsRemoteSignerBackend {
+                    key_id: key_id.clone(),
+                    region: region.clone(),
+                };
+                backend.new(chain).await
+            }
         }
     }
-}
 
-fn resolve_env_signer(chain: &ChainConfig) -> Result<TxSigner> {
-    let chain_env = normalize_env_key(&chain.name);
-    let chain_key = format!("REBALANCER_{}_PK", chain_env);
+    fn from_env(chain: &ChainConfig) -> Result<Self> {
+        let chain_env = normalize_env_key(&chain.name);
+        let chain_key = format!("REBALANCER_{}_PK", chain_env);
 
-    if let Some(raw) = read_env_key(&chain_key)? {
-        return resolve_local_private_key_signer(&raw, &chain_key);
+        if let Some(raw) = read_env_key(&chain_key)? {
+            return Self::from_file(&raw, &chain_key);
+        }
+        if let Some(raw) = read_env_key("REBALANCER_PRIVATE_KEY")? {
+            return Self::from_file(&raw, "REBALANCER_PRIVATE_KEY");
+        }
+
+        bail!(
+            "No key found for chain {}. Tried {} then REBALANCER_PRIVATE_KEY",
+            chain.name,
+            chain_key
+        )
     }
-    if let Some(raw) = read_env_key("REBALANCER_PRIVATE_KEY")? {
-        return resolve_local_private_key_signer(&raw, "REBALANCER_PRIVATE_KEY");
+
+    fn from_file(raw: &str, source: &str) -> Result<Self> {
+        let signer = parse_signer_key(raw, source)?;
+        Ok(Self {
+            address: signer.address(),
+            wallet: EthereumWallet::from(signer),
+        })
     }
-
-    bail!(
-        "No key found for chain {}. Tried {} then REBALANCER_PRIVATE_KEY",
-        chain.name,
-        chain_key
-    )
-}
-
-fn resolve_local_private_key_signer(raw: &str, source: &str) -> Result<TxSigner> {
-    let signer = parse_signer_key(raw, source)?;
-    Ok(TxSigner {
-        address: signer.address(),
-        wallet: EthereumWallet::from(signer),
-    })
-}
-
-#[async_trait]
-pub trait RemoteSignerBackend {
-    async fn resolve(&self, chain: &ChainConfig) -> Result<TxSigner>;
 }
 
 #[derive(Debug, Clone)]
@@ -72,19 +68,14 @@ pub struct AwsKmsRemoteSignerBackend {
     region: String,
 }
 
-#[async_trait]
-impl RemoteSignerBackend for AwsKmsRemoteSignerBackend {
-    async fn resolve(&self, chain: &ChainConfig) -> Result<TxSigner> {
-        let sdk_config = alloy::signers::aws::aws_config::defaults(
-            alloy::signers::aws::aws_config::BehaviorVersion::latest(),
-        )
-        .region(alloy::signers::aws::aws_sdk_kms::config::Region::new(
-            self.region.clone(),
-        ))
-        .load()
-        .await;
-        let kms_client = alloy::signers::aws::aws_sdk_kms::Client::new(&sdk_config);
-        let signer = alloy::signers::aws::AwsSigner::new(kms_client, self.key_id.clone(), None)
+impl AwsKmsRemoteSignerBackend {
+    async fn new(&self, chain: &ChainConfig) -> Result<TxSigner> {
+        let sdk_config = aws_config::defaults(BehaviorVersion::latest())
+            .region(Region::new(self.region.clone()))
+            .load()
+            .await;
+        let kms_client = aws_sdk_kms::Client::new(&sdk_config);
+        let signer = AwsSigner::new(kms_client, self.key_id.clone(), None)
             .await
             .with_context(|| {
                 format!(
@@ -143,7 +134,7 @@ mod tests {
     use super::*;
     use crate::config::SignerConfig;
 
-    fn sample_chain(name: &str, signer: Option<SignerConfig>) -> ChainConfig {
+    fn sample_chain(name: &str, signer: SignerConfig) -> ChainConfig {
         ChainConfig {
             name: name.to_string(),
             chain_id: 1,
@@ -170,8 +161,8 @@ mod tests {
             "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
         );
 
-        let chain = sample_chain("evolve", Some(SignerConfig::Env));
-        let signer = resolve_signer_for_chain(&chain).await.unwrap();
+        let chain = sample_chain("evolve", SignerConfig::Env);
+        let signer = TxSigner::new(&chain).await.unwrap();
         assert_eq!(
             signer.address,
             "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
@@ -184,12 +175,12 @@ mod tests {
     async fn file_signer_reads_key_field() {
         let chain = sample_chain(
             "evolve",
-            Some(SignerConfig::File {
+            SignerConfig::File {
                 key: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
                     .to_string(),
-            }),
+            },
         );
-        let signer = resolve_signer_for_chain(&chain).await.unwrap();
+        let signer = TxSigner::new(&chain).await.unwrap();
         assert_eq!(
             signer.address,
             "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"

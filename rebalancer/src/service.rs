@@ -19,7 +19,7 @@ impl RebalancerService {
     pub async fn new(config: RebalancerConfig) -> Result<Self> {
         let mut clients = HashMap::new();
         for chain in &config.chains {
-            let client = ChainClient::new(chain, !config.dry_run)
+            let client = ChainClient::new(chain)
                 .await
                 .with_context(|| format!("Failed to create client for chain {}", chain.name))?;
             clients.insert(chain.chain_id, client);
@@ -241,7 +241,8 @@ impl RebalancerService {
                         asset.symbol
                     )
                 })?;
-            self.asset_totals.insert(asset.symbol.clone(), total_balance);
+            self.asset_totals
+                .insert(asset.symbol.clone(), total_balance);
         }
         Ok(())
     }
@@ -452,7 +453,10 @@ impl RebalancerService {
 
         let mut blocked = HashSet::new();
         for source_chain_id in source_chain_ids {
-            if !self.source_chain_ready_for_submission(source_chain_id).await {
+            if !self
+                .source_chain_ready_for_submission(source_chain_id)
+                .await
+            {
                 blocked.insert(source_chain_id);
             }
         }
@@ -608,7 +612,10 @@ impl RebalancerService {
     }
 }
 
-fn startup_total_from_snapshot(asset: &AssetConfig, observed_balances: &BTreeMap<u64, U256>) -> Result<U256> {
+fn startup_total_from_snapshot(
+    asset: &AssetConfig,
+    observed_balances: &BTreeMap<u64, U256>,
+) -> Result<U256> {
     for chain_id in asset.weights.keys() {
         if !observed_balances.contains_key(chain_id) {
             bail!(
