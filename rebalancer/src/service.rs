@@ -1,6 +1,6 @@
 use alloy::primitives::U256;
-use anyhow::{Context, Result};
-use std::collections::{BTreeMap, HashMap};
+use anyhow::{bail, Context, Result};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::time::{sleep, Duration};
 use tracing::{debug, info, warn};
 
@@ -13,6 +13,7 @@ pub struct RebalancerService {
     config: RebalancerConfig,
     clients: HashMap<u64, ChainBalanceClient>,
     hyperlane: Option<HyperlaneWarpClient>,
+    asset_totals: HashMap<String, U256>,
     cycle: u64,
 }
 
@@ -34,12 +35,17 @@ impl RebalancerService {
             )?)
         };
 
-        Ok(Self {
+        let mut service = Self {
             config,
             clients,
             hyperlane,
+            asset_totals: HashMap::new(),
             cycle: 0,
-        })
+        };
+
+        service.initialize_asset_totals().await?;
+
+        Ok(service)
     }
 
     pub async fn run(&mut self) -> Result<()> {
@@ -60,6 +66,16 @@ impl RebalancerService {
             "Hyperlane config: timeout={}s",
             self.config.hyperlane.default_timeout_seconds
         );
+        for asset in &self.config.assets {
+            if let Some(total_balance) = self.asset_totals.get(&asset.symbol) {
+                info!(
+                    "Asset {} startup total_balance={} {}",
+                    asset.symbol,
+                    format_token_amount(*total_balance, asset.decimals),
+                    asset.symbol
+                );
+            }
+        }
 
         if self.config.dry_run {
             info!("dry_run=true: planning-only mode (no Hyperlane transactions)");
@@ -91,57 +107,7 @@ impl RebalancerService {
     }
 
     async fn process_asset(&mut self, asset: &AssetConfig) -> Result<()> {
-        let mut chain_ids: Vec<u64> = asset.weights.keys().copied().collect();
-        chain_ids.sort_unstable();
-
-        let mut observed_balances = BTreeMap::<u64, U256>::new();
-        let mut errors = Vec::new();
-
-        for chain_id in chain_ids {
-            let chain = self.config.chain_by_id(chain_id).with_context(|| {
-                format!("Unknown chain {} for asset {}", chain_id, asset.symbol)
-            })?;
-
-            let token_address = *asset.tokens.get(&chain_id).with_context(|| {
-                format!(
-                    "Missing token address for asset {} on chain {}",
-                    asset.symbol, chain_id
-                )
-            })?;
-
-            let client = self.clients.get(&chain_id).with_context(|| {
-                format!(
-                    "Missing RPC client for chain {} ({})",
-                    chain.name, chain.chain_id
-                )
-            })?;
-
-            match client
-                .token_balance(token_address, chain.account_address)
-                .await
-            {
-                Ok(balance) => {
-                    debug!(
-                        "Asset {} observed balance: chain={} ({}) account={} token={} balance={} {} (raw={})",
-                        asset.symbol,
-                        chain.name,
-                        chain.chain_id,
-                        chain.account_address,
-                        token_address,
-                        format_token_amount(balance, asset.decimals),
-                        asset.symbol,
-                        balance
-                    );
-                    observed_balances.insert(chain_id, balance);
-                }
-                Err(err) => {
-                    errors.push(format!(
-                        "chain={} ({}) token={} account={} err={}",
-                        chain.name, chain.chain_id, token_address, chain.account_address, err
-                    ));
-                }
-            }
-        }
+        let (observed_balances, errors) = self.poll_observed_balances(asset).await?;
 
         if !errors.is_empty() {
             warn!(
@@ -154,10 +120,17 @@ impl RebalancerService {
             return Ok(());
         }
 
-        let plan = AssetPlan::new(asset, &observed_balances)?;
+        let observed_total = sum_balances(&observed_balances);
+        let total_balance = *self.asset_totals.get(&asset.symbol).with_context(|| {
+            format!(
+                "Missing startup total_balance for asset {}. Restart service to recompute totals",
+                asset.symbol
+            )
+        })?;
+        let plan = AssetPlan::new(asset, &observed_balances, total_balance)?;
 
         let (min_transfer_raw, max_transfer_raw) = transfer_size_bounds_raw(
-            plan.total_balance,
+            total_balance,
             self.config.execution.min_transfer_bps,
             self.config.execution.max_transfer_bps,
         );
@@ -186,9 +159,11 @@ impl RebalancerService {
 
         if !plan.active_deficit_chain_ids.is_empty() {
             info!(
-                "Asset {}: transfer-size bounds from total_balance={} {} => min={} {} ({} bps), max={} {} ({} bps)",
+                "Asset {}: transfer-size bounds from total_balance={} {} (observed_total={} {}) => min={} {} ({} bps), max={} {} ({} bps)",
                 asset.symbol,
-                format_token_amount(plan.total_balance, asset.decimals),
+                format_token_amount(total_balance, asset.decimals),
+                asset.symbol,
+                format_token_amount(observed_total, asset.decimals),
                 asset.symbol,
                 format_raw_u128(min_transfer_raw, asset.decimals),
                 asset.symbol,
@@ -245,6 +220,7 @@ impl RebalancerService {
 
         self.log_plan(
             &plan,
+            observed_total,
             available_slots,
             &emitted_transfers,
             &blocked_by_parallel,
@@ -265,6 +241,97 @@ impl RebalancerService {
         Ok(())
     }
 
+    async fn initialize_asset_totals(&mut self) -> Result<()> {
+        for asset in &self.config.assets {
+            let total_balance = self
+                .bootstrap_total_balance_for_asset(asset)
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to compute startup total_balance for asset {}",
+                        asset.symbol
+                    )
+                })?;
+            self.asset_totals.insert(asset.symbol.clone(), total_balance);
+        }
+        Ok(())
+    }
+
+    async fn bootstrap_total_balance_for_asset(&self, asset: &AssetConfig) -> Result<U256> {
+        let (observed_balances, errors) = self.poll_observed_balances(asset).await?;
+        if !errors.is_empty() {
+            let mut details = errors.join("; ");
+            if details.is_empty() {
+                details = "unknown error".to_string();
+            }
+            bail!(
+                "startup snapshot incomplete for asset {}: {}",
+                asset.symbol,
+                details
+            );
+        }
+        startup_total_from_snapshot(asset, &observed_balances)
+    }
+
+    async fn poll_observed_balances(
+        &self,
+        asset: &AssetConfig,
+    ) -> Result<(BTreeMap<u64, U256>, Vec<String>)> {
+        let mut chain_ids: Vec<u64> = asset.weights.keys().copied().collect();
+        chain_ids.sort_unstable();
+
+        let mut observed_balances = BTreeMap::<u64, U256>::new();
+        let mut errors = Vec::new();
+
+        for chain_id in chain_ids {
+            let chain = self.config.chain_by_id(chain_id).with_context(|| {
+                format!("Unknown chain {} for asset {}", chain_id, asset.symbol)
+            })?;
+
+            let token_address = *asset.tokens.get(&chain_id).with_context(|| {
+                format!(
+                    "Missing token address for asset {} on chain {}",
+                    asset.symbol, chain_id
+                )
+            })?;
+
+            let client = self.clients.get(&chain_id).with_context(|| {
+                format!(
+                    "Missing RPC client for chain {} ({})",
+                    chain.name, chain.chain_id
+                )
+            })?;
+
+            match client
+                .token_balance(token_address, chain.account_address)
+                .await
+            {
+                Ok(balance) => {
+                    debug!(
+                        "Asset {} observed balance: chain={} ({}) account={} token={} balance={} {} (raw={})",
+                        asset.symbol,
+                        chain.name,
+                        chain.chain_id,
+                        chain.account_address,
+                        token_address,
+                        format_token_amount(balance, asset.decimals),
+                        asset.symbol,
+                        balance
+                    );
+                    observed_balances.insert(chain_id, balance);
+                }
+                Err(err) => {
+                    errors.push(format!(
+                        "chain={} ({}) token={} account={} err={}",
+                        chain.name, chain.chain_id, token_address, chain.account_address, err
+                    ));
+                }
+            }
+        }
+
+        Ok((observed_balances, errors))
+    }
+
     async fn execute_transfers(
         &mut self,
         asset: &AssetConfig,
@@ -275,22 +342,10 @@ impl RebalancerService {
             .as_ref()
             .context("Hyperlane client is not initialized")?;
 
-        let mut source_chain_submission_allowed = HashMap::<u64, bool>::new();
+        let blocked_source_chains = self.blocked_source_chains_for_cycle(transfers).await;
 
         for transfer in transfers {
-            let source_allowed = if let Some(allowed) =
-                source_chain_submission_allowed.get(&transfer.source_chain_id)
-            {
-                *allowed
-            } else {
-                let allowed = self
-                    .source_chain_ready_for_submission(transfer.source_chain_id)
-                    .await;
-                source_chain_submission_allowed.insert(transfer.source_chain_id, allowed);
-                allowed
-            };
-
-            if !source_allowed {
+            if blocked_source_chains.contains(&transfer.source_chain_id) {
                 continue;
             }
 
@@ -387,6 +442,21 @@ impl RebalancerService {
         Ok(())
     }
 
+    async fn blocked_source_chains_for_cycle(&self, transfers: &[TransferPlan]) -> HashSet<u64> {
+        let mut source_chain_ids: Vec<u64> = transfers.iter().map(|t| t.source_chain_id).collect();
+        source_chain_ids.sort_unstable();
+        source_chain_ids.dedup();
+
+        let mut blocked = HashSet::new();
+        for source_chain_id in source_chain_ids {
+            if !self.source_chain_ready_for_submission(source_chain_id).await {
+                blocked.insert(source_chain_id);
+            }
+        }
+
+        blocked
+    }
+
     async fn source_chain_ready_for_submission(&self, source_chain_id: u64) -> bool {
         let Some(chain) = self.config.chain_by_id(source_chain_id) else {
             warn!(
@@ -443,17 +513,39 @@ impl RebalancerService {
     fn log_plan(
         &self,
         plan: &crate::planner::AssetPlan,
+        observed_total: U256,
         available_slots: usize,
         emitted_transfers: &[crate::planner::TransferPlan],
         blocked_by_parallel: &[crate::planner::TransferPlan],
     ) {
         info!(
-            "Asset {} snapshot: total_balance={} {} available_slots={}",
+            "Asset {} snapshot: total_balance={} {} observed_total={} {} available_slots={}",
             plan.symbol,
             format_token_amount(plan.total_balance, plan.decimals),
             plan.symbol,
+            format_token_amount(observed_total, plan.decimals),
+            plan.symbol,
             available_slots
         );
+        match classify_inventory_drift(plan.total_balance, observed_total) {
+            InventoryDrift::InFlight(amount) => {
+                info!(
+                    "Asset {} inventory drift: estimated_in_flight={} {} (startup total higher than observed)",
+                    plan.symbol,
+                    format_token_amount(amount, plan.decimals),
+                    plan.symbol
+                );
+            }
+            InventoryDrift::ObservedExceedsStartup(amount) => {
+                info!(
+                    "Asset {} inventory drift: observed_exceeds_startup_by={} {} (consider restart/resync if intentional)",
+                    plan.symbol,
+                    format_token_amount(amount, plan.decimals),
+                    plan.symbol
+                );
+            }
+            InventoryDrift::Balanced => {}
+        }
 
         if plan.active_deficit_chain_ids.is_empty() {
             info!(
@@ -468,59 +560,85 @@ impl RebalancerService {
             plan.symbol, plan.active_deficit_chain_ids
         );
 
-        if emitted_transfers.is_empty() && blocked_by_parallel.is_empty() {
-            info!(
-                "Asset {}: no transfer candidates after controls",
-                plan.symbol
-            );
-            return;
-        }
-
         for transfer in emitted_transfers {
-            let src = self
-                .config
-                .chain_by_id(transfer.source_chain_id)
-                .expect("validated chain_id must exist");
-            let dst = self
-                .config
-                .chain_by_id(transfer.destination_chain_id)
-                .expect("validated chain_id must exist");
-            info!(
-                "  plan: {} -> {} amount={} {} (raw={})",
-                src.name,
-                dst.name,
-                format_raw_u128(transfer.amount_raw, plan.decimals),
-                plan.symbol,
-                transfer.amount_raw
-            );
+            self.log_transfer(plan, transfer, "plan");
         }
 
-        if !blocked_by_parallel.is_empty() {
-            for transfer in blocked_by_parallel {
-                let src = self
-                    .config
-                    .chain_by_id(transfer.source_chain_id)
-                    .expect("validated chain_id must exist");
-                let dst = self
-                    .config
-                    .chain_by_id(transfer.destination_chain_id)
-                    .expect("validated chain_id must exist");
-                info!(
-                    "  max_parallel block: {} -> {} amount={} {}",
-                    src.name,
-                    dst.name,
-                    format_raw_u128(transfer.amount_raw, plan.decimals),
-                    plan.symbol
-                );
-            }
+        for transfer in blocked_by_parallel {
+            self.log_transfer(plan, transfer, "max_parallel block");
         }
 
         info!(
-            "Asset {}: {} transfer candidate(s) emitted and {} blocked by max_parallel",
+            "Asset {}: planner_candidates={} emitted={} blocked_by_parallel={} available_slots={}",
             plan.symbol,
+            plan.transfers.len(),
             emitted_transfers.len(),
-            blocked_by_parallel.len()
+            blocked_by_parallel.len(),
+            available_slots
         );
+    }
+
+    fn log_transfer(
+        &self,
+        plan: &crate::planner::AssetPlan,
+        transfer: &crate::planner::TransferPlan,
+        prefix: &str,
+    ) {
+        let src = self
+            .config
+            .chain_by_id(transfer.source_chain_id)
+            .expect("validated chain_id must exist");
+        let dst = self
+            .config
+            .chain_by_id(transfer.destination_chain_id)
+            .expect("validated chain_id must exist");
+
+        info!(
+            "  {}: {} -> {} amount={} {} (raw={})",
+            prefix,
+            src.name,
+            dst.name,
+            format_raw_u128(transfer.amount_raw, plan.decimals),
+            plan.symbol,
+            transfer.amount_raw
+        );
+    }
+}
+
+fn startup_total_from_snapshot(asset: &AssetConfig, observed_balances: &BTreeMap<u64, U256>) -> Result<U256> {
+    for chain_id in asset.weights.keys() {
+        if !observed_balances.contains_key(chain_id) {
+            bail!(
+                "startup snapshot missing observed balance for asset {} chain {}",
+                asset.symbol,
+                chain_id
+            );
+        }
+    }
+    Ok(sum_balances(observed_balances))
+}
+
+fn sum_balances(observed_balances: &BTreeMap<u64, U256>) -> U256 {
+    observed_balances
+        .values()
+        .copied()
+        .fold(U256::ZERO, |acc, balance| acc + balance)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InventoryDrift {
+    InFlight(U256),
+    ObservedExceedsStartup(U256),
+    Balanced,
+}
+
+fn classify_inventory_drift(total_balance: U256, observed_total: U256) -> InventoryDrift {
+    if observed_total < total_balance {
+        InventoryDrift::InFlight(total_balance - observed_total)
+    } else if observed_total > total_balance {
+        InventoryDrift::ObservedExceedsStartup(observed_total - total_balance)
+    } else {
+        InventoryDrift::Balanced
     }
 }
 
@@ -579,6 +697,31 @@ fn split_by_parallel_limit(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::AssetConfig;
+    use std::collections::HashMap;
+
+    fn sample_asset() -> AssetConfig {
+        AssetConfig {
+            symbol: "USDC".to_string(),
+            decimals: 6,
+            tokens: HashMap::from([
+                (
+                    1u64,
+                    "0x0000000000000000000000000000000000000001"
+                        .parse()
+                        .unwrap(),
+                ),
+                (
+                    2u64,
+                    "0x0000000000000000000000000000000000000002"
+                        .parse()
+                        .unwrap(),
+                ),
+            ]),
+            weights: HashMap::from([(1u64, 0.5), (2u64, 0.5)]),
+            min_weights: HashMap::from([(1u64, 0.4), (2u64, 0.4)]),
+        }
+    }
 
     #[test]
     fn nonce_guard_blocks_when_pending_nonce_is_ahead() {
@@ -615,5 +758,47 @@ mod tests {
         assert_eq!(emitted.len(), 2);
         assert_eq!(blocked.len(), 1);
         assert_eq!(blocked[0].destination_chain_id, 4);
+    }
+
+    #[test]
+    fn startup_total_fails_when_snapshot_is_missing_chain_balance() {
+        let asset = sample_asset();
+        let observed_balances = BTreeMap::from([(1u64, U256::from(10u64))]);
+
+        let result = startup_total_from_snapshot(&asset, &observed_balances);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn startup_total_uses_sum_of_observed_balances() {
+        let asset = sample_asset();
+        let observed_balances =
+            BTreeMap::from([(1u64, U256::from(10u64)), (2u64, U256::from(20u64))]);
+
+        let total = startup_total_from_snapshot(&asset, &observed_balances).unwrap();
+
+        assert_eq!(total, U256::from(30u64));
+    }
+
+    #[test]
+    fn classify_inventory_drift_marks_in_flight_when_observed_is_lower() {
+        let drift = classify_inventory_drift(U256::from(20u64), U256::from(17u64));
+        assert_eq!(drift, InventoryDrift::InFlight(U256::from(3u64)));
+    }
+
+    #[test]
+    fn classify_inventory_drift_marks_excess_when_observed_is_higher() {
+        let drift = classify_inventory_drift(U256::from(20u64), U256::from(23u64));
+        assert_eq!(
+            drift,
+            InventoryDrift::ObservedExceedsStartup(U256::from(3u64))
+        );
+    }
+
+    #[test]
+    fn classify_inventory_drift_balanced_when_totals_match() {
+        let drift = classify_inventory_drift(U256::from(20u64), U256::from(20u64));
+        assert_eq!(drift, InventoryDrift::Balanced);
     }
 }

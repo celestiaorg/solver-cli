@@ -32,8 +32,8 @@ Runtime entrypoint should be integrated into `solver-cli` so operators can run:
 - `solver-cli rebalancer start --once`
 
 High-level loop:
-1. Poll balances per chain and asset.
-2. Compute global distribution per asset.
+1. At startup, compute `total_balance` per asset from configured chain balances (fail startup if incomplete).
+2. Poll live balances per chain and asset each cycle.
 3. Detect deficits based on thresholds.
 4. Build a rebalance plan (source -> destination transfers).
 5. Execute Hyperlane Warp transfers.
@@ -45,8 +45,9 @@ High-level loop:
 For a given asset `A` across chains `C`:
 
 - `balance[A][c]`: on-chain token balance owned by rebalancer wallet on chain `c`.
-- `total[A] = sum(balance[A][c])`.
-- `current_weight[A][c] = balance[A][c] / total[A]` (if total > 0).
+- `observed_total[A] = sum(balance[A][c])` from the current cycle (diagnostics only).
+- `total_balance[A]`: startup canonical total computed once at service start.
+- `current_weight[A][c] = balance[A][c] / total_balance[A]` (if `total_balance[A] > 0`).
 - `target_weight[A][c]`: configured desired weight.
 - `min_weight[A][c]`: configured lower-bound trigger threshold.
 
@@ -120,25 +121,27 @@ Validation rules:
 
 Per asset:
 1. Fetch balances on all configured chains.
-2. Compute `current_weight`.
-3. Build deficits:
+2. Compute `observed_total` for diagnostics.
+3. Use startup `total_balance` for planning denominator.
+4. Compute `current_weight`.
+5. Build deficits:
    - `deficit_amount[c] = max(0, target_balance[c] - current_balance[c])`
-   - where `target_balance[c] = target_weight[c] * total`.
-4. Build surpluses:
+   - where `target_balance[c] = target_weight[c] * total_balance`.
+6. Build surpluses:
    - `surplus_amount[c] = max(0, current_balance[c] - target_balance[c])`.
-5. If no deficit chain violates `min_weight`, do nothing.
-6. Match surplus chains to deficit chains greedily:
+7. If no deficit chain violates `min_weight`, do nothing.
+8. Match surplus chains to deficit chains greedily:
    - largest deficit first
    - source from largest surplus
    - split if needed.
-7. Apply execution constraints:
+9. Apply execution constraints:
    - min/max transfer size as % of total inventory for that asset
    - max transfers submitted per cycle (`max_parallel_transfers`)
    - per-source nonce guard (`pending_nonce <= latest_nonce`) before submission.
-8. Emit transfer intents and execute via Hyperlane Warp integration.
+10. Emit transfer intents and execute via Hyperlane Warp integration.
 
 Transfer size bounds (per asset, per cycle):
-- `total_balance = sum(observed_balance)`.
+- `total_balance`: startup canonical value for the asset.
 - `min_transfer_raw = ceil(total_balance * min_transfer_bps / 10000)`.
 - `max_transfer_raw = floor(total_balance * max_transfer_bps / 10000)`.
 - Candidate transfers below `min_transfer_raw` are skipped.
@@ -154,6 +157,7 @@ Concrete example (applies per candidate route transfer):
 Design choice (v1 simplicity):
 - No USD conversion and no per-asset price dependency.
 - No slippage guard parameter in v1; keep route safety to existing quote/submit error handling.
+- If deficits exist but no surplus is available under startup `total_balance`, emit no transfer and log the condition explicitly.
 
 Recommended anti-flap controls:
 1. Deficit trigger strictly at `current_weight < min_weight`.
@@ -212,33 +216,44 @@ Design note:
 
 The rebalancer does not persist local control state. There is no `.rebalancer/state.json` dependency.
 
-Control behavior is derived from live chain reads each cycle:
-1. Balances determine planning and transfer sizing.
-2. Source-account nonces (`latest` and `pending`) gate submissions.
-3. If `pending_nonce > latest_nonce`, skip submissions from that source chain in the current cycle.
-4. If pending nonce lookup fails, skip submissions from that source chain in the current cycle (fail closed).
+Control behavior uses startup totals plus live chain reads:
+1. Startup computes per-asset `total_balance`; if any required balance read fails, startup fails.
+2. Per-cycle live balances determine distribution and deficits.
+3. Source-account nonces (`latest` and `pending`) gate submissions.
+4. If `pending_nonce > latest_nonce`, skip submissions from that source chain in the current cycle.
+5. If pending nonce lookup fails, skip submissions from that source chain in the current cycle (fail closed).
+6. Resync policy is manual: restart (or explicit operator resync action) to refresh `total_balance`.
 
 ## 10) Error Handling
 
-1. RPC failures:
+1. Startup RPC failures for canonical totals:
+   - fail service startup
+   - operator retries when RPCs are healthy.
+2. Per-cycle RPC failures:
    - mark snapshot as partial
    - skip execution for affected asset this cycle
    - retry next poll.
-2. Hyperlane submission failure:
+3. Hyperlane submission failure:
    - log failed attempt with reason
    - retry in a later cycle based on fresh balances and nonce guard.
-3. Nonce guard lookup failure:
+4. Nonce guard lookup failure:
    - skip submissions for that source chain in this cycle.
-4. Insufficient source balance at execution time:
+5. Insufficient source balance at execution time:
    - recalculate plan next cycle.
 
 ## 11) Observability
 
 Logs:
-1. Snapshot summary per asset: balances, current weights, target weights.
+1. Snapshot summary per asset: `total_balance`, `observed_total`, balances, current weights, target weights.
 2. Trigger decisions: why rebalance fired or skipped.
 3. Transfer submission events: quoted, submitted, failed.
 4. Nonce guard decisions per source chain (allowed/blocked/error).
+5. Deficit-without-surplus condition when triggered.
+
+Escrow visibility note:
+1. Escrow contract token balance is queryable.
+2. Per-order escrow status is queryable.
+3. Solver-aggregate claimable escrow amount is not directly queryable in a single contract call.
 
 Metrics:
 1. `rebalancer_asset_weight{asset,chain}`

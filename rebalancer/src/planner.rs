@@ -30,12 +30,11 @@ struct WorkingAmount {
 }
 
 impl AssetPlan {
-    pub fn new(asset: &AssetConfig, observed_balances: &BTreeMap<u64, U256>) -> Result<Self> {
-        let mut total_balance = U256::ZERO;
-        for balance in observed_balances.values() {
-            total_balance += *balance;
-        }
-
+    pub fn new(
+        asset: &AssetConfig,
+        observed_balances: &BTreeMap<u64, U256>,
+        total_balance: U256,
+    ) -> Result<Self> {
         let mut chain_ids: Vec<u64> = asset.weights.keys().copied().collect();
         chain_ids.sort_unstable();
 
@@ -300,7 +299,7 @@ mod tests {
     fn plans_transfer_when_min_weight_is_violated() {
         let asset = sample_asset();
         let observed = BTreeMap::from([(1u64, U256::from(350u64)), (2u64, U256::from(650u64))]);
-        let plan = AssetPlan::new(&asset, &observed).unwrap();
+        let plan = AssetPlan::new(&asset, &observed, U256::from(1000u64)).unwrap();
 
         assert_eq!(plan.active_deficit_chain_ids, vec![1]);
         assert_eq!(plan.transfers.len(), 1);
@@ -322,7 +321,7 @@ mod tests {
             (2u64, U256::from(400u64)),
             (3u64, U256::from(300u64)),
         ]);
-        let plan = AssetPlan::new(&asset, &observed).unwrap();
+        let plan = AssetPlan::new(&asset, &observed, U256::from(900u64)).unwrap();
 
         assert_eq!(plan.active_deficit_chain_ids, vec![1]);
         assert_eq!(plan.transfers.len(), 1);
@@ -346,7 +345,7 @@ mod tests {
             (3u64, U256::from(150u64)),
             (4u64, U256::from(250u64)),
         ]);
-        let plan = AssetPlan::new(&asset, &observed).unwrap();
+        let plan = AssetPlan::new(&asset, &observed, U256::from(800u64)).unwrap();
 
         assert_eq!(plan.active_deficit_chain_ids, vec![1, 3]);
         assert_eq!(plan.transfers.len(), 2);
@@ -362,16 +361,16 @@ mod tests {
     fn returns_empty_transfers_when_no_active_deficit() {
         let asset = sample_asset();
         let observed = BTreeMap::from([(1u64, U256::from(450u64)), (2u64, U256::from(550u64))]);
-        let plan = AssetPlan::new(&asset, &observed).unwrap();
+        let plan = AssetPlan::new(&asset, &observed, U256::from(1000u64)).unwrap();
         assert!(plan.transfers.is_empty());
         assert!(plan.active_deficit_chain_ids.is_empty());
     }
 
     #[test]
-    fn computes_total_balance() {
+    fn uses_provided_total_balance() {
         let asset = sample_asset();
         let observed = BTreeMap::from([(1u64, U256::from(100u64)), (2u64, U256::from(200u64))]);
-        let plan = AssetPlan::new(&asset, &observed).unwrap();
-        assert_eq!(plan.total_balance, U256::from(300u64));
+        let plan = AssetPlan::new(&asset, &observed, U256::from(999u64)).unwrap();
+        assert_eq!(plan.total_balance, U256::from(999u64));
     }
 }
