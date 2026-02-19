@@ -19,8 +19,6 @@ pub struct RebalancerConfig {
 
 #[derive(Debug, Clone)]
 pub struct ExecutionConfig {
-    pub cooldown_seconds_per_route: u64,
-    pub settle_buffer_bps: u16,
     pub min_transfer_bps: u16,
     pub max_transfer_bps: u16,
 }
@@ -91,10 +89,6 @@ struct RawTokenConfig {
 
 #[derive(Debug, Deserialize)]
 struct RawExecutionConfig {
-    #[serde(default = "default_cooldown_seconds")]
-    cooldown_seconds_per_route: u64,
-    #[serde(default = "default_settle_buffer_bps")]
-    settle_buffer_bps: u16,
     #[serde(default = "default_min_transfer_bps")]
     min_transfer_bps: u16,
     #[serde(default = "default_max_transfer_bps")]
@@ -104,8 +98,6 @@ struct RawExecutionConfig {
 impl Default for RawExecutionConfig {
     fn default() -> Self {
         Self {
-            cooldown_seconds_per_route: default_cooldown_seconds(),
-            settle_buffer_bps: default_settle_buffer_bps(),
             min_transfer_bps: default_min_transfer_bps(),
             max_transfer_bps: default_max_transfer_bps(),
         }
@@ -132,14 +124,6 @@ fn default_poll_interval_seconds() -> u64 {
 
 fn default_max_parallel_transfers() -> usize {
     2
-}
-
-fn default_cooldown_seconds() -> u64 {
-    120
-}
-
-fn default_settle_buffer_bps() -> u16 {
-    100
 }
 
 fn default_min_transfer_bps() -> u16 {
@@ -327,12 +311,6 @@ impl RebalancerConfig {
             });
         }
 
-        if raw.execution.settle_buffer_bps > 10_000 {
-            bail!(
-                "execution.settle_buffer_bps must be <= 10000 (got {})",
-                raw.execution.settle_buffer_bps
-            );
-        }
         if raw.execution.min_transfer_bps > 10_000 {
             bail!(
                 "execution.min_transfer_bps must be <= 10000 (got {})",
@@ -358,8 +336,6 @@ impl RebalancerConfig {
             max_parallel_transfers: raw.max_parallel_transfers,
             dry_run: raw.dry_run,
             execution: ExecutionConfig {
-                cooldown_seconds_per_route: raw.execution.cooldown_seconds_per_route,
-                settle_buffer_bps: raw.execution.settle_buffer_bps,
                 min_transfer_bps: raw.execution.min_transfer_bps,
                 max_transfer_bps: raw.execution.max_transfer_bps,
             },

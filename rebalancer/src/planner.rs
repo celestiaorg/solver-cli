@@ -1,17 +1,11 @@
 use alloy::primitives::U256;
 use anyhow::{Context, Result};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use crate::config::AssetConfig;
 
 const MIN_EFFECTIVE_RAW_TRANSFER: f64 = 1.0;
 const WEIGHT_EPSILON: f64 = 1e-9;
-
-pub struct PlannerContext<'a> {
-    pub settle_buffer_weight: f64,
-    pub reserved_outgoing_by_chain: &'a BTreeMap<u64, U256>,
-    pub previously_active_deficits: &'a BTreeSet<u64>,
-}
 
 #[derive(Debug, Clone)]
 pub struct AssetPlan {
@@ -39,33 +33,16 @@ struct WorkingAmount {
 pub fn build_asset_plan(
     asset: &AssetConfig,
     observed_balances: &BTreeMap<u64, U256>,
-    context: PlannerContext<'_>,
 ) -> Result<AssetPlan> {
     let mut observed_total_balance = U256::ZERO;
     for balance in observed_balances.values() {
         observed_total_balance += *balance;
     }
 
+    let effective_total_balance = observed_total_balance;
+
     let mut chain_ids: Vec<u64> = asset.weights.keys().copied().collect();
     chain_ids.sort_unstable();
-
-    let mut effective_balances = BTreeMap::<u64, U256>::new();
-    let mut effective_total_balance = U256::ZERO;
-
-    for chain_id in &chain_ids {
-        let observed_balance = observed_balances
-            .get(chain_id)
-            .copied()
-            .unwrap_or(U256::ZERO);
-        let reserved = context
-            .reserved_outgoing_by_chain
-            .get(chain_id)
-            .copied()
-            .unwrap_or(U256::ZERO);
-        let effective = observed_balance.saturating_sub(reserved);
-        effective_balances.insert(*chain_id, effective);
-        effective_total_balance += effective;
-    }
 
     if effective_total_balance.is_zero() {
         return Ok(AssetPlan {
@@ -79,14 +56,13 @@ pub fn build_asset_plan(
     }
 
     let effective_total_f64 = u256_to_f64(effective_total_balance)?;
-    let settle_buffer_weight = context.settle_buffer_weight.max(0.0).min(1.0);
 
     let mut active_deficit_chain_ids = Vec::new();
     let mut deficits = Vec::new();
     let mut surpluses = Vec::new();
 
     for chain_id in chain_ids {
-        let effective_balance = *effective_balances.get(&chain_id).unwrap_or(&U256::ZERO);
+        let effective_balance = *observed_balances.get(&chain_id).unwrap_or(&U256::ZERO);
         let effective_f64 = u256_to_f64(effective_balance)?;
 
         let target_weight = *asset
@@ -99,19 +75,11 @@ pub fn build_asset_plan(
             .with_context(|| format!("Missing min_weight for chain {}", chain_id))?;
 
         let current_weight = effective_f64 / effective_total_f64;
-        let clear_threshold_weight = (target_weight - settle_buffer_weight).max(min_weight);
         let target_balance_raw = effective_total_f64 * target_weight;
         let deficit_raw = (target_balance_raw - effective_f64).max(0.0);
         let surplus_raw = (effective_f64 - target_balance_raw).max(0.0);
 
-        let was_active = context.previously_active_deficits.contains(&chain_id);
-        let is_active = if current_weight + WEIGHT_EPSILON < min_weight {
-            true
-        } else {
-            was_active && current_weight + WEIGHT_EPSILON < clear_threshold_weight
-        };
-
-        if is_active {
+        if current_weight + WEIGHT_EPSILON < min_weight {
             active_deficit_chain_ids.push(chain_id);
         }
 
@@ -237,7 +205,7 @@ fn u256_to_f64(value: U256) -> Result<f64> {
 mod tests {
     use super::*;
     use crate::config::AssetConfig;
-    use std::collections::HashMap;
+    use std::collections::{BTreeMap, HashMap};
 
     fn sample_asset() -> AssetConfig {
         AssetConfig {
@@ -263,70 +231,33 @@ mod tests {
     }
 
     #[test]
-    fn reservation_affects_effective_balances_and_plans_transfer() {
+    fn plans_transfer_when_min_weight_is_violated() {
         let asset = sample_asset();
-        let observed = BTreeMap::from([(1u64, U256::from(500u64)), (2u64, U256::from(500u64))]);
-        let reserved = BTreeMap::from([(1u64, U256::from(200u64))]);
-        let active = BTreeSet::new();
-
-        let plan = build_asset_plan(
-            &asset,
-            &observed,
-            PlannerContext {
-                settle_buffer_weight: 0.01,
-                reserved_outgoing_by_chain: &reserved,
-                previously_active_deficits: &active,
-            },
-        )
-        .unwrap();
+        let observed = BTreeMap::from([(1u64, U256::from(350u64)), (2u64, U256::from(650u64))]);
+        let plan = build_asset_plan(&asset, &observed).unwrap();
 
         assert_eq!(plan.active_deficit_chain_ids, vec![1]);
         assert_eq!(plan.transfers.len(), 1);
         assert_eq!(plan.transfers[0].source_chain_id, 2);
         assert_eq!(plan.transfers[0].destination_chain_id, 1);
-        assert_eq!(plan.transfers[0].amount_raw, 100);
-    }
-
-    #[test]
-    fn hysteresis_keeps_chain_active_until_clear_threshold() {
-        let asset = sample_asset();
-        let observed = BTreeMap::from([(1u64, U256::from(450u64)), (2u64, U256::from(550u64))]);
-        let reserved = BTreeMap::new();
-        let active = BTreeSet::from([1u64]);
-
-        let plan = build_asset_plan(
-            &asset,
-            &observed,
-            PlannerContext {
-                settle_buffer_weight: 0.01,
-                reserved_outgoing_by_chain: &reserved,
-                previously_active_deficits: &active,
-            },
-        )
-        .unwrap();
-
-        assert!(plan.active_deficit_chain_ids.contains(&1));
+        assert_eq!(plan.transfers[0].amount_raw, 150);
     }
 
     #[test]
     fn returns_empty_transfers_when_no_active_deficit() {
         let asset = sample_asset();
         let observed = BTreeMap::from([(1u64, U256::from(450u64)), (2u64, U256::from(550u64))]);
-        let reserved = BTreeMap::new();
-        let active = BTreeSet::new();
-
-        let plan = build_asset_plan(
-            &asset,
-            &observed,
-            PlannerContext {
-                settle_buffer_weight: 0.01,
-                reserved_outgoing_by_chain: &reserved,
-                previously_active_deficits: &active,
-            },
-        )
-        .unwrap();
-
+        let plan = build_asset_plan(&asset, &observed).unwrap();
         assert!(plan.transfers.is_empty());
         assert!(plan.active_deficit_chain_ids.is_empty());
+    }
+
+    #[test]
+    fn effective_total_equals_observed_total() {
+        let asset = sample_asset();
+        let observed = BTreeMap::from([(1u64, U256::from(100u64)), (2u64, U256::from(200u64))]);
+        let plan = build_asset_plan(&asset, &observed).unwrap();
+        assert_eq!(plan.observed_total_balance, U256::from(300u64));
+        assert_eq!(plan.effective_total_balance, U256::from(300u64));
     }
 }

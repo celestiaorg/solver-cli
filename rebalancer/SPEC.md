@@ -13,7 +13,7 @@ Over time this can skew inventory distribution and starve some destination chain
 1. Maintain per-asset inventory distribution across configured chains near target weights.
 2. Trigger rebalances when a chain falls below configured lower bounds.
 3. Execute transfers directly through Hyperlane Warp.
-4. Be safe, idempotent, and restart-resilient.
+4. Be safe and idempotent without local persisted control state.
 5. Provide clear observability and deterministic behavior.
 
 ## 3) Non-goals (v1)
@@ -37,7 +37,7 @@ High-level loop:
 3. Detect deficits based on thresholds.
 4. Build a rebalance plan (source -> destination transfers).
 5. Execute Hyperlane Warp transfers.
-6. Track pending transfers until completion/failure.
+6. Apply per-source nonce guard before submission (`pending` vs `latest` nonce).
 7. Repeat.
 
 ## 5) Core Concepts
@@ -69,8 +69,6 @@ max_parallel_transfers = 2
 dry_run = false
 
 [execution]
-cooldown_seconds_per_route = 120
-settle_buffer_bps = 100
 min_transfer_bps = 50
 max_transfer_bps = 5000
 
@@ -117,7 +115,6 @@ Validation rules:
 4. Token address must be present for every `(asset, chain)` pair used in weights.
 5. At least 2 chains per asset.
 6. `0 <= min_transfer_bps <= max_transfer_bps <= 10000`.
-7. `settle_buffer_bps <= 10000`.
 
 ## 7) Rebalance Algorithm
 
@@ -136,12 +133,12 @@ Per asset:
    - split if needed.
 7. Apply execution constraints:
    - min/max transfer size as % of effective total inventory for that asset
-   - cooldown per `(asset, source_chain, dest_chain)`
-   - max concurrent in-flight transfers.
+   - max transfers submitted per cycle (`max_parallel_transfers`)
+   - per-source nonce guard (`pending_nonce <= latest_nonce`) before submission.
 8. Emit transfer intents and execute via Hyperlane Warp integration.
 
 Transfer size bounds (per asset, per cycle):
-- `effective_total = sum(observed_balance - reserved_outgoing)`.
+- `effective_total = sum(observed_balance)`.
 - `min_transfer_raw = ceil(effective_total * min_transfer_bps / 10000)`.
 - `max_transfer_raw = floor(effective_total * max_transfer_bps / 10000)`.
 - Candidate transfers below `min_transfer_raw` are skipped.
@@ -152,9 +149,9 @@ Design choice (v1 simplicity):
 - No slippage guard parameter in v1; keep route safety to existing quote/submit error handling.
 
 Recommended anti-flap controls:
-1. Hysteresis: trigger at `min_weight`, stop once above `target_weight - settle_buffer`.
-2. Cooldown: avoid repeating same route immediately.
-3. In-flight reservation: subtract pending outgoing amounts from effective source balance.
+1. Deficit trigger strictly at `current_weight < min_weight`.
+2. Per-cycle transfer cap via `max_parallel_transfers`.
+3. Nonce guard on source account to avoid re-submitting while source tx is still pending.
 
 ## 8) Hyperlane Warp Integration (v1)
 
@@ -164,7 +161,7 @@ Execution flow:
 1. Build a Hyperlane Warp transfer request from `(asset, source_chain, destination_chain, amount, recipient)`.
 2. Quote fees with `quoteTransferRemote(...)`.
 3. Submit source-chain transaction via `transferRemote(...)` with required `msg.value`.
-4. Track transfer lifecycle until delivered, failed, or timed out.
+4. Log submission results (tx hash + optional message id) for operator visibility.
 
 Required Rust ABI bindings (Alloy `sol!`) for Phase 3:
 
@@ -204,20 +201,15 @@ Phase 3 integration notes:
 Design note:
 - We intentionally defer protocol abstraction until we have a second real transport integration and concrete integration pressure.
 
-## 9) State and Persistence
+## 9) Stateless Operation
 
-State path (proposed): `.rebalancer/state.json`
+The rebalancer does not persist local control state. There is no `.rebalancer/state.json` dependency.
 
-Persist:
-1. In-flight transfers with unique id, route, amount, tx hash(es), timestamps, status.
-2. Last execution timestamps for cooldown enforcement.
-3. Active deficit chains per asset (for hysteresis continuity across restarts).
-
-Requirements:
-1. Write-through on transfer state transitions.
-2. On startup, reload and resume tracking of in-flight transfers.
-3. Never create duplicate transfer for an already in-flight equivalent route window.
-4. Keep state bounded by pruning old terminal transfer records.
+Control behavior is derived from live chain reads each cycle:
+1. Balances determine planning and transfer sizing.
+2. Source-account nonces (`latest` and `pending`) gate submissions.
+3. If `pending_nonce > latest_nonce`, skip submissions from that source chain in the current cycle.
+4. If pending nonce lookup fails, skip submissions from that source chain in the current cycle (fail closed).
 
 ## 10) Error Handling
 
@@ -226,11 +218,10 @@ Requirements:
    - skip execution for affected asset this cycle
    - retry next poll.
 2. Hyperlane submission failure:
-   - record failed attempt with reason
-   - exponential backoff for same route.
-3. Stuck transfer:
-   - timeout to `stalled` state
-   - require manual intervention or retry policy based on Hyperlane delivery semantics.
+   - log failed attempt with reason
+   - retry in a later cycle based on fresh balances and nonce guard.
+3. Nonce guard lookup failure:
+   - skip submissions for that source chain in this cycle.
 4. Insufficient source balance at execution time:
    - recalculate plan next cycle.
 
@@ -239,14 +230,15 @@ Requirements:
 Logs:
 1. Snapshot summary per asset: balances, current weights, target weights.
 2. Trigger decisions: why rebalance fired or skipped.
-3. Transfer lifecycle events: submitted, delivered, failed, timed out.
+3. Transfer submission events: quoted, submitted, failed.
+4. Nonce guard decisions per source chain (allowed/blocked/error).
 
 Metrics:
 1. `rebalancer_asset_weight{asset,chain}`
 2. `rebalancer_deficit_trigger_total{asset,chain}`
 3. `rebalancer_transfer_submitted_total{asset,src,dst}`
 4. `rebalancer_transfer_failed_total{asset,src,dst}`
-5. `rebalancer_inflight_count`
+5. `rebalancer_nonce_guard_block_total{chain}`
 
 ## 12) Security and Key Management
 
@@ -264,7 +256,6 @@ rebalancer/
   src/
     main.rs
     config.rs
-    state.rs
     service.rs
     planner.rs
     balance.rs
@@ -295,25 +286,25 @@ Deliverable:
 - Service prints deterministic rebalance plans from live balances.
 - Service is invocable from top-level UX (`solver-cli` and `make`).
 
-### Phase 2: Planner + Persistent State
+### Phase 2: Stateless Planner + Submission Controls
 1. Implement deficit/surplus planner with constraints.
-2. Implement `.rebalancer/state.json`.
-3. Add cooldown + hysteresis + in-flight reservation.
+2. Keep planner stateless: no in-flight reservation/hysteresis persistence.
+3. Add per-cycle caps and nonce-guard submission gating.
 
 Deliverable:
-- Stable plan generation across restarts and repeated polls.
+- Stable stateless plan generation from live balances and nonce data.
 
 ### Phase 3: Hyperlane Warp Execution
 1. Add Alloy `sol!` bindings for `token()`, `quoteTransferRemote(...)`, and `transferRemote(...)`.
-2. Implement direct Hyperlane Warp quote + transfer submission + status tracking.
+2. Implement direct Hyperlane Warp quote + transfer submission.
 3. Execute one transfer at a time per asset route with idempotency guards.
-4. Persist source tx hash / message id / delivery status transitions in `.rebalancer/state.json`.
+4. Log source tx hash / message id on submission (no local persistence).
 
 Deliverable:
 - End-to-end rebalance transfer execution.
 
 ### Phase 4: Hardening + Ops
-1. Add retries/backoff and stuck-transfer handling.
+1. Add retries/backoff around quote/submit failures.
 2. Add metrics and structured logs.
 3. Add Make target and operator runbook docs.
 
@@ -327,8 +318,8 @@ Deliverable:
 ## 16) Acceptance Criteria
 
 1. For configured assets, service detects weight breaches and plans transfers correctly.
-2. When below thresholds, service submits Hyperlane transfers and tracks them to terminal state.
-3. Service resumes safely after restart without duplicate transfers.
+2. When below thresholds, service submits Hyperlane transfers with nonce-guarded source-chain idempotency.
+3. Service restart remains safe without local state; pending nonce gap blocks duplicate source submissions.
 4. Distribution converges toward configured target weights over time.
 5. Dry-run mode emits plans with zero on-chain writes.
 

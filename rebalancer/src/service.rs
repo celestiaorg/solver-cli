@@ -1,36 +1,23 @@
-use alloy::primitives::{TxHash, U256};
+use alloy::primitives::U256;
 use anyhow::{Context, Result};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::Path;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::collections::{BTreeMap, HashMap};
 use tokio::time::{sleep, Duration};
 use tracing::{debug, info, warn};
 
 use crate::balance::ChainBalanceClient;
 use crate::config::{AssetConfig, RebalancerConfig};
-use crate::hyperlane::{HyperlaneTransferRequest, HyperlaneWarpClient, SourceTxStatus};
-use crate::planner::{
-    build_asset_plan, format_raw_u128, format_token_amount, PlannerContext, TransferPlan,
-};
-use crate::state::StateManager;
+use crate::hyperlane::{HyperlaneTransferRequest, HyperlaneWarpClient};
+use crate::planner::{build_asset_plan, format_raw_u128, format_token_amount, TransferPlan};
 
 pub struct RebalancerService {
     config: RebalancerConfig,
     clients: HashMap<u64, ChainBalanceClient>,
     hyperlane: Option<HyperlaneWarpClient>,
-    state: StateManager,
     cycle: u64,
 }
 
-#[derive(Debug, Clone)]
-struct CooldownBlockedTransfer {
-    transfer: TransferPlan,
-    last_execution_unix_seconds: u64,
-    available_at_unix_seconds: u64,
-}
-
 impl RebalancerService {
-    pub async fn new(config: RebalancerConfig, project_root: &Path) -> Result<Self> {
+    pub async fn new(config: RebalancerConfig) -> Result<Self> {
         let mut clients = HashMap::new();
         for chain in &config.chains {
             let client = ChainBalanceClient::new(chain)
@@ -47,13 +34,10 @@ impl RebalancerService {
             )?)
         };
 
-        let state = StateManager::new(project_root)?;
-
         Ok(Self {
             config,
             clients,
             hyperlane,
-            state,
             cycle: 0,
         })
     }
@@ -67,9 +51,7 @@ impl RebalancerService {
             self.config.dry_run
         );
         info!(
-            "Execution config: cooldown={}s settle_buffer_bps={} min_transfer_bps={} max_transfer_bps={} max_parallel_transfers={}",
-            self.config.execution.cooldown_seconds_per_route,
-            self.config.execution.settle_buffer_bps,
+            "Execution config: min_transfer_bps={} max_transfer_bps={} max_parallel_transfers={}",
             self.config.execution.min_transfer_bps,
             self.config.execution.max_transfer_bps,
             self.config.max_parallel_transfers
@@ -78,7 +60,6 @@ impl RebalancerService {
             "Hyperlane config: timeout={}s",
             self.config.hyperlane.default_timeout_seconds
         );
-        info!("State file: {}", self.state.state_path().display());
 
         if self.config.dry_run {
             info!("dry_run=true: planning-only mode (no Hyperlane transactions)");
@@ -94,14 +75,11 @@ impl RebalancerService {
 
     pub async fn run_once(&mut self) -> Result<()> {
         self.cycle += 1;
-        let now_unix_seconds = now_unix_seconds()?;
         info!("Starting rebalance cycle {}", self.cycle);
-
-        self.reconcile_inflight(now_unix_seconds).await?;
 
         let assets = self.config.assets.clone();
         for asset in &assets {
-            if let Err(err) = self.process_asset(asset, now_unix_seconds).await {
+            if let Err(err) = self.process_asset(asset).await {
                 warn!(
                     "Cycle {}: asset {} processing failed: {}",
                     self.cycle, asset.symbol, err
@@ -109,12 +87,10 @@ impl RebalancerService {
             }
         }
 
-        self.state.set_last_cycle(now_unix_seconds);
-        self.state.save_if_dirty()?;
         Ok(())
     }
 
-    async fn process_asset(&mut self, asset: &AssetConfig, now_unix_seconds: u64) -> Result<()> {
+    async fn process_asset(&mut self, asset: &AssetConfig) -> Result<()> {
         let mut chain_ids: Vec<u64> = asset.weights.keys().copied().collect();
         chain_ids.sort_unstable();
 
@@ -145,6 +121,17 @@ impl RebalancerService {
                 .await
             {
                 Ok(balance) => {
+                    debug!(
+                        "Asset {} observed balance: chain={} ({}) account={} token={} balance={} {} (raw={})",
+                        asset.symbol,
+                        chain.name,
+                        chain.chain_id,
+                        chain.account_address,
+                        token_address,
+                        format_token_amount(balance, asset.decimals),
+                        asset.symbol,
+                        balance
+                    );
                     observed_balances.insert(chain_id, balance);
                 }
                 Err(err) => {
@@ -167,25 +154,14 @@ impl RebalancerService {
             return Ok(());
         }
 
-        let reserved_outgoing_by_chain = self.state.reserved_outgoing_by_chain(&asset.symbol);
-        let previously_active_deficits = self.state.active_deficit_chains(&asset.symbol);
-        let route_last_execution_by_pair = self.state.route_last_execution_for_asset(&asset.symbol);
-
-        let plan = build_asset_plan(
-            asset,
-            &observed_balances,
-            PlannerContext {
-                settle_buffer_weight: self.config.execution.settle_buffer_bps as f64 / 10_000.0,
-                reserved_outgoing_by_chain: &reserved_outgoing_by_chain,
-                previously_active_deficits: &previously_active_deficits,
-            },
-        )?;
+        let plan = build_asset_plan(asset, &observed_balances)?;
 
         let (min_transfer_raw, max_transfer_raw) = transfer_size_bounds_raw(
             plan.effective_total_balance,
             self.config.execution.min_transfer_bps,
             self.config.execution.max_transfer_bps,
         );
+
         let mut size_adjusted_transfers = Vec::new();
         let mut blocked_by_min_size = Vec::new();
         let mut capped_by_max_size = Vec::new();
@@ -263,30 +239,13 @@ impl RebalancerService {
             );
         }
 
-        let (cooldown_allowed_transfers, blocked_by_cooldown) = apply_route_cooldown(
-            size_adjusted_transfers,
-            &route_last_execution_by_pair,
-            self.config.execution.cooldown_seconds_per_route,
-            now_unix_seconds,
-        );
-
-        let pending_inflight = self.state.inflight_pending_count();
-        let available_slots = self
-            .config
-            .max_parallel_transfers
-            .saturating_sub(pending_inflight);
-        let mut emitted_transfers = cooldown_allowed_transfers;
-        let blocked_by_parallel = if emitted_transfers.len() > available_slots {
-            emitted_transfers.split_off(available_slots)
-        } else {
-            Vec::new()
-        };
+        let available_slots = self.config.max_parallel_transfers;
+        let (emitted_transfers, blocked_by_parallel) =
+            split_by_parallel_limit(size_adjusted_transfers, available_slots);
 
         self.log_plan(
             &plan,
-            pending_inflight,
             available_slots,
-            &blocked_by_cooldown,
             &emitted_transfers,
             &blocked_by_parallel,
         );
@@ -300,14 +259,8 @@ impl RebalancerService {
                 );
             }
         } else if !emitted_transfers.is_empty() {
-            self.execute_transfers(asset, &emitted_transfers, now_unix_seconds)
-                .await?;
+            self.execute_transfers(asset, &emitted_transfers).await?;
         }
-
-        self.state.set_active_deficit_chains(
-            &asset.symbol,
-            &BTreeSet::from_iter(plan.active_deficit_chain_ids.iter().copied()),
-        );
 
         Ok(())
     }
@@ -316,23 +269,28 @@ impl RebalancerService {
         &mut self,
         asset: &AssetConfig,
         transfers: &[TransferPlan],
-        now_unix_seconds: u64,
     ) -> Result<()> {
         let hyperlane = self
             .hyperlane
             .as_ref()
             .context("Hyperlane client is not initialized")?;
 
+        let mut source_chain_submission_allowed = HashMap::<u64, bool>::new();
+
         for transfer in transfers {
-            if self.state.has_pending_route(
-                &asset.symbol,
-                transfer.source_chain_id,
-                transfer.destination_chain_id,
-            ) {
-                info!(
-                    "Asset {}: idempotency guard skipped route {} -> {} (pending transfer exists)",
-                    asset.symbol, transfer.source_chain_id, transfer.destination_chain_id
-                );
+            let source_allowed = if let Some(allowed) =
+                source_chain_submission_allowed.get(&transfer.source_chain_id)
+            {
+                *allowed
+            } else {
+                let allowed = self
+                    .source_chain_ready_for_submission(transfer.source_chain_id)
+                    .await;
+                source_chain_submission_allowed.insert(transfer.source_chain_id, allowed);
+                allowed
+            };
+
+            if !source_allowed {
                 continue;
             }
 
@@ -403,32 +361,18 @@ impl RebalancerService {
 
             match hyperlane.submit_transfer(&request, quote.native_fee).await {
                 Ok(submitted) => {
-                    let message_id = submitted.message_id.map(|value| value.to_string());
-                    let transfer_id = self.state.create_submitted_transfer(
-                        &asset.symbol,
-                        transfer.source_chain_id,
-                        transfer.destination_chain_id,
-                        U256::from(transfer.amount_raw),
-                        &submitted.source_tx_hash.to_string(),
-                        message_id.as_deref(),
-                        now_unix_seconds,
-                    );
-                    self.state.set_route_last_execution(
-                        &asset.symbol,
-                        transfer.source_chain_id,
-                        transfer.destination_chain_id,
-                        now_unix_seconds,
-                    );
-                    self.state.save_if_dirty()?;
+                    let message_id = submitted
+                        .message_id
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "n/a".to_string());
 
                     info!(
-                        "Asset {} transfer {} submitted: route {} -> {} tx_hash={} message_id={}",
+                        "Asset {} transfer submitted: route {} -> {} tx_hash={} message_id={}",
                         asset.symbol,
-                        transfer_id,
                         source_chain.name,
                         destination_chain.name,
                         submitted.source_tx_hash,
-                        message_id.unwrap_or_else(|| "n/a".to_string())
+                        message_id
                     );
                 }
                 Err(err) => {
@@ -443,161 +387,88 @@ impl RebalancerService {
         Ok(())
     }
 
-    async fn reconcile_inflight(&mut self, now_unix_seconds: u64) -> Result<()> {
-        let submitted = self.state.pending_submitted_transfers();
-        if submitted.is_empty() {
-            return Ok(());
-        }
+    async fn source_chain_ready_for_submission(&self, source_chain_id: u64) -> bool {
+        let Some(chain) = self.config.chain_by_id(source_chain_id) else {
+            warn!(
+                "Skipping submissions from source chain {}: missing chain config",
+                source_chain_id
+            );
+            return false;
+        };
 
-        if self.config.dry_run {
-            return Ok(());
-        }
+        let Some(client) = self.clients.get(&source_chain_id) else {
+            warn!(
+                "Skipping submissions from source chain {} ({}): missing RPC client",
+                chain.name, chain.chain_id
+            );
+            return false;
+        };
 
-        let hyperlane = self
-            .hyperlane
-            .as_ref()
-            .context("Hyperlane client is not initialized")?;
-        let timeout_seconds = self.config.hyperlane.default_timeout_seconds;
-
-        for transfer in submitted {
-            let source_tx_hash = match transfer.source_tx_hash.as_deref() {
-                Some(value) => value,
-                None => {
-                    self.state.mark_failed(
-                        &transfer.id,
-                        "submitted transfer is missing source_tx_hash",
-                        now_unix_seconds,
-                    )?;
-                    self.state.save_if_dirty()?;
-                    continue;
-                }
-            };
-
-            let parsed_tx_hash = match source_tx_hash.parse::<TxHash>() {
-                Ok(tx_hash) => tx_hash,
-                Err(err) => {
-                    self.state.mark_failed(
-                        &transfer.id,
-                        format!("invalid source tx hash '{}': {}", source_tx_hash, err),
-                        now_unix_seconds,
-                    )?;
-                    self.state.save_if_dirty()?;
-                    continue;
-                }
-            };
-
-            let status = match hyperlane
-                .source_tx_status(transfer.source_chain_id, parsed_tx_hash)
-                .await
-            {
-                Ok(status) => status,
-                Err(err) => {
-                    warn!(
-                        "Could not refresh transfer {} status (chain={} tx={}): {}",
-                        transfer.id, transfer.source_chain_id, source_tx_hash, err
-                    );
-                    continue;
-                }
-            };
-
-            match status {
-                SourceTxStatus::Success => {
-                    self.state
-                        .mark_delivered(&transfer.id, None, now_unix_seconds)?;
-                    self.state.save_if_dirty()?;
-                    info!(
-                        "Transfer {} marked delivered (source tx confirmed): chain={} tx={}",
-                        transfer.id, transfer.source_chain_id, source_tx_hash
-                    );
-                }
-                SourceTxStatus::Reverted => {
-                    self.state.mark_failed(
-                        &transfer.id,
-                        format!("source transaction reverted: {}", source_tx_hash),
-                        now_unix_seconds,
-                    )?;
-                    self.state.save_if_dirty()?;
-                    warn!(
-                        "Transfer {} marked failed: source tx reverted (chain={} tx={})",
-                        transfer.id, transfer.source_chain_id, source_tx_hash
-                    );
-                }
-                SourceTxStatus::Pending => {
-                    let expires_at = transfer
-                        .created_at_unix_seconds
-                        .saturating_add(timeout_seconds);
-                    if now_unix_seconds >= expires_at {
-                        self.state.mark_timed_out(&transfer.id, now_unix_seconds)?;
-                        self.state.save_if_dirty()?;
-                        warn!(
-                            "Transfer {} timed out waiting for source tx receipt: chain={} tx={} timeout={}s",
-                            transfer.id,
-                            transfer.source_chain_id,
-                            source_tx_hash,
-                            timeout_seconds
-                        );
-                    }
-                }
+        let latest_nonce = match client.transaction_count_latest(chain.account_address).await {
+            Ok(value) => value,
+            Err(err) => {
+                warn!(
+                    "Skipping submissions from source chain {} ({}): latest nonce lookup failed for {}: {}",
+                    chain.name, chain.chain_id, chain.account_address, err
+                );
+                return false;
             }
+        };
+
+        let pending_nonce = match client
+            .transaction_count_pending(chain.account_address)
+            .await
+        {
+            Ok(value) => value,
+            Err(err) => {
+                warn!(
+                    "Skipping submissions from source chain {} ({}): pending nonce lookup failed for {}: {}",
+                    chain.name, chain.chain_id, chain.account_address, err
+                );
+                return false;
+            }
+        };
+
+        if !source_nonce_guard_allows_submission(latest_nonce, pending_nonce) {
+            info!(
+                "Nonce guard blocked submissions from source chain {} ({}): latest_nonce={} pending_nonce={}",
+                chain.name, chain.chain_id, latest_nonce, pending_nonce
+            );
+            return false;
         }
 
-        Ok(())
+        true
     }
 
     fn log_plan(
         &self,
         plan: &crate::planner::AssetPlan,
-        pending_inflight: usize,
         available_slots: usize,
-        blocked_by_cooldown: &[CooldownBlockedTransfer],
         emitted_transfers: &[crate::planner::TransferPlan],
         blocked_by_parallel: &[crate::planner::TransferPlan],
     ) {
         info!(
-            "Asset {} snapshot: observed_total={} {} effective_total={} {} pending_inflight={} available_slots={}",
+            "Asset {} snapshot: observed_total={} {} effective_total={} {} available_slots={}",
             plan.symbol,
             format_token_amount(plan.observed_total_balance, plan.decimals),
             plan.symbol,
             format_token_amount(plan.effective_total_balance, plan.decimals),
             plan.symbol,
-            pending_inflight,
             available_slots
         );
 
         if plan.active_deficit_chain_ids.is_empty() {
             info!(
-                "Asset {}: rebalance skipped (no active deficit chain after hysteresis)",
+                "Asset {}: rebalance skipped (no chain below min_weight)",
                 plan.symbol
             );
             return;
         }
 
         info!(
-            "Asset {}: rebalance triggered by active deficit chains {:?}",
+            "Asset {}: rebalance triggered by deficit chains {:?}",
             plan.symbol, plan.active_deficit_chain_ids
         );
-
-        if !blocked_by_cooldown.is_empty() {
-            for blocked in blocked_by_cooldown {
-                let src = self
-                    .config
-                    .chain_by_id(blocked.transfer.source_chain_id)
-                    .expect("validated chain_id must exist");
-                let dst = self
-                    .config
-                    .chain_by_id(blocked.transfer.destination_chain_id)
-                    .expect("validated chain_id must exist");
-                info!(
-                    "  cooldown block: {} -> {} amount={} {} last={} available_at={}",
-                    src.name,
-                    dst.name,
-                    format_raw_u128(blocked.transfer.amount_raw, plan.decimals),
-                    plan.symbol,
-                    blocked.last_execution_unix_seconds,
-                    blocked.available_at_unix_seconds
-                );
-            }
-        }
 
         if emitted_transfers.is_empty() && blocked_by_parallel.is_empty() {
             info!(
@@ -655,46 +526,6 @@ impl RebalancerService {
     }
 }
 
-fn now_unix_seconds() -> Result<u64> {
-    Ok(SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .context("System time is before UNIX_EPOCH")?
-        .as_secs())
-}
-
-fn apply_route_cooldown(
-    candidates: Vec<TransferPlan>,
-    route_last_execution_by_pair: &BTreeMap<(u64, u64), u64>,
-    cooldown_seconds_per_route: u64,
-    now_unix_seconds: u64,
-) -> (Vec<TransferPlan>, Vec<CooldownBlockedTransfer>) {
-    if cooldown_seconds_per_route == 0 {
-        return (candidates, Vec::new());
-    }
-
-    let mut allowed = Vec::new();
-    let mut blocked = Vec::new();
-    for transfer in candidates {
-        if let Some(last_execution) = route_last_execution_by_pair
-            .get(&(transfer.source_chain_id, transfer.destination_chain_id))
-        {
-            let available_at = last_execution.saturating_add(cooldown_seconds_per_route);
-            if now_unix_seconds < available_at {
-                blocked.push(CooldownBlockedTransfer {
-                    transfer,
-                    last_execution_unix_seconds: *last_execution,
-                    available_at_unix_seconds: available_at,
-                });
-                continue;
-            }
-        }
-
-        allowed.push(transfer);
-    }
-
-    (allowed, blocked)
-}
-
 fn transfer_size_bounds_raw(
     effective_total_balance: U256,
     min_transfer_bps: u16,
@@ -728,5 +559,63 @@ fn u256_to_u128_saturating(value: U256) -> u128 {
         u128::MAX
     } else {
         value.to::<u128>()
+    }
+}
+
+fn source_nonce_guard_allows_submission(latest_nonce: u64, pending_nonce: u64) -> bool {
+    pending_nonce <= latest_nonce
+}
+
+fn split_by_parallel_limit(
+    mut transfers: Vec<TransferPlan>,
+    available_slots: usize,
+) -> (Vec<TransferPlan>, Vec<TransferPlan>) {
+    if transfers.len() > available_slots {
+        let blocked = transfers.split_off(available_slots);
+        (transfers, blocked)
+    } else {
+        (transfers, Vec::new())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nonce_guard_blocks_when_pending_nonce_is_ahead() {
+        assert!(!source_nonce_guard_allows_submission(10, 11));
+    }
+
+    #[test]
+    fn nonce_guard_allows_when_nonces_match() {
+        assert!(source_nonce_guard_allows_submission(10, 10));
+    }
+
+    #[test]
+    fn split_by_parallel_limit_blocks_tail_transfers() {
+        let transfers = vec![
+            TransferPlan {
+                source_chain_id: 1,
+                destination_chain_id: 2,
+                amount_raw: 10,
+            },
+            TransferPlan {
+                source_chain_id: 1,
+                destination_chain_id: 3,
+                amount_raw: 20,
+            },
+            TransferPlan {
+                source_chain_id: 1,
+                destination_chain_id: 4,
+                amount_raw: 30,
+            },
+        ];
+
+        let (emitted, blocked) = split_by_parallel_limit(transfers, 2);
+
+        assert_eq!(emitted.len(), 2);
+        assert_eq!(blocked.len(), 1);
+        assert_eq!(blocked[0].destination_chain_id, 4);
     }
 }

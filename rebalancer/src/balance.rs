@@ -1,7 +1,9 @@
 use alloy::{
+    eips::BlockNumberOrTag,
     network::TransactionBuilder,
     primitives::{Address, Bytes, U256},
     providers::{Provider, ProviderBuilder},
+    rpc::types::eth::BlockId,
     sol,
     sol_types::SolCall,
 };
@@ -61,5 +63,21 @@ impl ChainBalanceClient {
             .context("Failed to call ERC20 balanceOf")?;
 
         Ok(U256::from_be_slice(&result))
+    }
+
+    pub async fn transaction_count_latest(&self, account: Address) -> Result<u64> {
+        self.provider
+            .get_transaction_count(account)
+            .block_id(BlockId::latest())
+            .await
+            .context("Failed to query latest account nonce")
+    }
+
+    pub async fn transaction_count_pending(&self, account: Address) -> Result<u64> {
+        self.provider
+            .get_transaction_count(account)
+            .block_id(BlockId::Number(BlockNumberOrTag::Pending))
+            .await
+            .context("Failed to query pending account nonce")
     }
 }

@@ -91,8 +91,6 @@ max_parallel_transfers = 2
 dry_run = true
 
 [execution]
-cooldown_seconds_per_route = 120
-settle_buffer_bps = 100
 min_transfer_bps = 50
 max_transfer_bps = 5000
 
