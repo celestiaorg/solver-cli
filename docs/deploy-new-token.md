@@ -4,118 +4,133 @@ This guide walks through adding a new ERC20 token (e.g. USDT) to the local solve
 
 ## Prerequisites
 
-- Local stack running (`./mvp.sh` or `make setup && make solver` etc.)
+- Local stack running (`./mvp.sh`)
 - [Foundry](https://book.getfoundry.sh/getting-started/installation) installed (`forge`, `cast`)
 - The deployer private key (default Anvil account 0):
   ```
   PK=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
   ```
 
-## 1. Deploy MockERC20 on anvil1 (origin chain)
+**Important**: `--constructor-args` must always come **last** in `forge create` commands — it's variadic and swallows any flags after it.
+
+---
+
+## 1. Deploy MockERC20 on anvil1
 
 ```bash
 forge create hyperlane/contracts/MockERC20.sol:MockERC20 \
-  --constructor-args "USDT" "USDT" 6 \
+  --private-key $PK \
   --rpc-url http://127.0.0.1:8545 \
-  --private-key $PK \
-  --broadcast
+  --broadcast \
+  --constructor-args "USDT" "USDT" 6
 ```
 
-Note the `Deployed to:` address — this is your USDT address on anvil1.
+Note the `Deployed to:` address — e.g. `0xf5059a5D33d5853360D16C683c16e67980206f36`.
 
-## 2. Register the token in state
+## 2. Create a warp config for USDT
 
-```bash
-solver-cli token add \
-  --chain anvil1 \
-  --symbol USDT \
-  --address <USDT_ADDRESS_FROM_STEP_1> \
-  --decimals 6
+Create `hyperlane/configs/warp-config-usdt.yaml`:
+
+```yaml
+anvil1:
+  type: collateral
+  token: "<USDT_ADDRESS_FROM_STEP_1>"
+  owner: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+  name: "USDT"
+  symbol: "USDT"
+  decimals: 6
+
+anvil2:
+  type: synthetic
+  owner: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+  name: "USDT"
+  symbol: "USDT"
+  decimals: 6
 ```
 
-On anvil2, the token will be bridged via Hyperlane (synthetic), so you'll need to deploy a warp route for it. For a simple local test without Hyperlane bridging, you can also deploy a separate MockERC20 on anvil2:
+## 3. Deploy the warp route via Docker
+
+The `hyperlane-init` image has the Hyperlane CLI. Run it against the existing registry (which already has core contracts deployed):
 
 ```bash
-# Option A: Deploy independent MockERC20 on anvil2
-forge create hyperlane/contracts/MockERC20.sol:MockERC20 \
-  --constructor-args "USDT" "USDT" 6 \
-  --rpc-url http://127.0.0.1:8546 \
-  --private-key $PK \
-  --broadcast
-
-solver-cli token add \
-  --chain anvil2 \
-  --symbol USDT \
-  --address <USDT_ADDRESS_ON_ANVIL2> \
-  --decimals 6
+docker run --rm \
+  --network solver-cli_solver-net \
+  -v "$(pwd)/hyperlane:/home/hyperlane" \
+  -w /home/hyperlane \
+  ghcr.io/celestiaorg/hyperlane-init:local \
+  bash -c "hyperlane warp deploy --config ./configs/warp-config-usdt.yaml --registry ./registry --yes"
 ```
 
-## 3. Regenerate solver config
+This deploys:
+- **HypCollateral** on anvil1 (wraps the MockERC20 USDT)
+- **HypSynthetic** on anvil2 (mint/burn synthetic)
+- Automatically enrolls remote routers between the two EVM chains
+
+The deployment artifact is written to `hyperlane/registry/deployments/warp_routes/USDT/`.
+
+## 4. Read the deployed addresses
 
 ```bash
+cat hyperlane/registry/deployments/warp_routes/USDT/warp-config-usdt-config.yaml
+```
+
+Look for `addressOrDenom` values:
+- First entry = HypCollateral address on anvil1
+- Second entry = HypSynthetic address on anvil2
+
+## 5. Register tokens in state
+
+For the solver, register the tokens it actually trades:
+- On anvil1: use the **MockERC20** address (the underlying token, not HypCollateral)
+- On anvil2: use the **HypSynthetic** address (that's the ERC20 on anvil2)
+
+```bash
+make token-add CHAIN=anvil1 SYMBOL=USDT ADDRESS=<MOCK_USDT_ADDRESS> DECIMALS=6
+make token-add CHAIN=anvil2 SYMBOL=USDT ADDRESS=<HYP_SYNTHETIC_USDT_ADDRESS> DECIMALS=6
+```
+
+## 6. (Optional) Enroll Celestia routers for 3-chain bridging
+
+If you want USDT to also route through Celestia (for `make rebalance`), you need to:
+
+1. Deploy a second Celestia synthetic token for USDT
+2. Enroll the EVM warp tokens ↔ Celestia synthetic
+
+This mirrors what the USDC entrypoint does in steps 4-5 of `hyperlane/scripts/docker-entrypoint.sh`. For just solver testing (anvil1 ↔ anvil2), this isn't required — the solver holds tokens on both sides.
+
+## 7. Configure, fund, restart
+
+```bash
+# Regenerate solver config
 make configure
+
+# Fund solver on anvil1 (anvil2 can get tokens via bridging, or mint directly)
+make mint SYMBOL=USDT TO=solver
+make mint SYMBOL=USDT TO=user
+
+# If HypSynthetic on anvil2: mint on anvil1 and bridge, or fund solver separately
+# For testing, you can also mint directly if the solver needs tokens on anvil2
+
+# Restart services
+# Ctrl+C on mvp.sh, then:
+./mvp.sh --skip-setup
 ```
 
-This auto-generates:
-- Mock price entries (`USDT/USD = 1.0`) for any token found in state
-- All-to-all routes for tokens present on both chains
+---
 
-## 4. Fund the solver with the new token
-
-Mint USDT to the solver on both chains so it can fill orders:
+## `make mint` reference
 
 ```bash
-# Solver address (from .config/state.json)
-SOLVER=$(jq -r '.solver.address' .config/state.json)
-
-# Mint on anvil1
-cast send <USDT_ADDRESS_ANVIL1> "mint(address,uint256)" $SOLVER 10000000 \
-  --rpc-url http://127.0.0.1:8545 --private-key $PK
-
-# Mint on anvil2
-cast send <USDT_ADDRESS_ANVIL2> "mint(address,uint256)" $SOLVER 10000000 \
-  --rpc-url http://127.0.0.1:8546 --private-key $PK
+make mint SYMBOL=USDT TO=solver                    # 10 USDT to solver on anvil1
+make mint SYMBOL=USDT TO=solver CHAIN=anvil2       # 10 USDT to solver on anvil2
+make mint SYMBOL=USDT TO=user                      # 10 USDT to user on anvil1
+make mint SYMBOL=USDT TO=user CHAIN=anvil2         # 10 USDT to user on anvil2
+make mint SYMBOL=USDT TO=solver AMOUNT=5000000     # 5 USDT (custom amount, raw units)
 ```
 
-## 5. Deploy Permit2 (if not already done)
+**Note**: Minting on anvil2 only works for standalone MockERC20 tokens (Option A). For HypSynthetic tokens (Option B), tokens arrive on anvil2 via bridging from anvil1.
 
-The solver uses Permit2 for token approvals. If you haven't already:
-
-```bash
-make deploy-permit2
-```
-
-Then approve Permit2 for the new token on both chains:
-
-```bash
-PERMIT2=0x000000000022D473030F116dDEE9F6B43aC78BA3
-
-# Approve for solver on anvil1
-cast send <USDT_ADDRESS_ANVIL1> "approve(address,uint256)" $PERMIT2 \
-  $(cast max-uint) \
-  --rpc-url http://127.0.0.1:8545 --private-key $PK
-
-# Approve for solver on anvil2
-cast send <USDT_ADDRESS_ANVIL2> "approve(address,uint256)" $PERMIT2 \
-  $(cast max-uint) \
-  --rpc-url http://127.0.0.1:8546 --private-key $PK
-```
-
-## 6. Restart the solver
-
-```bash
-# Stop the running solver (Ctrl+C), then:
-make solver
-```
-
-The solver picks up the new token from the regenerated config.
-
-## 7. Use the frontend
-
-1. Refresh the UI (http://localhost:3456)
-2. The token dropdown now shows **USDT** alongside USDC
-3. Use the faucet to mint USDT to your wallet
-4. Select USDT, enter an amount, get a quote, and bridge
+---
 
 ## How it works
 
@@ -123,20 +138,8 @@ The system is data-driven — no code changes needed to add tokens:
 
 | Component | What happens |
 |-----------|-------------|
-| `state.json` | `solver-cli token add` writes the token entry |
+| `state.json` | `solver-cli token add` (or `make token-add`) writes the token entry |
 | `config_gen.rs` | `make configure` auto-generates mock prices and routes for all tokens in state |
 | `server.js` | Backend iterates `chain.tokens` — new tokens appear automatically in balances and faucet |
 | `App.tsx` | Frontend computes available tokens from config, shows them in a dropdown |
 | Solver | Reads tokens from config TOML, routes any matching symbol across chains |
-
-## Hyperlane warp routes (optional)
-
-For proper cross-chain bridging (not just independent tokens), you'd set up Hyperlane warp routes:
-
-1. Deploy `HypCollateral` on anvil1 (wraps the native USDT)
-2. Deploy `HypSynthetic` on anvil2 (mints/burns bridged USDT)
-3. Enroll remote routers on both
-4. Add the warp token addresses to `hyperlane-addresses.json`
-5. Configure the Hyperlane relayer to relay for the new route
-
-This is the same setup used for USDC — see `hyperlane/` directory for reference configs.

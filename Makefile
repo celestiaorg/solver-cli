@@ -188,11 +188,11 @@ fund-user:
 		echo "User funded"
 .PHONY: fund-user
 
-## mint: Mint USDC on anvil1 (origin chain only). (TO=, AMOUNT=)
+## mint: Mint tokens on a chain (SYMBOL=USDC, CHAIN=anvil1, TO=user, AMOUNT=10000000)
 mint: build
 	@$(SOLVER_CLI) token mint \
-		--chain anvil1 \
-		--symbol USDC \
+		--chain $(or $(CHAIN),anvil1) \
+		--symbol $(or $(SYMBOL),USDC) \
 		--to $(or $(TO),user) \
 		--amount $(or $(AMOUNT),10000000)
 .PHONY: mint
