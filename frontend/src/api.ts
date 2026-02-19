@@ -18,6 +18,7 @@ export interface Config {
   chains: Record<string, ChainInfo>
   userAddress: string
   solverAddress: string
+  faucetChains?: string[]
 }
 
 export interface BalanceEntry {
@@ -133,5 +134,12 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chainName, type, ...(address ? { address } : {}) }),
+    }),
+
+  rebalance: (direction: 'forward' | 'back', amount?: string) =>
+    json<{ success: boolean; message: string; txHash?: string }>(`${BASE}/rebalance`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ direction, amount }),
     }),
 }

@@ -104,7 +104,6 @@ impl FundCommand {
                 if native_balance < min_native_balance {
                     // Check if this is a local chain (can auto-fund)
                     let is_local = chain.name.to_lowercase().contains("local")
-                        || chain.name.to_lowercase().contains("evolve")
                         || chain.name.to_lowercase().contains("anvil");
 
                     if is_local {

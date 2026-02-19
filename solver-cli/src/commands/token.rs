@@ -61,7 +61,8 @@ pub enum TokenCommand {
         dir: Option<PathBuf>,
     },
 
-    /// Mint mock tokens (only works with MockERC20 contracts)
+    /// Mint USDC on the origin chain (anvil1). Only works with mintable ERC20 contracts.
+    /// For anvil2, tokens must be bridged via the Hyperlane warp route.
     Mint {
         /// Chain name or ID
         #[arg(long)]
@@ -448,7 +449,8 @@ impl TokenCommand {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             anyhow::bail!(
-                "Mint failed. This only works with MockERC20 contracts.\nError: {}",
+                "Mint failed. This only works on the origin chain (anvil1) with mintable ERC20.\n\
+                 For anvil2, bridge tokens via the Hyperlane warp route.\nError: {}",
                 stderr
             );
         }

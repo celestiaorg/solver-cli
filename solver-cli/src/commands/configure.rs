@@ -86,6 +86,14 @@ impl ConfigureCommand {
             aggregator_config_path
         ));
 
+        // Generate Hyperlane relayer config
+        let hyperlane_config_path = project_dir.join(".config/hyperlane-relayer.json");
+        ConfigGenerator::write_hyperlane_relayer_config(&state, &hyperlane_config_path).await?;
+        print_success(&format!(
+            "Hyperlane relayer config written to {:?}",
+            hyperlane_config_path
+        ));
+
         // Save state
         state_mgr.save(&state).await?;
 

@@ -11,7 +11,7 @@ const fallbackChain = defineChain({
   id: 1234,
   caipNetworkId: 'eip155:1234',
   chainNamespace: 'eip155',
-  name: 'Evolve Local',
+  name: 'Anvil Local',
   nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
   rpcUrls: { default: { http: ['http://127.0.0.1:8545'] } },
 })

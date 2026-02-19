@@ -43,7 +43,6 @@ impl ConfigGenerator {
 [networks.{}]
 input_settler_address = "{}"
 output_settler_address = "{}"
-permit2_address = "{}"
 
 [[networks.{}.rpc_urls]]
 http = "{}"
@@ -57,11 +56,6 @@ http = "{}"
                 chain
                     .contracts
                     .output_settler_simple
-                    .as_deref()
-                    .unwrap_or(""),
-                chain
-                    .contracts
-                    .permit2
                     .as_deref()
                     .unwrap_or(""),
                 chain.chain_id,
@@ -486,6 +480,214 @@ poll_interval_seconds = 3
         fs::write(path, &content)
             .await
             .context("Failed to write aggregator config file")?;
+
+        Ok(())
+    }
+
+    /// Generate Hyperlane agent relayer configuration JSON from state.
+    /// Includes all EVM chains + Celestia with their Hyperlane contract addresses.
+    pub fn generate_hyperlane_relayer_json(state: &SolverState) -> Result<String> {
+        if state.chains.is_empty() {
+            anyhow::bail!("No chains configured");
+        }
+
+        // Read signer keys from environment
+        let evm_signer_key = std::env::var("SOLVER_PRIVATE_KEY")
+            .or_else(|_| std::env::var("SEPOLIA_PK"))
+            .or_else(|_| std::env::var("ANVIL1_PK"))
+            .unwrap_or_else(|_| {
+                // Default Anvil account[0] key for local dev
+                "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string()
+            });
+        let evm_signer_key = if evm_signer_key.starts_with("0x") {
+            evm_signer_key
+        } else {
+            format!("0x{}", evm_signer_key)
+        };
+
+        let cosmos_signer_key = std::env::var("CELESTIA_SIGNER_KEY").unwrap_or_else(|_| {
+            // Default hyp account key from testnet init
+            "0x6e30efb1d3ebd30d1ba08c8d5fc9b190e08394009dc1dd787a69e60c33288a8c".to_string()
+        });
+
+        let mut chains = serde_json::Map::new();
+        let mut relay_chain_names: Vec<String> = Vec::new();
+
+        // Add EVM chains from state
+        let mut chain_ids: Vec<u64> = state.chains.keys().copied().collect();
+        chain_ids.sort();
+
+        for chain_id in &chain_ids {
+            let chain = &state.chains[chain_id];
+            let hyp = chain.contracts.hyperlane.as_ref();
+
+            let mailbox = hyp
+                .and_then(|h| h.mailbox.as_deref())
+                .unwrap_or("PLACEHOLDER");
+            let merkle_tree_hook = hyp
+                .and_then(|h| h.merkle_tree_hook.as_deref())
+                .unwrap_or("PLACEHOLDER");
+            let validator_announce = hyp
+                .and_then(|h| h.validator_announce.as_deref())
+                .unwrap_or("PLACEHOLDER");
+            let igp = hyp
+                .and_then(|h| h.igp.as_deref())
+                .unwrap_or("PLACEHOLDER");
+
+            let display_name = {
+                let mut chars = chain.name.chars();
+                match chars.next() {
+                    None => chain.name.clone(),
+                    Some(c) => c.to_uppercase().to_string() + chars.as_str(),
+                }
+            };
+
+            let chain_obj = serde_json::json!({
+                "blocks": {
+                    "confirmations": 1,
+                    "estimateBlockTime": 1,
+                    "reorgPeriod": 0
+                },
+                "chainId": chain.chain_id,
+                "displayName": display_name,
+                "domainId": Self::hyperlane_domain_id(chain.chain_id),
+                "isTestnet": true,
+                "name": chain.name,
+                "nativeToken": {
+                    "decimals": 18,
+                    "name": "Ether",
+                    "symbol": "ETH"
+                },
+                "protocol": "ethereum",
+                "rpcUrls": [{ "http": chain.rpc }],
+                "signer": {
+                    "type": "hexKey",
+                    "key": evm_signer_key
+                },
+                "mailbox": mailbox,
+                "merkleTreeHook": merkle_tree_hook,
+                "validatorAnnounce": validator_announce,
+                "interchainGasPaymaster": igp
+            });
+
+            chains.insert(chain.name.clone(), chain_obj);
+            relay_chain_names.push(chain.name.clone());
+        }
+
+        // Add Celestia chain (infrastructure only, not an EVM chain in state)
+        let celestia_rpc =
+            std::env::var("CELESTIA_RPC").unwrap_or_else(|_| "http://celestia-validator:26657".to_string());
+        let celestia_rest =
+            std::env::var("CELESTIA_REST").unwrap_or_else(|_| "http://celestia-validator:1317".to_string());
+        let celestia_grpc =
+            std::env::var("CELESTIA_GRPC").unwrap_or_else(|_| "http://celestia-validator:9090".to_string());
+
+        // Try to read Celestia Hyperlane addresses from the hyperlane-addresses.json
+        let celestia_hyp = Self::read_celestia_hyperlane_addresses();
+
+        let celestia_obj = serde_json::json!({
+            "bech32Prefix": "celestia",
+            "blocks": {
+                "confirmations": 1,
+                "estimateBlockTime": 6,
+                "reorgPeriod": 1
+            },
+            "canonicalAsset": "utia",
+            "chainId": "celestia-zkevm-testnet",
+            "contractAddressBytes": 32,
+            "displayName": "Celestia ZKEVM Testnet",
+            "domainId": 69420,
+            "gasPrice": {
+                "denom": "utia",
+                "amount": "0.1"
+            },
+            "index": {
+                "from": 1,
+                "chunk": 10
+            },
+            "isTestnet": true,
+            "name": "celestiadev",
+            "nativeToken": {
+                "decimals": 6,
+                "denom": "utia",
+                "name": "TIA",
+                "symbol": "TIA"
+            },
+            "protocol": "cosmosnative",
+            "restUrls": [{ "http": celestia_rest }],
+            "rpcUrls": [{ "http": celestia_rpc }],
+            "grpcUrls": [{ "http": celestia_grpc }],
+            "signer": {
+                "type": "cosmosKey",
+                "key": cosmos_signer_key,
+                "prefix": "celestia"
+            },
+            "slip44": 118,
+            "technicalStack": "other",
+            "transactionOverrides": {
+                "gasPrice": "0.0"
+            },
+            "interchainSecurityModule": celestia_hyp.get("interchainSecurityModule")
+                .and_then(|v| v.as_str()).unwrap_or("PLACEHOLDER"),
+            "mailbox": celestia_hyp.get("mailbox")
+                .and_then(|v| v.as_str()).unwrap_or("PLACEHOLDER"),
+            "interchainGasPaymaster": celestia_hyp.get("interchainGasPaymaster")
+                .and_then(|v| v.as_str()).unwrap_or("PLACEHOLDER"),
+            "merkleTreeHook": celestia_hyp.get("merkleTreeHook")
+                .and_then(|v| v.as_str()).unwrap_or("PLACEHOLDER"),
+            "validatorAnnounce": celestia_hyp.get("validatorAnnounce")
+                .and_then(|v| v.as_str()).unwrap_or("PLACEHOLDER")
+        });
+
+        chains.insert("celestiadev".to_string(), celestia_obj);
+        relay_chain_names.push("celestiadev".to_string());
+
+        let config = serde_json::json!({
+            "chains": chains,
+            "defaultRpcConsensusType": "fallback",
+            "relayChains": relay_chain_names.join(",")
+        });
+
+        serde_json::to_string_pretty(&config).context("Failed to serialize Hyperlane relayer config")
+    }
+
+    /// Map EVM chain ID to Hyperlane domain ID.
+    /// Domain IDs can differ from chain IDs to avoid conflicts with the Hyperlane agent's
+    /// hardcoded KnownHyperlaneDomain enum (e.g. 31337 is hardcoded as "test4").
+    /// Using domain 131337 for chain 31337 lets us keep the "anvil1" name.
+    fn hyperlane_domain_id(chain_id: u64) -> u64 {
+        match chain_id {
+            31337 => 131337,
+            _ => chain_id,
+        }
+    }
+
+    /// Read Celestia Hyperlane addresses from the shared hyperlane-addresses.json
+    fn read_celestia_hyperlane_addresses() -> serde_json::Map<String, serde_json::Value> {
+        let path = std::path::Path::new(".config/hyperlane-addresses.json");
+        if let Ok(content) = std::fs::read_to_string(path) {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
+                if let Some(celestia) = value.get("celestiadev").and_then(|v| v.as_object()) {
+                    return celestia.clone();
+                }
+            }
+        }
+        serde_json::Map::new()
+    }
+
+    /// Write Hyperlane relayer configuration to a file
+    pub async fn write_hyperlane_relayer_config(state: &SolverState, path: &Path) -> Result<()> {
+        let content = Self::generate_hyperlane_relayer_json(state)?;
+
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .await
+                .context("Failed to create config directory")?;
+        }
+
+        fs::write(path, &content)
+            .await
+            .context("Failed to write Hyperlane relayer config file")?;
 
         Ok(())
     }

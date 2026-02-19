@@ -56,8 +56,8 @@ function Spinner({ size = 16 }: { size?: number }) {
 // ── Chain Badge ──────────────────────────────────────────────────────────────
 
 const CHAIN_COLORS: Record<string, string> = {
-  evolve: 'from-violet-500 to-purple-600',
-  evolve2: 'from-cyan-500 to-blue-600',
+  anvil1: 'from-violet-500 to-purple-600',
+  anvil2: 'from-cyan-500 to-blue-600',
   sepolia: 'from-amber-500 to-orange-600',
   arbitrum: 'from-sky-400 to-blue-500',
 }
@@ -106,6 +106,10 @@ export default function App() {
   const [faucetLoading, setFaucetLoading] = useState<string | null>(null)
   const [faucetMsg, setFaucetMsg] = useState('')
 
+  // Rebalance state
+  const [rebalanceLoading, setRebalanceLoading] = useState<string | null>(null)
+  const [rebalanceMsg, setRebalanceMsg] = useState('')
+
   // Polling ref
   const pollRef = useRef<ReturnType<typeof setInterval>>()
 
@@ -115,9 +119,14 @@ export default function App() {
     try {
       const cfg = await api.config()
       setConfig(cfg)
-      // Default chain selection
+      // Default chain selection: prefer anvil1 => anvil2
       const chainIds = Object.keys(cfg.chains)
-      if (chainIds.length >= 2) {
+      const anvil1Id = chainIds.find(id => cfg.chains[id].name === 'anvil1')
+      const anvil2Id = chainIds.find(id => cfg.chains[id].name === 'anvil2')
+      if (anvil1Id && anvil2Id) {
+        setFromChain(anvil1Id)
+        setToChain(anvil2Id)
+      } else if (chainIds.length >= 2) {
         setFromChain(chainIds[0])
         setToChain(chainIds[1])
       }
@@ -195,24 +204,28 @@ export default function App() {
         // MetaMask flow: approve + sign client-side
         const chainInfo = config!.chains[fromChain]
         const token = chainInfo.tokens['USDC']
-        const inputSettler = chainInfo.contracts?.input_settler_escrow
 
         // Step 0: Switch MetaMask to source chain if needed
         await switchChainAsync({ chainId: fromId })
 
         // Step 1: Approve token spending
-        if (token && inputSettler) {
+        // For Permit2: approve the Permit2 contract; for direct: approve the escrow
+        const payload = quote.order.payload as any
+        const isPermit2 = payload.primaryType?.includes('Permit')
+        const spender = isPermit2
+          ? (payload.domain?.verifyingContract as `0x${string}`)  // Permit2 contract
+          : (chainInfo.contracts?.input_settler_escrow as `0x${string}`)
+        if (token && spender) {
           await writeContractAsync({
             address: token.address as `0x${string}`,
             abi: parseAbi(['function approve(address, uint256) returns (bool)']),
             functionName: 'approve',
-            args: [inputSettler as `0x${string}`, 100000000n],
+            args: [spender, 100000000n],
             chainId: fromId,
           })
         }
 
         // Step 2: Sign EIP-712 typed data via MetaMask
-        const payload = quote.order.payload as any
         const types = { ...payload.types }
         delete types.EIP712Domain
 
@@ -220,11 +233,6 @@ export default function App() {
         if (typeof domain.chainId === 'string') {
           domain.chainId = Number(domain.chainId)
         }
-        // MockERC20 uses EIP712(name_, "1") - version must be present in domain
-        if (!domain.version) {
-          domain.version = '1'
-        }
-
         const rawSignature = await signTypedDataAsync({
           domain,
           types,
@@ -232,8 +240,9 @@ export default function App() {
           message: payload.message,
         })
 
-        // Step 3: Prepend ERC-3009 signature type byte (0x01)
-        const signature = '0x01' + rawSignature.slice(2)
+        // Prepend signature type byte: 0x00=Permit2, 0x01=EIP-3009
+        const prefix = isPermit2 ? '0x00' : '0x01'
+        const signature = prefix + rawSignature.slice(2)
 
         // Step 4: Submit pre-signed order to backend → aggregator
         const resp = await api.submitSignedOrder(quote, signature)
@@ -292,6 +301,22 @@ export default function App() {
     }
   }
 
+  // ── Rebalance ─────────────────────────────────────────────────────────
+
+  const handleRebalance = async (direction: 'forward' | 'back') => {
+    setRebalanceLoading(direction)
+    setRebalanceMsg('')
+    try {
+      const resp = await api.rebalance(direction)
+      setRebalanceMsg(resp.message)
+      loadBalances()
+    } catch (err: any) {
+      setRebalanceMsg(`Error: ${err.message}`)
+    } finally {
+      setRebalanceLoading(null)
+    }
+  }
+
   // ── Swap chains ──────────────────────────────────────────────────────────
 
   const swapChains = () => {
@@ -314,7 +339,9 @@ export default function App() {
     )
   }
 
-  const chainEntries = config ? Object.entries(config.chains) : []
+  const chainEntries = config
+    ? Object.entries(config.chains).sort((a, b) => a[1].name.localeCompare(b[1].name))
+    : []
 
   // Parse output amount from quote preview
   let outputAmount = ''
@@ -690,8 +717,8 @@ export default function App() {
               </p>
 
               {config && chainEntries.map(([chainId, chain]) => {
-                // Only show faucet for local chains (non-mainnet/testnet)
-                if (!chain.rpc.includes('127.0.0.1') && !chain.rpc.includes('localhost')) return null
+                // Only show faucet for origin chains that support minting
+                if (!config.faucetChains?.includes(chain.name)) return null
                 return (
                   <div key={chainId} className="mb-3 last:mb-0">
                     <div className="flex items-center gap-2 mb-2">
@@ -732,6 +759,51 @@ export default function App() {
                     : 'bg-emerald-500/5 text-emerald-400 border border-emerald-500/10'
                 }`}>
                   {faucetMsg}
+                </div>
+              )}
+            </div>
+
+            {/* ── Rebalance ──────────────────────────────────────── */}
+            <div className="bg-surface-1 border border-border rounded-2xl p-5">
+              <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
+                Bridge
+              </h2>
+              <p className="text-xs text-gray-500 mb-3">
+                Move solver USDC between chains via Celestia.
+              </p>
+
+              <div className="space-y-2">
+                <button
+                  onClick={() => handleRebalance('forward')}
+                  disabled={rebalanceLoading !== null}
+                  className="w-full py-2 px-3 rounded-lg text-xs font-medium transition-all
+                    bg-surface-2 border border-border hover:border-brand text-gray-300 hover:text-white
+                    disabled:opacity-50 disabled:cursor-not-allowed
+                    flex items-center justify-center gap-1.5"
+                >
+                  {rebalanceLoading === 'forward' ? <Spinner size={12} /> : null}
+                  anvil1 → anvil2
+                </button>
+                <button
+                  onClick={() => handleRebalance('back')}
+                  disabled={rebalanceLoading !== null}
+                  className="w-full py-2 px-3 rounded-lg text-xs font-medium transition-all
+                    bg-surface-2 border border-border hover:border-brand text-gray-300 hover:text-white
+                    disabled:opacity-50 disabled:cursor-not-allowed
+                    flex items-center justify-center gap-1.5"
+                >
+                  {rebalanceLoading === 'back' ? <Spinner size={12} /> : null}
+                  anvil2 → anvil1
+                </button>
+              </div>
+
+              {rebalanceMsg && (
+                <div className={`mt-3 text-xs p-2 rounded-lg ${
+                  rebalanceMsg.startsWith('Error')
+                    ? 'bg-red-500/5 text-red-400 border border-red-500/10'
+                    : 'bg-emerald-500/5 text-emerald-400 border border-emerald-500/10'
+                }`}>
+                  {rebalanceMsg}
                 </div>
               )}
             </div>

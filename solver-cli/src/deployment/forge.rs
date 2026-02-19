@@ -19,17 +19,15 @@ impl ForgeRunner {
         }
     }
 
-    /// Deploy contracts using forge script
+    /// Deploy OIF infrastructure contracts (oracle, settlers) using forge script.
+    /// Token deployment is handled separately by the Hyperlane warp route.
     pub async fn deploy(
         &self,
         rpc_url: &str,
         private_key: &str,
-        token_name: &str,
-        token_symbol: &str,
-        token_decimals: u8,
         operator_address: Option<&str>,
     ) -> Result<DeploymentOutput> {
-        info!("Running forge script deployment...");
+        info!("Running forge script deployment (OIF infra only)...");
 
         // Ensure the private key has 0x prefix for vm.envUint
         let pk = if private_key.starts_with("0x") {
@@ -41,15 +39,12 @@ impl ForgeRunner {
         let mut cmd = Command::new("forge");
         cmd.current_dir(&self.contracts_path)
             .arg("script")
-            .arg("script/Deploy.s.sol:DeployAll")
+            .arg("script/Deploy.s.sol:Deploy")
             .arg("--rpc-url")
             .arg(rpc_url)
             .arg("--broadcast")
             .arg("-vvv")
-            .env("PRIVATE_KEY", &pk)
-            .env("TOKEN_NAME", token_name)
-            .env("TOKEN_SYMBOL", token_symbol)
-            .env("TOKEN_DECIMALS", token_decimals.to_string());
+            .env("PRIVATE_KEY", &pk);
 
         // Set OPERATOR_ADDRESS if provided (ensures consistency across chains)
         if let Some(operator) = operator_address {

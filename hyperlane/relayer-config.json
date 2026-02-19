@@ -1,0 +1,128 @@
+{
+    "chains": {
+        "anvil1": {
+            "blocks": {
+                "confirmations": 1,
+                "estimateBlockTime": 1,
+                "reorgPeriod": 0
+            },
+            "chainId": 31337,
+            "displayName": "Anvil1",
+            "domainId": 131337,
+            "isTestnet": true,
+            "name": "anvil1",
+            "nativeToken": {
+                "decimals": 18,
+                "name": "Ether",
+                "symbol": "ETH"
+            },
+            "protocol": "ethereum",
+            "rpcUrls": [
+                {
+                    "http": "http://anvil1:8545"
+                }
+            ],
+            "signer": {
+                "type": "hexKey",
+                "key": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+            },
+            "mailbox": "0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e",
+            "merkleTreeHook": "0x9A676e781A523b5d0C0e43731313A708CB607508",
+            "validatorAnnounce": "0x9A9f2CCfdE556A7E9Ff0848998Aa4a0CFD8863AE",
+            "interchainGasPaymaster": "0x9A676e781A523b5d0C0e43731313A708CB607508"
+        },
+        "anvil2": {
+            "blocks": {
+                "confirmations": 1,
+                "estimateBlockTime": 1,
+                "reorgPeriod": 0
+            },
+            "chainId": 31338,
+            "displayName": "Anvil2",
+            "domainId": 31338,
+            "isTestnet": true,
+            "name": "anvil2",
+            "nativeToken": {
+                "decimals": 18,
+                "name": "Ether",
+                "symbol": "ETH"
+            },
+            "protocol": "ethereum",
+            "rpcUrls": [
+                {
+                    "http": "http://anvil2:8546"
+                }
+            ],
+            "signer": {
+                "type": "hexKey",
+                "key": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+            },
+            "mailbox": "0x8A791620dd6260079BF849Dc5567aDC3F2FdC318",
+            "merkleTreeHook": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+            "validatorAnnounce": "0x0B306BF915C4d645ff596e518fAf3F9669b97016",
+            "interchainGasPaymaster": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0"
+        },
+        "celestiadev": {
+            "bech32Prefix": "celestia",
+            "blocks": {
+                "confirmations": 1,
+                "estimateBlockTime": 6,
+                "reorgPeriod": 1
+            },
+            "canonicalAsset": "utia",
+            "chainId": "celestia-zkevm-testnet",
+            "contractAddressBytes": 32,
+            "displayName": "Celestia ZKEVM Testnet",
+            "domainId": 69420,
+            "gasPrice": {
+                "denom": "utia",
+                "amount": "0.1"
+            },
+            "index": {
+                "from": 1,
+                "chunk": 10
+            },
+            "isTestnet": true,
+            "name": "celestiadev",
+            "nativeToken": {
+                "decimals": 6,
+                "denom": "utia",
+                "name": "TIA",
+                "symbol": "TIA"
+            },
+            "protocol": "cosmosnative",
+            "restUrls": [
+                {
+                    "http": "http://celestia-validator:1317"
+                }
+            ],
+            "rpcUrls": [
+                {
+                    "http": "http://celestia-validator:26657"
+                }
+            ],
+            "signer": {
+                "type": "cosmosKey",
+                "key": "0x6e30efb1d3ebd30d1ba08c8d5fc9b190e08394009dc1dd787a69e60c33288a8c",
+                "prefix": "celestia"
+            },
+            "slip44": 118,
+            "technicalStack": "other",
+            "transactionOverrides": {
+                "gasPrice": "0.0"
+            },
+            "interchainSecurityModule": "0x726f757465725f69736d00000000000000000000000000000000000000000000",
+            "mailbox": "0x68797065726c616e650000000000000000000000000000000000000000000000",
+            "interchainGasPaymaster": "0x726f757465725f706f73745f6469737061746368000000000000000000000001",
+            "merkleTreeHook": "0x726f757465725f706f73745f6469737061746368000000030000000000000002",
+            "validatorAnnounce": "0x68797065726c616e650000000000000000000000000000000000000000000000",
+            "grpcUrls": [
+                {
+                    "http": "http://celestia-validator:9090"
+                }
+            ]
+        }
+    },
+    "defaultRpcConsensusType": "fallback",
+    "relayChains": "anvil1,anvil2,celestiadev"
+}

@@ -61,6 +61,21 @@ const erc20Abi = parseAbi([
   'function decimals() view returns (uint8)',
 ]);
 
+function readHyperlaneAddresses() {
+  try {
+    return JSON.parse(readFileSync(resolve(ROOT, '.config/hyperlane-addresses.json'), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+/** Check if a chain is the origin (collateral) chain — it has mock_usdc in hyperlane addresses */
+function isOriginChain(chainName, hypAddresses) {
+  if (!hypAddresses) return true; // No Hyperlane setup, assume all chains are mintable
+  const data = hypAddresses[chainName.toLowerCase()];
+  return data && data.mock_usdc;
+}
+
 // ── Express App ──────────────────────────────────────────────────────────────
 
 const app = express();
@@ -97,10 +112,18 @@ app.get('/api/config', (_req, res) => {
       };
     }
 
+    // Determine which chains support faucet (origin chains with mintable tokens)
+    const hypAddresses = readHyperlaneAddresses();
+    const faucetChains = Object.values(state.chains)
+      .filter(c => isOriginChain(c.name, hypAddresses))
+      .filter(c => c.rpc.includes('127.0.0.1') || c.rpc.includes('localhost'))
+      .map(c => c.name);
+
     res.json({
       chains,
       userAddress: user.address,
       solverAddress: state.solver?.address ?? null,
+      faucetChains,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -218,6 +241,12 @@ app.post('/api/faucet', async (req, res) => {
       const token = chain.tokens['USDC'];
       if (!token) throw new Error('USDC not configured on this chain');
 
+      // Only allow minting on origin chains (where MockERC20 has public mint)
+      const hypAddresses = readHyperlaneAddresses();
+      if (!isOriginChain(chainName, hypAddresses)) {
+        throw new Error(`Cannot mint on ${chainName} — it uses bridged tokens. Use the faucet on the origin chain and bridge.`);
+      }
+
       const hash = await walletClient.writeContract({
         address: token.address,
         abi: erc20Abi,
@@ -231,6 +260,26 @@ app.post('/api/faucet', async (req, res) => {
     }
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Rebalance: bridge USDC between anvil chains via Celestia forwarding
+app.post('/api/rebalance', async (req, res) => {
+  const { direction = 'forward', amount = '10000000' } = req.body;
+  try {
+    const { execSync } = await import('child_process');
+    const target = direction === 'back' ? 'rebalance-back' : 'rebalance';
+    console.log(`[rebalance] Running make ${target} REBALANCE_AMOUNT=${amount}`);
+    const output = execSync(
+      `make ${target} REBALANCE_AMOUNT=${amount}`,
+      { cwd: resolve(__dirname, '..'), timeout: 120000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+    );
+    console.log(`[rebalance] Done`);
+    res.json({ success: true, message: `Rebalance ${direction} complete`, output });
+  } catch (err) {
+    const stderr = err.stderr || err.message;
+    console.error(`[rebalance] Failed:`, stderr);
+    res.status(500).json({ error: `Rebalance failed: ${stderr.slice(-500)}` });
   }
 });
 
@@ -317,21 +366,26 @@ app.post('/api/order', async (req, res) => {
       transport: http(srcChain.rpc),
     });
 
-    // Step 1: Approve USDC for InputSettlerEscrow on source chain
+    // Step 1: Approve token spending
+    // For Permit2: approve the Permit2 contract; for direct: approve the escrow
     const token = srcChain.tokens[asset];
-    const inputSettler = srcChain.contracts?.input_settler_escrow;
-    if (token && inputSettler) {
+    const payload = quote.order.payload;
+    const isPermit2Approval = payload.primaryType?.includes('Permit');
+    const spender = isPermit2Approval
+      ? payload.domain?.verifyingContract  // Permit2 contract
+      : srcChain.contracts?.input_settler_escrow;
+    if (token && spender) {
       const approveHash = await walletClient.writeContract({
         address: token.address,
         abi: parseAbi(['function approve(address, uint256) returns (bool)']),
         functionName: 'approve',
-        args: [inputSettler, 100000000n], // 100 USDC allowance
+        args: [spender, 100000000n], // 100 USDC allowance
       });
       await publicClient.waitForTransactionReceipt({ hash: approveHash });
     }
 
     // Step 2: Sign EIP-712 typed data with viem
-    const payload = quote.order.payload;
+    // (payload already extracted above for approval target)
 
     // Remove EIP712Domain from types (viem adds it automatically)
     const types = { ...payload.types };
@@ -351,9 +405,10 @@ app.post('/api/order', async (req, res) => {
       message: payload.message,
     });
 
-    // Step 3: Prepend ERC-3009 signature type byte (0x01)
-    // The contract checks signature[0] for type: 0x00=Permit2, 0x01=EIP-3009, 0xff=self
-    const signature = '0x01' + rawSignature.slice(2);
+    // Prepend signature type byte: 0x00=Permit2, 0x01=EIP-3009, 0xff=self
+    const isPermit2 = payload.primaryType?.includes('Permit');
+    const prefix = isPermit2 ? '0x00' : '0x01';
+    const signature = prefix + rawSignature.slice(2);
 
     // Step 4: Submit signed order to aggregator
     const response = await fetch(`${AGGREGATOR_URL}/api/v1/orders`, {

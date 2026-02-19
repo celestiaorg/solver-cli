@@ -74,9 +74,9 @@ pub struct EnvConfig {
     pub transfer_amount: String,
 
     // Common chain fields for convenience
-    pub evolve_rpc: String,
+    pub anvil1_rpc: String,
     pub sepolia_rpc: String,
-    pub evolve_pk: String,
+    pub anvil1_pk: String,
     pub sepolia_pk: String,
 }
 
@@ -121,9 +121,9 @@ impl EnvConfig {
             }
         }
 
-        let evolve_rpc = get_env("EVOLVE_RPC").unwrap_or_default();
+        let anvil1_rpc = get_env("ANVIL1_RPC").unwrap_or_default();
         let sepolia_rpc = get_env("SEPOLIA_RPC").unwrap_or_default();
-        let evolve_pk = get_env("EVOLVE_PK").unwrap_or_default();
+        let anvil1_pk = get_env("ANVIL1_PK").unwrap_or_default();
         let sepolia_pk = get_env("SEPOLIA_PK").unwrap_or_default();
 
         Ok(Self {
@@ -131,9 +131,9 @@ impl EnvConfig {
             user_pk: get_env("USER_PK"),
             token_symbol: get_env_or("TOKEN_SYMBOL", "USDC"),
             transfer_amount: get_env_or("TRANSFER_AMOUNT", "1000000"),
-            evolve_rpc,
+            anvil1_rpc,
             sepolia_rpc,
-            evolve_pk,
+            anvil1_pk,
             sepolia_pk,
         })
     }
