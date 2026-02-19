@@ -138,11 +138,6 @@ rebalancer-start: build
 rebalancer: rebalancer-start
 .PHONY: rebalancer
 
-## rebalancer-state: Show rebalancer persisted state summary (use ASSET=USDC to filter)
-rebalancer-state: build
-	@$(SOLVER_CLI) rebalancer state $(if $(ASSET),--asset $(ASSET),)
-.PHONY: rebalancer-state
-
 ## intent: Submit a test intent. Use FROM=, TO=, AMOUNT=, ASSET= to customize
 intent: build
 	@$(SOLVER_CLI) intent submit \
