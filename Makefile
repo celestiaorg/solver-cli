@@ -188,8 +188,9 @@ setup: init deploy configure fund fund-operator mint-user
 	@echo "Setup complete! Next steps:"
 	@echo "  1. make solver - Start solver service (in separate terminal)"
 	@echo "  2. make operator - Start oracle operator service (in another terminal)"
-	@echo "  3. make intent - Submit a test intent"
-	@echo "  4. make balances - Check balances"
+	@echo "  3. make rebalancer - Start rebalancer service (in another terminal)"
+	@echo "  4. make intent - Submit a test intent"
+	@echo "  5. make balances - Check balances"
 .PHONY: setup
 
 ## clean: Remove generated files
