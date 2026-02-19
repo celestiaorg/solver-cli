@@ -157,7 +157,7 @@ impl RebalancerService {
         let plan = build_asset_plan(asset, &observed_balances)?;
 
         let (min_transfer_raw, max_transfer_raw) = transfer_size_bounds_raw(
-            plan.effective_total_balance,
+            plan.total_balance,
             self.config.execution.min_transfer_bps,
             self.config.execution.max_transfer_bps,
         );
@@ -186,9 +186,9 @@ impl RebalancerService {
 
         if !plan.active_deficit_chain_ids.is_empty() {
             info!(
-                "Asset {}: transfer-size bounds from effective_total={} {} => min={} {} ({} bps), max={} {} ({} bps)",
+                "Asset {}: transfer-size bounds from total_balance={} {} => min={} {} ({} bps), max={} {} ({} bps)",
                 asset.symbol,
-                format_token_amount(plan.effective_total_balance, asset.decimals),
+                format_token_amount(plan.total_balance, asset.decimals),
                 asset.symbol,
                 format_raw_u128(min_transfer_raw, asset.decimals),
                 asset.symbol,
@@ -448,11 +448,9 @@ impl RebalancerService {
         blocked_by_parallel: &[crate::planner::TransferPlan],
     ) {
         info!(
-            "Asset {} snapshot: observed_total={} {} effective_total={} {} available_slots={}",
+            "Asset {} snapshot: total_balance={} {} available_slots={}",
             plan.symbol,
-            format_token_amount(plan.observed_total_balance, plan.decimals),
-            plan.symbol,
-            format_token_amount(plan.effective_total_balance, plan.decimals),
+            format_token_amount(plan.total_balance, plan.decimals),
             plan.symbol,
             available_slots
         );
@@ -527,12 +525,12 @@ impl RebalancerService {
 }
 
 fn transfer_size_bounds_raw(
-    effective_total_balance: U256,
+    total_balance: U256,
     min_transfer_bps: u16,
     max_transfer_bps: u16,
 ) -> (u128, u128) {
-    let min_raw = ceil_bps_of_total(effective_total_balance, min_transfer_bps);
-    let max_raw = floor_bps_of_total(effective_total_balance, max_transfer_bps);
+    let min_raw = ceil_bps_of_total(total_balance, min_transfer_bps);
+    let max_raw = floor_bps_of_total(total_balance, max_transfer_bps);
     (
         u256_to_u128_saturating(min_raw),
         u256_to_u128_saturating(max_raw),

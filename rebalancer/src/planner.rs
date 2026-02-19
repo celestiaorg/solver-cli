@@ -4,15 +4,14 @@ use std::collections::BTreeMap;
 
 use crate::config::AssetConfig;
 
-const MIN_EFFECTIVE_RAW_TRANSFER: f64 = 1.0;
+const MIN_TRANSFER_RAW: f64 = 1.0;
 const WEIGHT_EPSILON: f64 = 1e-9;
 
 #[derive(Debug, Clone)]
 pub struct AssetPlan {
     pub symbol: String,
     pub decimals: u8,
-    pub observed_total_balance: U256,
-    pub effective_total_balance: U256,
+    pub total_balance: U256,
     pub active_deficit_chain_ids: Vec<u64>,
     pub transfers: Vec<TransferPlan>,
 }
@@ -34,36 +33,33 @@ pub fn build_asset_plan(
     asset: &AssetConfig,
     observed_balances: &BTreeMap<u64, U256>,
 ) -> Result<AssetPlan> {
-    let mut observed_total_balance = U256::ZERO;
+    let mut total_balance = U256::ZERO;
     for balance in observed_balances.values() {
-        observed_total_balance += *balance;
+        total_balance += *balance;
     }
-
-    let effective_total_balance = observed_total_balance;
 
     let mut chain_ids: Vec<u64> = asset.weights.keys().copied().collect();
     chain_ids.sort_unstable();
 
-    if effective_total_balance.is_zero() {
+    if total_balance.is_zero() {
         return Ok(AssetPlan {
             symbol: asset.symbol.clone(),
             decimals: asset.decimals,
-            observed_total_balance,
-            effective_total_balance,
+            total_balance,
             active_deficit_chain_ids: Vec::new(),
             transfers: Vec::new(),
         });
     }
 
-    let effective_total_f64 = u256_to_f64(effective_total_balance)?;
+    let total_balance_f64 = u256_to_f64(total_balance)?;
 
     let mut active_deficit_chain_ids = Vec::new();
     let mut deficits = Vec::new();
     let mut surpluses = Vec::new();
 
     for chain_id in chain_ids {
-        let effective_balance = *observed_balances.get(&chain_id).unwrap_or(&U256::ZERO);
-        let effective_f64 = u256_to_f64(effective_balance)?;
+        let current_balance = *observed_balances.get(&chain_id).unwrap_or(&U256::ZERO);
+        let current_f64 = u256_to_f64(current_balance)?;
 
         let target_weight = *asset
             .weights
@@ -74,22 +70,22 @@ pub fn build_asset_plan(
             .get(&chain_id)
             .with_context(|| format!("Missing min_weight for chain {}", chain_id))?;
 
-        let current_weight = effective_f64 / effective_total_f64;
-        let target_balance_raw = effective_total_f64 * target_weight;
-        let deficit_raw = (target_balance_raw - effective_f64).max(0.0);
-        let surplus_raw = (effective_f64 - target_balance_raw).max(0.0);
+        let current_weight = current_f64 / total_balance_f64;
+        let target_balance_raw = total_balance_f64 * target_weight;
+        let deficit_raw = (target_balance_raw - current_f64).max(0.0);
+        let surplus_raw = (current_f64 - target_balance_raw).max(0.0);
 
         if current_weight + WEIGHT_EPSILON < min_weight {
             active_deficit_chain_ids.push(chain_id);
         }
 
-        if deficit_raw >= MIN_EFFECTIVE_RAW_TRANSFER {
+        if deficit_raw >= MIN_TRANSFER_RAW {
             deficits.push(WorkingAmount {
                 chain_id,
                 amount_raw: deficit_raw,
             });
         }
-        if surplus_raw >= MIN_EFFECTIVE_RAW_TRANSFER {
+        if surplus_raw >= MIN_TRANSFER_RAW {
             surpluses.push(WorkingAmount {
                 chain_id,
                 amount_raw: surplus_raw,
@@ -101,8 +97,7 @@ pub fn build_asset_plan(
         return Ok(AssetPlan {
             symbol: asset.symbol.clone(),
             decimals: asset.decimals,
-            observed_total_balance,
-            effective_total_balance,
+            total_balance,
             active_deficit_chain_ids,
             transfers: Vec::new(),
         });
@@ -113,8 +108,7 @@ pub fn build_asset_plan(
     Ok(AssetPlan {
         symbol: asset.symbol.clone(),
         decimals: asset.decimals,
-        observed_total_balance,
-        effective_total_balance,
+        total_balance,
         active_deficit_chain_ids,
         transfers,
     })
@@ -145,8 +139,8 @@ fn match_greedy(
     let mut transfers = Vec::new();
 
     loop {
-        deficits.retain(|d| d.amount_raw >= MIN_EFFECTIVE_RAW_TRANSFER);
-        surpluses.retain(|s| s.amount_raw >= MIN_EFFECTIVE_RAW_TRANSFER);
+        deficits.retain(|d| d.amount_raw >= MIN_TRANSFER_RAW);
+        surpluses.retain(|s| s.amount_raw >= MIN_TRANSFER_RAW);
 
         if deficits.is_empty() || surpluses.is_empty() {
             break;
@@ -167,7 +161,7 @@ fn match_greedy(
         let surplus = &surpluses[0];
         let matched_raw = deficit.amount_raw.min(surplus.amount_raw).floor();
 
-        if matched_raw < MIN_EFFECTIVE_RAW_TRANSFER {
+        if matched_raw < MIN_TRANSFER_RAW {
             break;
         }
 
@@ -253,11 +247,10 @@ mod tests {
     }
 
     #[test]
-    fn effective_total_equals_observed_total() {
+    fn computes_total_balance() {
         let asset = sample_asset();
         let observed = BTreeMap::from([(1u64, U256::from(100u64)), (2u64, U256::from(200u64))]);
         let plan = build_asset_plan(&asset, &observed).unwrap();
-        assert_eq!(plan.observed_total_balance, U256::from(300u64));
-        assert_eq!(plan.effective_total_balance, U256::from(300u64));
+        assert_eq!(plan.total_balance, U256::from(300u64));
     }
 }

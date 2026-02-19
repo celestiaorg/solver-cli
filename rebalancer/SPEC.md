@@ -55,7 +55,7 @@ Deficit condition:
 
 Transfer sizing target:
 - Move toward `target_weight`, not only `min_weight`, to reduce churn.
-- v1 keeps sizing chain-agnostic and simple: no USD pricing feeds, only per-asset percentage bounds on total effective inventory.
+- v1 keeps sizing chain-agnostic and simple: no USD pricing feeds, only per-asset percentage bounds on total inventory.
 
 ## 6) Configuration
 
@@ -132,15 +132,15 @@ Per asset:
    - source from largest surplus
    - split if needed.
 7. Apply execution constraints:
-   - min/max transfer size as % of effective total inventory for that asset
+   - min/max transfer size as % of total inventory for that asset
    - max transfers submitted per cycle (`max_parallel_transfers`)
    - per-source nonce guard (`pending_nonce <= latest_nonce`) before submission.
 8. Emit transfer intents and execute via Hyperlane Warp integration.
 
 Transfer size bounds (per asset, per cycle):
-- `effective_total = sum(observed_balance)`.
-- `min_transfer_raw = ceil(effective_total * min_transfer_bps / 10000)`.
-- `max_transfer_raw = floor(effective_total * max_transfer_bps / 10000)`.
+- `total_balance = sum(observed_balance)`.
+- `min_transfer_raw = ceil(total_balance * min_transfer_bps / 10000)`.
+- `max_transfer_raw = floor(total_balance * max_transfer_bps / 10000)`.
 - Candidate transfers below `min_transfer_raw` are skipped.
 - Candidate transfers above `max_transfer_raw` are capped to `max_transfer_raw`.
 
