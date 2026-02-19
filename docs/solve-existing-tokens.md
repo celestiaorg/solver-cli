@@ -159,13 +159,14 @@ solver-cli configure
 ```
 
 This creates:
-- `config/solver.toml` - Solver configuration with all chains and tokens
-- `config/oracle.toml` - Oracle operator configuration
+- `.config/solver.toml` - Solver configuration with all chains and tokens
+- `.config/oracle.toml` - Oracle operator configuration
+- `.config/aggregator.json` - Aggregator configuration
 
 **Verify the configs** look correct before starting:
 ```bash
-cat config/solver.toml   # Check RPC URLs, contract addresses, tokens
-cat config/oracle.toml   # Check oracle addresses
+cat .config/solver.toml   # Check RPC URLs, contract addresses, tokens
+cat .config/oracle.toml   # Check oracle addresses
 ```
 
 ## Running the Solver

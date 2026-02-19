@@ -8,8 +8,7 @@
 .anvil2.log
 .anvil2.pid
 .env
-config/
-.solver
+.config/
 
 # Nested dependency lockfiles (e.g. oif-contracts libs) — reduces PR diff
 **/lib/**/package-lock.json

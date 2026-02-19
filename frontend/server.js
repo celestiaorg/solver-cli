@@ -18,7 +18,7 @@ const PORT = process.env.BACKEND_PORT || 3001;
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function readState() {
-  return JSON.parse(readFileSync(resolve(ROOT, '.solver/state.json'), 'utf8'));
+  return JSON.parse(readFileSync(resolve(ROOT, '.config/state.json'), 'utf8'));
 }
 
 function getUserAccount() {
@@ -414,5 +414,5 @@ app.listen(PORT, () => {
   console.log(`  ─────────────────`);
   console.log(`  API:        http://localhost:${PORT}/api`);
   console.log(`  Aggregator: ${AGGREGATOR_URL}`);
-  console.log(`  State:      ${resolve(ROOT, '.solver/state.json')}\n`);
+  console.log(`  State:      ${resolve(ROOT, '.config/state.json')}\n`);
 });

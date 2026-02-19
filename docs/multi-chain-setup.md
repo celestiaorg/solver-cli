@@ -124,8 +124,8 @@ Chain: evolve2 (5678)
 Chain: sepolia (11155111)
   [... similar output ...]
 
-Config written to config/solver.toml
-Oracle config written to config/oracle.toml
+Solver config written to .config/solver.toml
+Oracle config written to .config/oracle.toml
 Setup complete!
 ```
 
@@ -300,8 +300,8 @@ make configure
 ```
 
 This updates:
-- `config/solver.toml` - Adds new chain with all-to-all routes
-- `config/oracle.toml` - Adds new chain for attestation monitoring
+- `.config/solver.toml` - Adds new chain with all-to-all routes
+- `.config/oracle.toml` - Adds new chain for attestation monitoring
 
 ### Step 4: Fund Solver
 
@@ -403,12 +403,12 @@ make chain-remove CHAIN=arbitrum
 **Check solver is watching all chains:**
 ```bash
 # Look for "Watching chain..." logs
-tail -f .solver/solver.log
+tail -f .config/solver.log
 ```
 
 **Verify config:**
 ```bash
-cat config/solver.toml | grep -A 5 "\[networks"
+cat .config/solver.toml | grep -A 5 "\[networks"
 ```
 
 **Restart solver:**
@@ -426,15 +426,15 @@ make fund-operator
 
 **Verify operator address:**
 ```bash
-grep operator_address config/oracle.toml
+grep operator_address .config/oracle.toml
 cast balance --rpc-url $SEPOLIA_RPC <operator_address>
 ```
 
 **Check oracle addresses match:**
 ```bash
 # Compare deployed oracle addresses with config
-cat .solver/state.json | jq '.chains[].contracts.oracle'
-cat config/oracle.toml | grep oracle_address
+cat .config/state.json | jq '.chains[].contracts.oracle'
+cat .config/oracle.toml | grep oracle_address
 ```
 
 ### Intent not filled

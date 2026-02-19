@@ -48,19 +48,6 @@ impl InitCommand {
             state_mgr.state_dir()
         ));
 
-        // Create directory structure
-        let dirs = [
-            project_dir.join("config"),
-            project_dir.join("config/deployed"),
-        ];
-
-        for dir in &dirs {
-            if !dir.exists() {
-                tokio::fs::create_dir_all(dir).await?;
-                print_info(&format!("Created directory: {:?}", dir));
-            }
-        }
-
         // Check .env file
         let env_file = project_dir.join(".env");
         if !env_file.exists() {

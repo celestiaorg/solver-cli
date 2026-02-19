@@ -117,7 +117,7 @@ token-remove: build
 fund-operator:
 	@echo "Funding oracle operator on all chains..."
 	@. ./.env && \
-		OPERATOR_ADDR=$$(grep 'operator_address' config/oracle.toml | cut -d'"' -f2) && \
+		OPERATOR_ADDR=$$(grep 'operator_address' .config/oracle.toml | cut -d'"' -f2) && \
 		echo "  Operator address: $$OPERATOR_ADDR" && \
 		echo "  Funding on Evolve (10 ETH)..." && \
 		cast send --rpc-url $$EVOLVE_RPC --private-key $$EVOLVE_PK --value 10ether $$OPERATOR_ADDR 2>/dev/null && \
@@ -163,7 +163,7 @@ solver: solver-start
 
 ## operator-start: Start the oracle operator service
 operator-start:
-	@cd oracle-operator && ORACLE_CONFIG=../config/oracle.toml RUST_LOG=info cargo run --release
+	@cd oracle-operator && ORACLE_CONFIG=../.config/oracle.toml RUST_LOG=info cargo run --release
 .PHONY: operator-start
 
 # Alias for convenience
@@ -173,7 +173,7 @@ operator: operator-start
 ## aggregator-start: Start the OIF aggregator service
 aggregator-start:
 	@echo "Starting OIF aggregator on port 4000..."
-	@cd oif-aggregator && cp ../config/config.json config/ && RUST_LOG=info cargo run --release
+	@cd oif/oif-aggregator && RUST_LOG=info cargo run --release
 .PHONY: aggregator-start
 
 # Alias for convenience
@@ -256,8 +256,7 @@ mvp:
 
 ## clean: Remove generated files
 clean:
-	@rm -rf .solver config/*.toml config/*.yaml config/config.json
+	@rm -rf .config
 	@rm -f .anvil1.pid .anvil1.log .anvil2.pid .anvil2.log
-	@rm -f config/oracle-state.json
 	@echo "Cleaned!"
 .PHONY: clean

@@ -8,8 +8,8 @@ echo "=== E2E Order Submission Test ==="
 echo ""
 
 # 1. Get deployed addresses
-USDC_EVOLVE=$(cat .solver/state.json | jq -r '.chains."31337".tokens.USDC.address')
-USDC_EVOLVE2=$(cat .solver/state.json | jq -r '.chains."31338".tokens.USDC.address')
+USDC_EVOLVE=$(cat .config/state.json | jq -r '.chains."31337".tokens.USDC.address')
+USDC_EVOLVE2=$(cat .config/state.json | jq -r '.chains."31338".tokens.USDC.address')
 USER_ADDR=$(cast wallet address --private-key $USER_PK)
 
 echo "Deployed addresses:"
@@ -33,7 +33,7 @@ echo ""
 
 # 3. Approve USDC for InputSettlerEscrow
 echo "=== Approving USDC ==="
-INPUT_SETTLER=$(cat .solver/state.json | jq -r '.chains."31337".contracts.input_settler_escrow')
+INPUT_SETTLER=$(cat .config/state.json | jq -r '.chains."31337".contracts.input_settler_escrow')
 echo "Approving InputSettlerEscrow ($INPUT_SETTLER) to spend USDC..."
 cast send --rpc-url $EVOLVE_RPC --private-key $USER_PK $USDC_EVOLVE "approve(address,uint256)" $INPUT_SETTLER 100000000 > /dev/null 2>&1
 echo "✓ USDC approved for InputSettlerEscrow"

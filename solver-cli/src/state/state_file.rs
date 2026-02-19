@@ -7,7 +7,7 @@ use tokio::fs;
 
 use super::types::SolverState;
 
-const STATE_DIR: &str = ".solver";
+const STATE_DIR: &str = ".config";
 const STATE_FILE: &str = "state.json";
 
 /// Manages the solver state file
