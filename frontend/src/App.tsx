@@ -10,10 +10,10 @@ function truncAddr(addr: string) {
   return addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '—'
 }
 
-function formatUSDC(val: string) {
+function formatToken(val: string, decimals?: number) {
   const n = parseFloat(val)
   if (isNaN(n)) return '0.00'
-  return n.toFixed(2)
+  return decimals !== undefined && decimals > 6 ? n.toFixed(4) : n.toFixed(2)
 }
 
 function formatETH(val: string) {
@@ -93,7 +93,7 @@ export default function App() {
   const [fromChain, setFromChain] = useState('')
   const [toChain, setToChain] = useState('')
   const [amount, setAmount] = useState('1')
-  const [asset] = useState('USDC')
+  const [asset, setAsset] = useState('')
 
   // Flow state
   const [step, setStep] = useState<Step>('idle')
@@ -112,6 +112,26 @@ export default function App() {
 
   // Polling ref
   const pollRef = useRef<ReturnType<typeof setInterval>>()
+
+  // Compute tokens available on both selected chains
+  const availableTokens = (() => {
+    if (!config || !fromChain || !toChain) return [] as string[]
+    const fromTokens = Object.keys(config.chains[fromChain]?.tokens ?? {})
+    const toTokens = new Set(Object.keys(config.chains[toChain]?.tokens ?? {}))
+    return fromTokens.filter(s => toTokens.has(s))
+  })()
+
+  // Auto-select first available token when chains change
+  useEffect(() => {
+    if (availableTokens.length > 0 && !availableTokens.includes(asset)) {
+      setAsset(availableTokens[0])
+    }
+  }, [fromChain, toChain, availableTokens, asset])
+
+  // Get decimals for the currently selected token
+  const selectedTokenDecimals = config && fromChain && asset
+    ? config.chains[fromChain]?.tokens?.[asset]?.decimals ?? 6
+    : 6
 
   // ── Load config + health on mount ────────────────────────────────────────
 
@@ -181,7 +201,7 @@ export default function App() {
     try {
       const fromId = config!.chains[fromChain].chainId
       const toId = config!.chains[toChain].chainId
-      const rawAmount = Math.round(parseFloat(amount) * 1_000_000).toString() // USDC 6 decimals
+      const rawAmount = Math.round(parseFloat(amount) * (10 ** selectedTokenDecimals)).toString()
       const resp = await api.quote(fromId, toId, rawAmount, asset, isConnected && connectedAddress ? connectedAddress : undefined)
       if (!resp.quotes?.length) throw new Error('No quotes returned. Is the solver running?')
       setQuote(resp.quotes[0])
@@ -203,7 +223,7 @@ export default function App() {
       if (isConnected && connectedAddress) {
         // MetaMask flow: approve + sign client-side
         const chainInfo = config!.chains[fromChain]
-        const token = chainInfo.tokens['USDC']
+        const token = chainInfo.tokens[asset]
 
         // Step 0: Switch MetaMask to source chain if needed
         await switchChainAsync({ chainId: fromId })
@@ -286,12 +306,12 @@ export default function App() {
 
   // ── Faucet ───────────────────────────────────────────────────────────────
 
-  const handleFaucet = async (chainName: string, type: 'gas' | 'usdc') => {
-    const key = `${chainName}-${type}`
+  const handleFaucet = async (chainName: string, type: 'gas' | 'token', symbol?: string) => {
+    const key = `${chainName}-${type}${symbol ? `-${symbol}` : ''}`
     setFaucetLoading(key)
     setFaucetMsg('')
     try {
-      const resp = await api.faucet(chainName, type, isConnected && connectedAddress ? connectedAddress : undefined)
+      const resp = await api.faucet(chainName, type, isConnected && connectedAddress ? connectedAddress : undefined, symbol)
       setFaucetMsg(`Sent ${resp.amount} on ${chainName}`)
       loadBalances()
     } catch (err: any) {
@@ -346,7 +366,7 @@ export default function App() {
   // Parse output amount from quote preview
   let outputAmount = ''
   if (quote?.preview?.outputs?.[0]?.amount) {
-    outputAmount = (parseInt(quote.preview.outputs[0].amount) / 1_000_000).toFixed(2)
+    outputAmount = (parseInt(quote.preview.outputs[0].amount) / (10 ** selectedTokenDecimals)).toFixed(2)
   }
 
   const isServicesUp = health.backend === 'ok' && health.aggregator === 'ok'
@@ -418,9 +438,9 @@ export default function App() {
               <div className="bg-surface-2 border border-border rounded-xl p-4 mb-2">
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs text-gray-500 font-medium">From</label>
-                  {balances && fromChain && balances[fromChain] && (
+                  {balances && fromChain && balances[fromChain] && asset && (
                     <span className="text-xs text-gray-500">
-                      Balance: {formatUSDC(balances[fromChain].balances.user['USDC']?.formatted ?? '0')} {asset}
+                      Balance: {formatToken(balances[fromChain].balances.user[asset]?.formatted ?? '0')} {asset}
                     </span>
                   )}
                 </div>
@@ -445,11 +465,17 @@ export default function App() {
                     className="flex-1 bg-transparent text-2xl font-semibold text-white outline-none
                       text-right placeholder-gray-600"
                   />
-                  <div className="flex items-center gap-1.5 bg-surface-3 border border-border-light
-                    rounded-lg px-3 py-2 text-sm font-semibold text-white min-w-[80px] justify-center">
-                    <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center text-[9px] font-bold">$</div>
-                    {asset}
-                  </div>
+                  <select
+                    value={asset}
+                    onChange={e => { setAsset(e.target.value); setStep('idle'); setQuote(null) }}
+                    className="bg-surface-3 border border-border-light rounded-lg px-3 py-2 text-sm
+                      font-semibold text-white outline-none focus:border-brand transition-colors
+                      cursor-pointer min-w-[80px]"
+                  >
+                    {availableTokens.map(sym => (
+                      <option key={sym} value={sym}>{sym}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -472,9 +498,9 @@ export default function App() {
               <div className="bg-surface-2 border border-border rounded-xl p-4 mt-2 mb-4">
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs text-gray-500 font-medium">To</label>
-                  {balances && toChain && balances[toChain] && (
+                  {balances && toChain && balances[toChain] && asset && (
                     <span className="text-xs text-gray-500">
-                      Balance: {formatUSDC(balances[toChain].balances.user['USDC']?.formatted ?? '0')} {asset}
+                      Balance: {formatToken(balances[toChain].balances.user[asset]?.formatted ?? '0')} {asset}
                     </span>
                   )}
                 </div>
@@ -500,10 +526,9 @@ export default function App() {
                       '—'
                     )}
                   </div>
-                  <div className="flex items-center gap-1.5 bg-surface-3 border border-border-light
-                    rounded-lg px-3 py-2 text-sm font-semibold text-white min-w-[80px] justify-center">
-                    <div className="w-4 h-4 rounded-full bg-blue-500 flex items-center justify-center text-[9px] font-bold">$</div>
-                    {asset}
+                  <div className="bg-surface-3 border border-border-light rounded-lg px-3 py-2 text-sm
+                    font-semibold text-white min-w-[80px] text-center">
+                    {asset || '—'}
                   </div>
                 </div>
               </div>
@@ -661,28 +686,24 @@ export default function App() {
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-gray-500">You</span>
                           <div className="flex gap-3">
-                            <span className="text-gray-300 font-mono">
-                              {formatUSDC(cb.balances.user['USDC']?.formatted ?? '0')}
-                              <span className="text-gray-500 ml-1">USDC</span>
-                            </span>
-                            <span className="text-gray-300 font-mono">
-                              {formatETH(cb.balances.user['ETH']?.formatted ?? '0')}
-                              <span className="text-gray-500 ml-1">ETH</span>
-                            </span>
+                            {Object.entries(cb.balances.user).map(([sym, bal]) => (
+                              <span key={sym} className="text-gray-300 font-mono">
+                                {sym === 'ETH' ? formatETH(bal?.formatted ?? '0') : formatToken(bal?.formatted ?? '0')}
+                                <span className="text-gray-500 ml-1">{sym}</span>
+                              </span>
+                            ))}
                           </div>
                         </div>
                         {/* Solver balances */}
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-gray-500">Solver</span>
                           <div className="flex gap-3">
-                            <span className="text-gray-300 font-mono">
-                              {formatUSDC(cb.balances.solver['USDC']?.formatted ?? '0')}
-                              <span className="text-gray-500 ml-1">USDC</span>
-                            </span>
-                            <span className="text-gray-300 font-mono">
-                              {formatETH(cb.balances.solver['ETH']?.formatted ?? '0')}
-                              <span className="text-gray-500 ml-1">ETH</span>
-                            </span>
+                            {Object.entries(cb.balances.solver).map(([sym, bal]) => (
+                              <span key={sym} className="text-gray-300 font-mono">
+                                {sym === 'ETH' ? formatETH(bal?.formatted ?? '0') : formatToken(bal?.formatted ?? '0')}
+                                <span className="text-gray-500 ml-1">{sym}</span>
+                              </span>
+                            ))}
                           </div>
                         </div>
                       </div>
@@ -724,29 +745,32 @@ export default function App() {
                     <div className="flex items-center gap-2 mb-2">
                       <ChainBadge name={chain.name} />
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
                       <button
                         onClick={() => handleFaucet(chain.name, 'gas')}
                         disabled={faucetLoading !== null}
                         className="flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all
                           bg-surface-2 border border-border hover:border-brand text-gray-300 hover:text-white
                           disabled:opacity-50 disabled:cursor-not-allowed
-                          flex items-center justify-center gap-1.5"
+                          flex items-center justify-center gap-1.5 min-w-[100px]"
                       >
                         {faucetLoading === `${chain.name}-gas` ? <Spinner size={12} /> : null}
                         Claim 1 ETH
                       </button>
-                      <button
-                        onClick={() => handleFaucet(chain.name, 'usdc')}
-                        disabled={faucetLoading !== null}
-                        className="flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all
-                          bg-surface-2 border border-border hover:border-brand text-gray-300 hover:text-white
-                          disabled:opacity-50 disabled:cursor-not-allowed
-                          flex items-center justify-center gap-1.5"
-                      >
-                        {faucetLoading === `${chain.name}-usdc` ? <Spinner size={12} /> : null}
-                        Claim 10 USDC
-                      </button>
+                      {Object.keys(chain.tokens).map(sym => (
+                        <button
+                          key={sym}
+                          onClick={() => handleFaucet(chain.name, 'token', sym)}
+                          disabled={faucetLoading !== null}
+                          className="flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all
+                            bg-surface-2 border border-border hover:border-brand text-gray-300 hover:text-white
+                            disabled:opacity-50 disabled:cursor-not-allowed
+                            flex items-center justify-center gap-1.5 min-w-[100px]"
+                        >
+                          {faucetLoading === `${chain.name}-token-${sym}` ? <Spinner size={12} /> : null}
+                          Claim 10 {sym}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )

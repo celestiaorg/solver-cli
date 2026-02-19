@@ -237,9 +237,10 @@ app.post('/api/faucet', async (req, res) => {
       });
       await publicClient.waitForTransactionReceipt({ hash });
       res.json({ success: true, hash, amount: '1 ETH' });
-    } else if (type === 'usdc') {
-      const token = chain.tokens['USDC'];
-      if (!token) throw new Error('USDC not configured on this chain');
+    } else if (type === 'token') {
+      const symbol = req.body.symbol || 'USDC';
+      const token = chain.tokens[symbol];
+      if (!token) throw new Error(`${symbol} not configured on this chain`);
 
       // Only allow minting on origin chains (where MockERC20 has public mint)
       const hypAddresses = readHyperlaneAddresses();
@@ -247,16 +248,31 @@ app.post('/api/faucet', async (req, res) => {
         throw new Error(`Cannot mint on ${chainName} — it uses bridged tokens. Use the faucet on the origin chain and bridge.`);
       }
 
+      const mintAmount = BigInt(10 * (10 ** token.decimals));
       const hash = await walletClient.writeContract({
         address: token.address,
         abi: erc20Abi,
         functionName: 'mint',
-        args: [recipient, 10000000n], // 10 USDC (6 decimals)
+        args: [recipient, mintAmount],
+      });
+      await publicClient.waitForTransactionReceipt({ hash });
+      res.json({ success: true, hash, amount: `10 ${symbol}` });
+    } else if (type === 'usdc') {
+      // Backward compat: treat 'usdc' as token mint for USDC
+      const token = chain.tokens['USDC'];
+      if (!token) throw new Error('USDC not configured on this chain');
+      const hypAddresses = readHyperlaneAddresses();
+      if (!isOriginChain(chainName, hypAddresses)) {
+        throw new Error(`Cannot mint on ${chainName} — it uses bridged tokens.`);
+      }
+      const hash = await walletClient.writeContract({
+        address: token.address, abi: erc20Abi, functionName: 'mint',
+        args: [recipient, 10000000n],
       });
       await publicClient.waitForTransactionReceipt({ hash });
       res.json({ success: true, hash, amount: '10 USDC' });
     } else {
-      throw new Error('Invalid faucet type. Use "gas" or "usdc".');
+      throw new Error('Invalid faucet type. Use "gas" or "token".');
     }
   } catch (err) {
     res.status(500).json({ error: err.message });

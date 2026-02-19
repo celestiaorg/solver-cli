@@ -106,14 +106,14 @@ export const api = {
   balances: (address?: string) =>
     json<AllBalances>(`${BASE}/balances${address ? `?address=${address}` : ''}`),
 
-  quote: (fromChainId: number, toChainId: number, amount: string, asset = 'USDC', address?: string) =>
+  quote: (fromChainId: number, toChainId: number, amount: string, asset: string, address?: string) =>
     json<QuoteResponse>(`${BASE}/quote`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fromChainId, toChainId, amount, asset, ...(address ? { address } : {}) }),
     }),
 
-  submitOrder: (quote: Quote, fromChainId: number, asset = 'USDC', address?: string) =>
+  submitOrder: (quote: Quote, fromChainId: number, asset: string, address?: string) =>
     json<OrderResponse>(`${BASE}/order`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -129,11 +129,11 @@ export const api = {
 
   orderStatus: (id: string) => json<OrderStatus>(`${BASE}/order/${id}`),
 
-  faucet: (chainName: string, type: 'gas' | 'usdc', address?: string) =>
+  faucet: (chainName: string, type: 'gas' | 'token', address?: string, symbol?: string) =>
     json<{ success: boolean; hash: string; amount: string }>(`${BASE}/faucet`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chainName, type, ...(address ? { address } : {}) }),
+      body: JSON.stringify({ chainName, type, ...(address ? { address } : {}), ...(symbol ? { symbol } : {}) }),
     }),
 
   rebalance: (direction: 'forward' | 'back', amount?: string) =>

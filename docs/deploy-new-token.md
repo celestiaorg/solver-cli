@@ -1,217 +1,142 @@
-# Deploy New Token Guide
+# Deploy a New Token
 
-This guide walks you through deploying fresh OIF contracts and a new token to test cross-chain transfers.
+This guide walks through adding a new ERC20 token (e.g. USDT) to the local solver stack alongside the existing USDC.
 
 ## Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/) - For local EVM chain
-- [Foundry](https://book.getfoundry.sh/getting-started/installation) - `forge` and `cast`
-- [Rust](https://rustup.rs/) - Build the CLI
-- **Testnet ETH** - Get from a [faucet](https://sepoliafaucet.com)
+- Local stack running (`./mvp.sh` or `make setup && make solver` etc.)
+- [Foundry](https://book.getfoundry.sh/getting-started/installation) installed (`forge`, `cast`)
+- The deployer private key (default Anvil account 0):
+  ```
+  PK=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+  ```
 
-## Quick Start
+## 1. Deploy MockERC20 on anvil1 (origin chain)
 
 ```bash
-# 1. Start local EVM chain
-make start
+forge create hyperlane/contracts/MockERC20.sol:MockERC20 \
+  --constructor-args "USDT" "USDT" 6 \
+  --rpc-url http://127.0.0.1:8545 \
+  --private-key $PK \
+  --broadcast
+```
 
-# 2. Configure environment
-cp .env.example .env
-# Edit .env with your SEPOLIA_PK (must have Sepolia ETH!)
+Note the `Deployed to:` address — this is your USDT address on anvil1.
 
-# 3. Full setup (deploy contracts + mock USDC token)
-make setup
+## 2. Register the token in state
 
-# 4. Start solver (separate terminal)
+```bash
+solver-cli token add \
+  --chain anvil1 \
+  --symbol USDT \
+  --address <USDT_ADDRESS_FROM_STEP_1> \
+  --decimals 6
+```
+
+On anvil2, the token will be bridged via Hyperlane (synthetic), so you'll need to deploy a warp route for it. For a simple local test without Hyperlane bridging, you can also deploy a separate MockERC20 on anvil2:
+
+```bash
+# Option A: Deploy independent MockERC20 on anvil2
+forge create hyperlane/contracts/MockERC20.sol:MockERC20 \
+  --constructor-args "USDT" "USDT" 6 \
+  --rpc-url http://127.0.0.1:8546 \
+  --private-key $PK \
+  --broadcast
+
+solver-cli token add \
+  --chain anvil2 \
+  --symbol USDT \
+  --address <USDT_ADDRESS_ON_ANVIL2> \
+  --decimals 6
+```
+
+## 3. Regenerate solver config
+
+```bash
+make configure
+```
+
+This auto-generates:
+- Mock price entries (`USDT/USD = 1.0`) for any token found in state
+- All-to-all routes for tokens present on both chains
+
+## 4. Fund the solver with the new token
+
+Mint USDT to the solver on both chains so it can fill orders:
+
+```bash
+# Solver address (from .config/state.json)
+SOLVER=$(jq -r '.solver.address' .config/state.json)
+
+# Mint on anvil1
+cast send <USDT_ADDRESS_ANVIL1> "mint(address,uint256)" $SOLVER 10000000 \
+  --rpc-url http://127.0.0.1:8545 --private-key $PK
+
+# Mint on anvil2
+cast send <USDT_ADDRESS_ANVIL2> "mint(address,uint256)" $SOLVER 10000000 \
+  --rpc-url http://127.0.0.1:8546 --private-key $PK
+```
+
+## 5. Deploy Permit2 (if not already done)
+
+The solver uses Permit2 for token approvals. If you haven't already:
+
+```bash
+make deploy-permit2
+```
+
+Then approve Permit2 for the new token on both chains:
+
+```bash
+PERMIT2=0x000000000022D473030F116dDEE9F6B43aC78BA3
+
+# Approve for solver on anvil1
+cast send <USDT_ADDRESS_ANVIL1> "approve(address,uint256)" $PERMIT2 \
+  $(cast max-uint) \
+  --rpc-url http://127.0.0.1:8545 --private-key $PK
+
+# Approve for solver on anvil2
+cast send <USDT_ADDRESS_ANVIL2> "approve(address,uint256)" $PERMIT2 \
+  $(cast max-uint) \
+  --rpc-url http://127.0.0.1:8546 --private-key $PK
+```
+
+## 6. Restart the solver
+
+```bash
+# Stop the running solver (Ctrl+C), then:
 make solver
-
-# 5. Start oracle operator (another terminal)
-make operator
-
-# 6. Test it
-make intent
-make balances
 ```
 
-## What Gets Deployed
+The solver picks up the new token from the regenerated config.
 
-When you run `make deploy` (or `make setup`), these contracts are deployed to **each chain**:
+## 7. Use the frontend
 
-| Contract | Purpose |
-|----------|---------|
-| `CentralizedOracle` | Verifies cross-chain attestations |
-| `InputSettlerEscrow` | Escrows tokens on source chain |
-| `OutputSettlerSimple` | Delivers tokens on destination chain |
-| `MockERC20` | Test token (USDC by default) |
+1. Refresh the UI (http://localhost:3456)
+2. The token dropdown now shows **USDT** alongside USDC
+3. Use the faucet to mint USDT to your wallet
+4. Select USDT, enter an amount, get a quote, and bridge
 
-## Environment Configuration
+## How it works
 
-Set up your `.env` file:
+The system is data-driven — no code changes needed to add tokens:
 
-```bash
-# Local chain (Anvil)
-EVOLVE_RPC=http://127.0.0.1:8545
-EVOLVE_CHAIN_ID=1234
-EVOLVE_PK=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+| Component | What happens |
+|-----------|-------------|
+| `state.json` | `solver-cli token add` writes the token entry |
+| `config_gen.rs` | `make configure` auto-generates mock prices and routes for all tokens in state |
+| `server.js` | Backend iterates `chain.tokens` — new tokens appear automatically in balances and faucet |
+| `App.tsx` | Frontend computes available tokens from config, shows them in a dropdown |
+| Solver | Reads tokens from config TOML, routes any matching symbol across chains |
 
-# Testnet (Sepolia)
-SEPOLIA_RPC=https://ethereum-sepolia-rpc.publicnode.com
-SEPOLIA_CHAIN_ID=11155111
-SEPOLIA_PK=<your-private-key-with-sepolia-eth>
+## Hyperlane warp routes (optional)
 
-# User account (submits intents)
-USER_PK=59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
-```
+For proper cross-chain bridging (not just independent tokens), you'd set up Hyperlane warp routes:
 
-## Deploying to Specific Chains
+1. Deploy `HypCollateral` on anvil1 (wraps the native USDT)
+2. Deploy `HypSynthetic` on anvil2 (mints/burns bridged USDT)
+3. Enroll remote routers on both
+4. Add the warp token addresses to `hyperlane-addresses.json`
+5. Configure the Hyperlane relayer to relay for the new route
 
-```bash
-# Deploy to all configured chains
-solver-cli deploy
-
-# Deploy to specific chains only
-solver-cli deploy --chains evolve,sepolia
-
-# Force redeploy (overwrites existing)
-solver-cli deploy --force
-```
-
-## Custom Token Configuration
-
-Deploy a token with custom settings:
-
-```bash
-# Deploy with custom token
-solver-cli deploy --token USDT --decimals 6
-
-# Deploy with 18 decimals (like DAI)
-solver-cli deploy --token DAI --decimals 18
-```
-
-## Adding More Chains
-
-To deploy to a third chain (e.g., Arbitrum Sepolia):
-
-```bash
-# 1. Add to .env
-ARBITRUM_RPC=https://sepolia-rollup.arbitrum.io/rpc
-ARBITRUM_PK=<your-private-key>
-ARBITRUM_CHAIN_ID=421614
-
-# 2. Deploy to the new chain (merges with existing)
-solver-cli deploy --chains arbitrum
-
-# 3. Regenerate configs
-solver-cli configure
-
-# 4. Restart solver and oracle operator so they pick up the new chain
-# (Stop with Ctrl+C, then run make solver and make operator again.)
-
-# 5. Fund solver on new chain
-solver-cli fund --chain arbitrum
-```
-
-## Adding More Tokens
-
-After initial deployment, add more tokens:
-
-```bash
-# Deploy another token to all chains
-solver-cli deploy --token USDT --decimals 6
-
-# Or add tokens individually
-solver-cli token add --chain sepolia --symbol DAI --address 0x... --decimals 18
-```
-
-## Minting Test Tokens
-
-For testing, you need mock tokens. `make setup` automatically mints tokens to the user, but you can mint more:
-
-```bash
-# Mint 10 USDC to user on evolve
-make mint CHAIN=evolve SYMBOL=USDC TO=user AMOUNT=10000000
-
-# Mint to a specific address
-make mint CHAIN=evolve SYMBOL=USDC TO=0x1234... AMOUNT=10000000
-
-# Mint to solver (for filling orders)
-make mint CHAIN=sepolia SYMBOL=USDC TO=solver AMOUNT=10000000
-```
-
-**Note**: This only works with MockERC20 contracts deployed by `make deploy`. Real tokens cannot be minted.
-
-## Testing Cross-Chain Transfers
-
-```bash
-# Submit intent (evolve -> sepolia, 1 USDC by default)
-make intent
-
-# Specify direction and amount
-make intent FROM=sepolia TO=evolve AMOUNT=5000000
-
-# Use a different token
-make intent ASSET=USDT AMOUNT=1000000
-
-# Or use the CLI directly
-solver-cli intent submit --amount 1000000 --asset USDC --from evolve --to sepolia
-
-# Check balances
-make balances
-```
-
-### Available Options
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `FROM` | Source chain (name or ID) | First configured chain |
-| `TO` | Destination chain (name or ID) | Second configured chain |
-| `AMOUNT` | Amount in raw units | `1000000` (1 token with 6 decimals) |
-| `ASSET` | Token symbol | `USDC` |
-
-## Troubleshooting
-
-### "Insufficient balance"
-The user needs tokens to create intents:
-```bash
-# Mint test tokens to user
-make mint CHAIN=evolve SYMBOL=USDC TO=user AMOUNT=10000000
-```
-
-### "Insufficient gas"
-Your solver address needs native tokens on all chains:
-```bash
-# Check solver address
-cast wallet address --private-key 0x$SEPOLIA_PK
-
-# Fund on local chain (automatic)
-solver-cli fund --chain evolve
-
-# For testnets, use faucets
-```
-
-### "Oracle operator not running"
-The full flow requires the oracle operator:
-```bash
-make operator
-```
-
-### "Contracts already deployed"
-Use `--force` to redeploy:
-```bash
-solver-cli deploy --force
-```
-
-### Intent expired / Funds stuck
-If an intent expires before being filled, you can reclaim your tokens:
-```bash
-# Check intent status
-solver-cli intent list
-
-# Get refund instructions
-solver-cli intent refund --tx-hash 0x...
-```
-
-The default expiry is 30 minutes. For testing, you can use a shorter expiry:
-```bash
-solver-cli intent submit --amount 1000000 --expiry 300  # 5 minute expiry
-```
+This is the same setup used for USDC — see `hyperlane/` directory for reference configs.

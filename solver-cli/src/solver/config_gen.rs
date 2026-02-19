@@ -85,6 +85,21 @@ decimals = {}
             output_oracles.push(format!("{} = [\"{}\"]", chain.chain_id, oracle));
         }
 
+        // Build mock price pairs from all configured tokens
+        let mut price_symbols: Vec<String> = state
+            .chains
+            .values()
+            .flat_map(|c| c.tokens.keys().cloned())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        price_symbols.sort();
+        let mock_prices = price_symbols
+            .iter()
+            .map(|sym| format!("\"{}/USD\" = \"1.0\"", sym))
+            .collect::<Vec<_>>()
+            .join("\n");
+
         // Build routes (all-to-all)
         let mut routes = Vec::new();
         for &from_id in &chain_ids {
@@ -188,11 +203,9 @@ max_gas_price_gwei = 100
 primary = "mock"
 
 [pricing.implementations.mock]
-# Mock prices for testing (stablecoins pegged to $1)
+# Mock prices for testing (auto-generated from configured tokens)
 [pricing.implementations.mock.pair_prices]
-"USDC/USD" = "1.0"
-"USDT/USD" = "1.0"
-"DAI/USD" = "1.0"
+{mock_prices}
 
 # ============================================================================
 # SETTLEMENT
