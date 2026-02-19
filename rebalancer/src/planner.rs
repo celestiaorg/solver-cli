@@ -8,12 +8,9 @@ const MIN_EFFECTIVE_RAW_TRANSFER: f64 = 1.0;
 const WEIGHT_EPSILON: f64 = 1e-9;
 
 pub struct PlannerContext<'a> {
-    pub now_unix_seconds: u64,
-    pub cooldown_seconds_per_route: u64,
     pub settle_buffer_weight: f64,
     pub reserved_outgoing_by_chain: &'a BTreeMap<u64, U256>,
     pub previously_active_deficits: &'a BTreeSet<u64>,
-    pub route_last_execution_by_pair: &'a BTreeMap<(u64, u64), u64>,
 }
 
 #[derive(Debug, Clone)]
@@ -22,31 +19,8 @@ pub struct AssetPlan {
     pub decimals: u8,
     pub observed_total_balance: U256,
     pub effective_total_balance: U256,
-    pub chain_states: Vec<ChainPlanState>,
     pub active_deficit_chain_ids: Vec<u64>,
-    pub newly_activated_chain_ids: Vec<u64>,
-    pub cleared_chain_ids: Vec<u64>,
-    pub triggered: bool,
-    pub reason: String,
     pub transfers: Vec<TransferPlan>,
-    pub cooldown_blocked_transfers: Vec<CooldownBlockedTransfer>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ChainPlanState {
-    pub chain_id: u64,
-    pub observed_balance: U256,
-    pub reserved_outgoing: U256,
-    pub effective_balance: U256,
-    pub current_weight: f64,
-    pub target_weight: f64,
-    pub min_weight: f64,
-    pub clear_threshold_weight: f64,
-    pub target_balance_raw: f64,
-    pub deficit_raw: f64,
-    pub surplus_raw: f64,
-    pub was_active: bool,
-    pub is_active: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -54,13 +28,6 @@ pub struct TransferPlan {
     pub source_chain_id: u64,
     pub destination_chain_id: u64,
     pub amount_raw: u128,
-}
-
-#[derive(Debug, Clone)]
-pub struct CooldownBlockedTransfer {
-    pub transfer: TransferPlan,
-    pub last_execution_unix_seconds: u64,
-    pub available_at_unix_seconds: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -106,35 +73,19 @@ pub fn build_asset_plan(
             decimals: asset.decimals,
             observed_total_balance,
             effective_total_balance,
-            chain_states: Vec::new(),
             active_deficit_chain_ids: Vec::new(),
-            newly_activated_chain_ids: Vec::new(),
-            cleared_chain_ids: Vec::new(),
-            triggered: false,
-            reason: "effective total balance is zero".to_string(),
             transfers: Vec::new(),
-            cooldown_blocked_transfers: Vec::new(),
         });
     }
 
     let effective_total_f64 = u256_to_f64(effective_total_balance)?;
     let settle_buffer_weight = context.settle_buffer_weight.max(0.0).min(1.0);
 
-    let mut chain_states = Vec::with_capacity(chain_ids.len());
     let mut active_deficit_chain_ids = Vec::new();
-    let mut newly_activated_chain_ids = Vec::new();
-    let mut cleared_chain_ids = Vec::new();
+    let mut deficits = Vec::new();
+    let mut surpluses = Vec::new();
 
     for chain_id in chain_ids {
-        let observed_balance = observed_balances
-            .get(&chain_id)
-            .copied()
-            .unwrap_or(U256::ZERO);
-        let reserved_outgoing = context
-            .reserved_outgoing_by_chain
-            .get(&chain_id)
-            .copied()
-            .unwrap_or(U256::ZERO);
         let effective_balance = *effective_balances.get(&chain_id).unwrap_or(&U256::ZERO);
         let effective_f64 = u256_to_f64(effective_balance)?;
 
@@ -163,28 +114,19 @@ pub fn build_asset_plan(
         if is_active {
             active_deficit_chain_ids.push(chain_id);
         }
-        if !was_active && is_active {
-            newly_activated_chain_ids.push(chain_id);
-        }
-        if was_active && !is_active {
-            cleared_chain_ids.push(chain_id);
-        }
 
-        chain_states.push(ChainPlanState {
-            chain_id,
-            observed_balance,
-            reserved_outgoing,
-            effective_balance,
-            current_weight,
-            target_weight,
-            min_weight,
-            clear_threshold_weight,
-            target_balance_raw,
-            deficit_raw,
-            surplus_raw,
-            was_active,
-            is_active,
-        });
+        if deficit_raw >= MIN_EFFECTIVE_RAW_TRANSFER {
+            deficits.push(WorkingAmount {
+                chain_id,
+                amount_raw: deficit_raw,
+            });
+        }
+        if surplus_raw >= MIN_EFFECTIVE_RAW_TRANSFER {
+            surpluses.push(WorkingAmount {
+                chain_id,
+                amount_raw: surplus_raw,
+            });
+        }
     }
 
     if active_deficit_chain_ids.is_empty() {
@@ -193,57 +135,20 @@ pub fn build_asset_plan(
             decimals: asset.decimals,
             observed_total_balance,
             effective_total_balance,
-            chain_states,
             active_deficit_chain_ids,
-            newly_activated_chain_ids,
-            cleared_chain_ids,
-            triggered: false,
-            reason: "no active deficit chain after hysteresis".to_string(),
             transfers: Vec::new(),
-            cooldown_blocked_transfers: Vec::new(),
         });
     }
 
-    let deficits: Vec<WorkingAmount> = chain_states
-        .iter()
-        .filter(|state| state.deficit_raw >= MIN_EFFECTIVE_RAW_TRANSFER)
-        .map(|state| WorkingAmount {
-            chain_id: state.chain_id,
-            amount_raw: state.deficit_raw,
-        })
-        .collect();
-
-    let surpluses: Vec<WorkingAmount> = chain_states
-        .iter()
-        .filter(|state| state.surplus_raw >= MIN_EFFECTIVE_RAW_TRANSFER)
-        .map(|state| WorkingAmount {
-            chain_id: state.chain_id,
-            amount_raw: state.surplus_raw,
-        })
-        .collect();
-
-    let candidate_transfers = match_greedy(deficits, surpluses);
-    let (transfers, cooldown_blocked_transfers) = apply_cooldown(candidate_transfers, &context);
-
-    let reason = if transfers.is_empty() && !cooldown_blocked_transfers.is_empty() {
-        "all candidate routes are in cooldown".to_string()
-    } else {
-        "one or more chains are active deficits".to_string()
-    };
+    let transfers = match_greedy(deficits, surpluses);
 
     Ok(AssetPlan {
         symbol: asset.symbol.clone(),
         decimals: asset.decimals,
         observed_total_balance,
         effective_total_balance,
-        chain_states,
         active_deficit_chain_ids,
-        newly_activated_chain_ids,
-        cleared_chain_ids,
-        triggered: true,
-        reason,
         transfers,
-        cooldown_blocked_transfers,
     })
 }
 
@@ -263,37 +168,6 @@ pub fn format_token_amount(amount: U256, decimals: u8) -> String {
 
 pub fn format_raw_u128(amount_raw: u128, decimals: u8) -> String {
     format_token_amount(U256::from(amount_raw), decimals)
-}
-
-fn apply_cooldown(
-    candidates: Vec<TransferPlan>,
-    context: &PlannerContext<'_>,
-) -> (Vec<TransferPlan>, Vec<CooldownBlockedTransfer>) {
-    if context.cooldown_seconds_per_route == 0 {
-        return (candidates, Vec::new());
-    }
-
-    let mut allowed = Vec::new();
-    let mut blocked = Vec::new();
-    for transfer in candidates {
-        if let Some(last_execution) = context
-            .route_last_execution_by_pair
-            .get(&(transfer.source_chain_id, transfer.destination_chain_id))
-        {
-            let available_at = last_execution.saturating_add(context.cooldown_seconds_per_route);
-            if context.now_unix_seconds < available_at {
-                blocked.push(CooldownBlockedTransfer {
-                    transfer,
-                    last_execution_unix_seconds: *last_execution,
-                    available_at_unix_seconds: available_at,
-                });
-                continue;
-            }
-        }
-        allowed.push(transfer);
-    }
-
-    (allowed, blocked)
 }
 
 fn match_greedy(
@@ -394,23 +268,18 @@ mod tests {
         let observed = BTreeMap::from([(1u64, U256::from(500u64)), (2u64, U256::from(500u64))]);
         let reserved = BTreeMap::from([(1u64, U256::from(200u64))]);
         let active = BTreeSet::new();
-        let route_last = BTreeMap::new();
 
         let plan = build_asset_plan(
             &asset,
             &observed,
             PlannerContext {
-                now_unix_seconds: 100,
-                cooldown_seconds_per_route: 0,
                 settle_buffer_weight: 0.01,
                 reserved_outgoing_by_chain: &reserved,
                 previously_active_deficits: &active,
-                route_last_execution_by_pair: &route_last,
             },
         )
         .unwrap();
 
-        assert!(plan.triggered);
         assert_eq!(plan.active_deficit_chain_ids, vec![1]);
         assert_eq!(plan.transfers.len(), 1);
         assert_eq!(plan.transfers[0].source_chain_id, 2);
@@ -424,60 +293,40 @@ mod tests {
         let observed = BTreeMap::from([(1u64, U256::from(450u64)), (2u64, U256::from(550u64))]);
         let reserved = BTreeMap::new();
         let active = BTreeSet::from([1u64]);
-        let route_last = BTreeMap::new();
 
         let plan = build_asset_plan(
             &asset,
             &observed,
             PlannerContext {
-                now_unix_seconds: 100,
-                cooldown_seconds_per_route: 0,
                 settle_buffer_weight: 0.01,
                 reserved_outgoing_by_chain: &reserved,
                 previously_active_deficits: &active,
-                route_last_execution_by_pair: &route_last,
             },
         )
         .unwrap();
 
         assert!(plan.active_deficit_chain_ids.contains(&1));
-        assert!(plan.cleared_chain_ids.is_empty());
     }
 
     #[test]
-    fn cooldown_blocks_candidate_route() {
+    fn returns_empty_transfers_when_no_active_deficit() {
         let asset = sample_asset();
-        let observed = BTreeMap::from([(1u64, U256::from(300u64)), (2u64, U256::from(700u64))]);
+        let observed = BTreeMap::from([(1u64, U256::from(450u64)), (2u64, U256::from(550u64))]);
         let reserved = BTreeMap::new();
         let active = BTreeSet::new();
-        let route_last = BTreeMap::from([((2u64, 1u64), 140u64)]);
 
         let plan = build_asset_plan(
             &asset,
             &observed,
             PlannerContext {
-                now_unix_seconds: 150,
-                cooldown_seconds_per_route: 30,
                 settle_buffer_weight: 0.01,
                 reserved_outgoing_by_chain: &reserved,
                 previously_active_deficits: &active,
-                route_last_execution_by_pair: &route_last,
             },
         )
         .unwrap();
 
-        assert!(plan.triggered);
         assert!(plan.transfers.is_empty());
-        assert_eq!(plan.cooldown_blocked_transfers.len(), 1);
-        assert_eq!(
-            plan.cooldown_blocked_transfers[0].transfer.source_chain_id,
-            2
-        );
-        assert_eq!(
-            plan.cooldown_blocked_transfers[0]
-                .transfer
-                .destination_chain_id,
-            1
-        );
+        assert!(plan.active_deficit_chain_ids.is_empty());
     }
 }

@@ -209,14 +209,15 @@ Design note:
 State path (proposed): `.rebalancer/state.json`
 
 Persist:
-1. Last observed balances per `(asset, chain)`.
-2. In-flight transfers with unique id, route, amount, tx hash(es), timestamps, status.
-3. Last execution timestamps for cooldown enforcement.
+1. In-flight transfers with unique id, route, amount, tx hash(es), timestamps, status.
+2. Last execution timestamps for cooldown enforcement.
+3. Active deficit chains per asset (for hysteresis continuity across restarts).
 
 Requirements:
 1. Write-through on transfer state transitions.
 2. On startup, reload and resume tracking of in-flight transfers.
 3. Never create duplicate transfer for an already in-flight equivalent route window.
+4. Keep state bounded by pruning old terminal transfer records.
 
 ## 10) Error Handling
 
@@ -238,7 +239,7 @@ Requirements:
 Logs:
 1. Snapshot summary per asset: balances, current weights, target weights.
 2. Trigger decisions: why rebalance fired or skipped.
-3. Transfer lifecycle events: planned, submitted, delivered, failed, timed out.
+3. Transfer lifecycle events: submitted, delivered, failed, timed out.
 
 Metrics:
 1. `rebalancer_asset_weight{asset,chain}`

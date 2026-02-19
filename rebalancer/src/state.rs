@@ -7,6 +7,7 @@ use tracing::{debug, info, warn};
 
 const STATE_DIR: &str = ".rebalancer";
 const STATE_FILE: &str = "state.json";
+const TERMINAL_TRANSFER_HISTORY_LIMIT: usize = 200;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RebalancerState {
@@ -14,8 +15,6 @@ pub struct RebalancerState {
     pub version: u32,
     #[serde(default)]
     pub last_cycle_at_unix_seconds: Option<u64>,
-    #[serde(default)]
-    pub last_observed_balances: HashMap<String, HashMap<u64, String>>,
     #[serde(default)]
     pub inflight_transfers: Vec<InFlightTransfer>,
     #[serde(default)]
@@ -47,7 +46,6 @@ pub struct InFlightTransfer {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum TransferStatus {
-    Planned,
     Submitted,
     Delivered,
     Failed,
@@ -56,7 +54,7 @@ pub enum TransferStatus {
 
 impl TransferStatus {
     pub fn is_pending(&self) -> bool {
-        matches!(self, Self::Planned | Self::Submitted)
+        matches!(self, Self::Submitted)
     }
 }
 
@@ -69,7 +67,6 @@ impl Default for RebalancerState {
         Self {
             version: default_version(),
             last_cycle_at_unix_seconds: None,
-            last_observed_balances: HashMap::new(),
             inflight_transfers: Vec::new(),
             route_last_execution_unix: HashMap::new(),
             active_deficit_chains: HashMap::new(),
@@ -93,8 +90,7 @@ impl StateManager {
             match serde_json::from_str::<RebalancerState>(&raw) {
                 Ok(state) => {
                     info!(
-                        "Loaded rebalancer state: {} assets with balances, {} inflight transfers",
-                        state.last_observed_balances.len(),
+                        "Loaded rebalancer state: {} inflight transfers",
                         state.inflight_transfers.len()
                     );
                     state
@@ -119,6 +115,7 @@ impl StateManager {
             manager.state.version = default_version();
             manager.dirty = true;
         }
+        manager.prune_terminal_transfer_history();
 
         Ok(manager)
     }
@@ -130,20 +127,6 @@ impl StateManager {
     pub fn set_last_cycle(&mut self, now_unix_seconds: u64) {
         if self.state.last_cycle_at_unix_seconds != Some(now_unix_seconds) {
             self.state.last_cycle_at_unix_seconds = Some(now_unix_seconds);
-            self.dirty = true;
-        }
-    }
-
-    pub fn set_last_observed_balance(&mut self, asset_symbol: &str, chain_id: u64, balance: U256) {
-        let asset_key = normalize_asset_key(asset_symbol);
-        let chain_balances = self
-            .state
-            .last_observed_balances
-            .entry(asset_key)
-            .or_default();
-        let next = balance.to_string();
-        if chain_balances.get(&chain_id) != Some(&next) {
-            chain_balances.insert(chain_id, next);
             self.dirty = true;
         }
     }
@@ -257,21 +240,14 @@ impl StateManager {
             .collect()
     }
 
-    pub fn pending_planned_transfers(&self) -> Vec<InFlightTransfer> {
-        self.state
-            .inflight_transfers
-            .iter()
-            .filter(|transfer| transfer.status == TransferStatus::Planned)
-            .cloned()
-            .collect()
-    }
-
-    pub fn create_planned_transfer(
+    pub fn create_submitted_transfer(
         &mut self,
         asset_symbol: &str,
         source_chain_id: u64,
         destination_chain_id: u64,
         amount_raw: U256,
+        source_tx_hash: &str,
+        message_id: Option<&str>,
         now_unix_seconds: u64,
     ) -> String {
         let normalized_asset = normalize_asset_key(asset_symbol);
@@ -289,35 +265,16 @@ impl StateManager {
             source_chain_id,
             destination_chain_id,
             amount_raw: amount_raw.to_string(),
-            status: TransferStatus::Planned,
+            status: TransferStatus::Submitted,
             created_at_unix_seconds: now_unix_seconds,
             updated_at_unix_seconds: now_unix_seconds,
-            message_id: None,
-            source_tx_hash: None,
+            message_id: message_id.map(ToOwned::to_owned),
+            source_tx_hash: Some(source_tx_hash.to_string()),
             destination_tx_hash: None,
             error: None,
         });
         self.dirty = true;
         id
-    }
-
-    pub fn mark_submitted(
-        &mut self,
-        transfer_id: &str,
-        source_tx_hash: &str,
-        message_id: Option<&str>,
-        now_unix_seconds: u64,
-    ) -> Result<()> {
-        let transfer = self
-            .find_transfer_mut(transfer_id)
-            .ok_or_else(|| anyhow::anyhow!("Unknown transfer id {}", transfer_id))?;
-        transfer.status = TransferStatus::Submitted;
-        transfer.source_tx_hash = Some(source_tx_hash.to_string());
-        transfer.message_id = message_id.map(ToOwned::to_owned);
-        transfer.updated_at_unix_seconds = now_unix_seconds;
-        transfer.error = None;
-        self.dirty = true;
-        Ok(())
     }
 
     pub fn mark_delivered(
@@ -374,6 +331,8 @@ impl StateManager {
     }
 
     pub fn save(&mut self) -> Result<()> {
+        self.prune_terminal_transfer_history();
+
         if let Some(parent) = self.state_path.parent() {
             std::fs::create_dir_all(parent).with_context(|| {
                 format!("Failed to create state directory: {}", parent.display())
@@ -396,6 +355,41 @@ impl StateManager {
             .inflight_transfers
             .iter_mut()
             .find(|transfer| transfer.id == transfer_id)
+    }
+
+    fn prune_terminal_transfer_history(&mut self) {
+        if self.state.inflight_transfers.len() <= TERMINAL_TRANSFER_HISTORY_LIMIT {
+            return;
+        }
+
+        let mut pending = Vec::new();
+        let mut terminal = Vec::new();
+        for transfer in self.state.inflight_transfers.drain(..) {
+            if transfer.status.is_pending() {
+                pending.push(transfer);
+            } else {
+                terminal.push(transfer);
+            }
+        }
+
+        if terminal.len() > TERMINAL_TRANSFER_HISTORY_LIMIT {
+            terminal.sort_by(|a, b| {
+                b.updated_at_unix_seconds
+                    .cmp(&a.updated_at_unix_seconds)
+                    .then_with(|| b.created_at_unix_seconds.cmp(&a.created_at_unix_seconds))
+                    .then_with(|| b.id.cmp(&a.id))
+            });
+            let removed = terminal.len() - TERMINAL_TRANSFER_HISTORY_LIMIT;
+            terminal.truncate(TERMINAL_TRANSFER_HISTORY_LIMIT);
+            info!(
+                "Pruned {} terminal transfer records (limit={})",
+                removed, TERMINAL_TRANSFER_HISTORY_LIMIT
+            );
+            self.dirty = true;
+        }
+
+        pending.extend(terminal);
+        self.state.inflight_transfers = pending;
     }
 }
 
@@ -491,6 +485,73 @@ mod tests {
 
         let reserved = manager.reserved_outgoing_by_chain("usdc");
         assert_eq!(reserved.get(&1234), Some(&U256::from(1000u64)));
+
+        std::fs::remove_dir_all(temp_dir).expect("temp directory should be removable");
+    }
+
+    #[test]
+    fn prunes_terminal_transfer_history_to_limit() {
+        let temp_dir = unique_temp_dir("prune-history");
+        let mut manager = StateManager::new(&temp_dir).expect("state manager should initialize");
+
+        let mut transfers = Vec::new();
+        transfers.push(InFlightTransfer {
+            id: "pending".to_string(),
+            asset_symbol: "USDC".to_string(),
+            source_chain_id: 1234,
+            destination_chain_id: 11155111,
+            amount_raw: "1".to_string(),
+            status: TransferStatus::Submitted,
+            created_at_unix_seconds: 1,
+            updated_at_unix_seconds: 1,
+            message_id: None,
+            source_tx_hash: Some("0x01".to_string()),
+            destination_tx_hash: None,
+            error: None,
+        });
+        for idx in 0..(TERMINAL_TRANSFER_HISTORY_LIMIT + 10) {
+            let ts = idx as u64 + 2;
+            transfers.push(InFlightTransfer {
+                id: format!("terminal-{idx}"),
+                asset_symbol: "USDC".to_string(),
+                source_chain_id: 1234,
+                destination_chain_id: 11155111,
+                amount_raw: "1".to_string(),
+                status: TransferStatus::Delivered,
+                created_at_unix_seconds: ts,
+                updated_at_unix_seconds: ts,
+                message_id: None,
+                source_tx_hash: Some(format!("0x{idx:x}")),
+                destination_tx_hash: Some(format!("0x{idx:x}")),
+                error: None,
+            });
+        }
+        manager.state.inflight_transfers = transfers;
+        manager.dirty = true;
+        manager.save_if_dirty().expect("save should succeed");
+
+        let reloaded = StateManager::new(&temp_dir).expect("state manager should reload");
+        assert_eq!(reloaded.inflight_pending_count(), 1);
+        assert_eq!(
+            reloaded.state.inflight_transfers.len(),
+            TERMINAL_TRANSFER_HISTORY_LIMIT + 1
+        );
+        assert!(
+            reloaded
+                .state
+                .inflight_transfers
+                .iter()
+                .any(|transfer| transfer.id == "terminal-209"),
+            "newest terminal transfer should be kept"
+        );
+        assert!(
+            !reloaded
+                .state
+                .inflight_transfers
+                .iter()
+                .any(|transfer| transfer.id == "terminal-0"),
+            "oldest terminal transfer should be pruned"
+        );
 
         std::fs::remove_dir_all(temp_dir).expect("temp directory should be removable");
     }

@@ -22,6 +22,13 @@ pub struct RebalancerService {
     cycle: u64,
 }
 
+#[derive(Debug, Clone)]
+struct CooldownBlockedTransfer {
+    transfer: TransferPlan,
+    last_execution_unix_seconds: u64,
+    available_at_unix_seconds: u64,
+}
+
 impl RebalancerService {
     pub async fn new(config: RebalancerConfig, project_root: &Path) -> Result<Self> {
         let mut clients = HashMap::new();
@@ -160,11 +167,6 @@ impl RebalancerService {
             return Ok(());
         }
 
-        for (chain_id, balance) in &observed_balances {
-            self.state
-                .set_last_observed_balance(&asset.symbol, *chain_id, *balance);
-        }
-
         let reserved_outgoing_by_chain = self.state.reserved_outgoing_by_chain(&asset.symbol);
         let previously_active_deficits = self.state.active_deficit_chains(&asset.symbol);
         let route_last_execution_by_pair = self.state.route_last_execution_for_asset(&asset.symbol);
@@ -173,12 +175,9 @@ impl RebalancerService {
             asset,
             &observed_balances,
             PlannerContext {
-                now_unix_seconds,
-                cooldown_seconds_per_route: self.config.execution.cooldown_seconds_per_route,
                 settle_buffer_weight: self.config.execution.settle_buffer_bps as f64 / 10_000.0,
                 reserved_outgoing_by_chain: &reserved_outgoing_by_chain,
                 previously_active_deficits: &previously_active_deficits,
-                route_last_execution_by_pair: &route_last_execution_by_pair,
             },
         )?;
 
@@ -209,7 +208,7 @@ impl RebalancerService {
             size_adjusted_transfers.push(adjusted);
         }
 
-        if plan.triggered {
+        if !plan.active_deficit_chain_ids.is_empty() {
             info!(
                 "Asset {}: transfer-size bounds from effective_total={} {} => min={} {} ({} bps), max={} {} ({} bps)",
                 asset.symbol,
@@ -264,12 +263,19 @@ impl RebalancerService {
             );
         }
 
+        let (cooldown_allowed_transfers, blocked_by_cooldown) = apply_route_cooldown(
+            size_adjusted_transfers,
+            &route_last_execution_by_pair,
+            self.config.execution.cooldown_seconds_per_route,
+            now_unix_seconds,
+        );
+
         let pending_inflight = self.state.inflight_pending_count();
         let available_slots = self
             .config
             .max_parallel_transfers
             .saturating_sub(pending_inflight);
-        let mut emitted_transfers = size_adjusted_transfers;
+        let mut emitted_transfers = cooldown_allowed_transfers;
         let blocked_by_parallel = if emitted_transfers.len() > available_slots {
             emitted_transfers.split_off(available_slots)
         } else {
@@ -278,10 +284,9 @@ impl RebalancerService {
 
         self.log_plan(
             &plan,
-            &reserved_outgoing_by_chain,
-            &previously_active_deficits,
             pending_inflight,
             available_slots,
+            &blocked_by_cooldown,
             &emitted_transfers,
             &blocked_by_parallel,
         );
@@ -363,34 +368,20 @@ impl RebalancerService {
                 amount: U256::from(transfer.amount_raw),
             };
 
-            let transfer_id = self.state.create_planned_transfer(
-                &asset.symbol,
-                transfer.source_chain_id,
-                transfer.destination_chain_id,
-                U256::from(transfer.amount_raw),
-                now_unix_seconds,
-            );
-            self.state.save_if_dirty()?;
-
             let quote = match hyperlane.quote_transfer(&request).await {
                 Ok(quote) => quote,
                 Err(err) => {
-                    let reason = format!("quote failed: {}", err);
                     warn!(
-                        "Asset {} transfer {}: {}",
-                        asset.symbol, transfer_id, reason
+                        "Asset {} route {} -> {} quote failed: {}",
+                        asset.symbol, source_chain.name, destination_chain.name, err
                     );
-                    self.state
-                        .mark_failed(&transfer_id, reason, now_unix_seconds)?;
-                    self.state.save_if_dirty()?;
                     continue;
                 }
             };
 
             info!(
-                "Asset {} transfer {}: quote {} -> {} amount={} {} native_fee={} router_token={}",
+                "Asset {} quote: {} -> {} amount={} {} native_fee={} router_token={}",
                 asset.symbol,
-                transfer_id,
                 source_chain.name,
                 destination_chain.name,
                 format_raw_u128(transfer.amount_raw, asset.decimals),
@@ -400,20 +391,28 @@ impl RebalancerService {
             );
             for (idx, entry) in quote.entries.iter().enumerate() {
                 debug!(
-                    "Asset {} transfer {}: quote[{}] token={} amount={}",
-                    asset.symbol, transfer_id, idx, entry.token, entry.amount
+                    "Asset {} quote {} -> {}[{}] token={} amount={}",
+                    asset.symbol,
+                    source_chain.name,
+                    destination_chain.name,
+                    idx,
+                    entry.token,
+                    entry.amount
                 );
             }
 
             match hyperlane.submit_transfer(&request, quote.native_fee).await {
                 Ok(submitted) => {
                     let message_id = submitted.message_id.map(|value| value.to_string());
-                    self.state.mark_submitted(
-                        &transfer_id,
+                    let transfer_id = self.state.create_submitted_transfer(
+                        &asset.symbol,
+                        transfer.source_chain_id,
+                        transfer.destination_chain_id,
+                        U256::from(transfer.amount_raw),
                         &submitted.source_tx_hash.to_string(),
                         message_id.as_deref(),
                         now_unix_seconds,
-                    )?;
+                    );
                     self.state.set_route_last_execution(
                         &asset.symbol,
                         transfer.source_chain_id,
@@ -433,14 +432,10 @@ impl RebalancerService {
                     );
                 }
                 Err(err) => {
-                    let reason = format!("transfer submission failed: {}", err);
                     warn!(
-                        "Asset {} transfer {}: {}",
-                        asset.symbol, transfer_id, reason
+                        "Asset {} route {} -> {} transfer submission failed: {}",
+                        asset.symbol, source_chain.name, destination_chain.name, err
                     );
-                    self.state
-                        .mark_failed(&transfer_id, reason, now_unix_seconds)?;
-                    self.state.save_if_dirty()?;
                 }
             }
         }
@@ -449,21 +444,6 @@ impl RebalancerService {
     }
 
     async fn reconcile_inflight(&mut self, now_unix_seconds: u64) -> Result<()> {
-        for planned in self.state.pending_planned_transfers() {
-            if now_unix_seconds.saturating_sub(planned.created_at_unix_seconds) > 60 {
-                warn!(
-                    "Transfer {} remained in planned state for >60s; marking failed",
-                    planned.id
-                );
-                self.state.mark_failed(
-                    &planned.id,
-                    "planned transfer was not submitted in time",
-                    now_unix_seconds,
-                )?;
-                self.state.save_if_dirty()?;
-            }
-        }
-
         let submitted = self.state.pending_submitted_transfers();
         if submitted.is_empty() {
             return Ok(());
@@ -564,14 +544,12 @@ impl RebalancerService {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn log_plan(
         &self,
         plan: &crate::planner::AssetPlan,
-        reserved_outgoing_by_chain: &BTreeMap<u64, U256>,
-        previously_active_deficits: &BTreeSet<u64>,
         pending_inflight: usize,
         available_slots: usize,
+        blocked_by_cooldown: &[CooldownBlockedTransfer],
         emitted_transfers: &[crate::planner::TransferPlan],
         blocked_by_parallel: &[crate::planner::TransferPlan],
     ) {
@@ -586,83 +564,21 @@ impl RebalancerService {
             available_slots
         );
 
-        if !reserved_outgoing_by_chain.is_empty() {
-            for (chain_id, reserved) in reserved_outgoing_by_chain {
-                let chain = self
-                    .config
-                    .chain_by_id(*chain_id)
-                    .expect("validated chain_id must exist");
-                debug!(
-                    "  reserved_outgoing chain={} ({}) amount={} {}",
-                    chain.name,
-                    chain.chain_id,
-                    format_token_amount(*reserved, plan.decimals),
-                    plan.symbol
-                );
-            }
-        }
-
-        if !previously_active_deficits.is_empty() {
-            debug!(
-                "  previously_active_deficits: {:?}",
-                previously_active_deficits
-            );
-        }
-
-        for state in &plan.chain_states {
-            let chain = self
-                .config
-                .chain_by_id(state.chain_id)
-                .expect("validated chain_id must exist");
+        if plan.active_deficit_chain_ids.is_empty() {
             info!(
-                "  chain={} ({}) account={} observed={} {} reserved={} {} effective={} {} weight={:.4} target={:.4} min={:.4} clear<{:.4} active={} (was={})",
-                chain.name,
-                chain.chain_id,
-                chain.account,
-                format_token_amount(state.observed_balance, plan.decimals),
-                plan.symbol,
-                format_token_amount(state.reserved_outgoing, plan.decimals),
-                plan.symbol,
-                format_token_amount(state.effective_balance, plan.decimals),
-                plan.symbol,
-                state.current_weight,
-                state.target_weight,
-                state.min_weight,
-                state.clear_threshold_weight,
-                state.is_active,
-                state.was_active
+                "Asset {}: rebalance skipped (no active deficit chain after hysteresis)",
+                plan.symbol
             );
-            debug!(
-                "  chain={} target_balance_raw={:.4} deficit_raw={:.4} surplus_raw={:.4}",
-                chain.chain_id, state.target_balance_raw, state.deficit_raw, state.surplus_raw
-            );
-        }
-
-        if !plan.newly_activated_chain_ids.is_empty() {
-            info!(
-                "Asset {}: newly activated deficit chains {:?}",
-                plan.symbol, plan.newly_activated_chain_ids
-            );
-        }
-        if !plan.cleared_chain_ids.is_empty() {
-            info!(
-                "Asset {}: cleared deficit chains {:?}",
-                plan.symbol, plan.cleared_chain_ids
-            );
-        }
-
-        if !plan.triggered {
-            info!("Asset {}: rebalance skipped ({})", plan.symbol, plan.reason);
             return;
         }
 
         info!(
-            "Asset {}: rebalance triggered by active deficit chains {:?} ({})",
-            plan.symbol, plan.active_deficit_chain_ids, plan.reason
+            "Asset {}: rebalance triggered by active deficit chains {:?}",
+            plan.symbol, plan.active_deficit_chain_ids
         );
 
-        if !plan.cooldown_blocked_transfers.is_empty() {
-            for blocked in &plan.cooldown_blocked_transfers {
+        if !blocked_by_cooldown.is_empty() {
+            for blocked in blocked_by_cooldown {
                 let src = self
                     .config
                     .chain_by_id(blocked.transfer.source_chain_id)
@@ -744,6 +660,39 @@ fn now_unix_seconds() -> Result<u64> {
         .duration_since(UNIX_EPOCH)
         .context("System time is before UNIX_EPOCH")?
         .as_secs())
+}
+
+fn apply_route_cooldown(
+    candidates: Vec<TransferPlan>,
+    route_last_execution_by_pair: &BTreeMap<(u64, u64), u64>,
+    cooldown_seconds_per_route: u64,
+    now_unix_seconds: u64,
+) -> (Vec<TransferPlan>, Vec<CooldownBlockedTransfer>) {
+    if cooldown_seconds_per_route == 0 {
+        return (candidates, Vec::new());
+    }
+
+    let mut allowed = Vec::new();
+    let mut blocked = Vec::new();
+    for transfer in candidates {
+        if let Some(last_execution) = route_last_execution_by_pair
+            .get(&(transfer.source_chain_id, transfer.destination_chain_id))
+        {
+            let available_at = last_execution.saturating_add(cooldown_seconds_per_route);
+            if now_unix_seconds < available_at {
+                blocked.push(CooldownBlockedTransfer {
+                    transfer,
+                    last_execution_unix_seconds: *last_execution,
+                    available_at_unix_seconds: available_at,
+                });
+                continue;
+            }
+        }
+
+        allowed.push(transfer);
+    }
+
+    (allowed, blocked)
 }
 
 fn transfer_size_bounds_raw(
