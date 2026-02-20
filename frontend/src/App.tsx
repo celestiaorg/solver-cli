@@ -109,6 +109,7 @@ export default function App() {
   // Rebalance state
   const [rebalanceLoading, setRebalanceLoading] = useState<string | null>(null)
   const [rebalanceMsg, setRebalanceMsg] = useState('')
+  const [rebalanceToken, setRebalanceToken] = useState('USDC')
 
   // Polling ref
   const pollRef = useRef<ReturnType<typeof setInterval>>()
@@ -327,7 +328,7 @@ export default function App() {
     setRebalanceLoading(direction)
     setRebalanceMsg('')
     try {
-      const resp = await api.rebalance(direction)
+      const resp = await api.rebalance(direction, undefined, rebalanceToken)
       setRebalanceMsg(resp.message)
       loadBalances()
     } catch (err: any) {
@@ -793,8 +794,26 @@ export default function App() {
                 Bridge
               </h2>
               <p className="text-xs text-gray-500 mb-3">
-                Move solver USDC between chains via Celestia.
+                Move solver tokens between chains via Celestia.
+                Only tokens with Hyperlane warp routes are supported.
               </p>
+
+              {/* Token selector for bridge */}
+              <div className="mb-3">
+                <select
+                  value={rebalanceToken}
+                  onChange={e => setRebalanceToken(e.target.value)}
+                  className="w-full bg-surface-2 border border-border rounded-lg px-3 py-2 text-white text-xs
+                    font-medium outline-none focus:border-brand transition-colors cursor-pointer"
+                >
+                  {config && Object.values(config.chains).flatMap(c => Object.keys(c.tokens))
+                    .filter((sym, i, arr) => arr.indexOf(sym) === i && sym !== 'ETH')
+                    .map(sym => (
+                      <option key={sym} value={sym}>{sym}</option>
+                    ))
+                  }
+                </select>
+              </div>
 
               <div className="space-y-2">
                 <button
@@ -806,7 +825,7 @@ export default function App() {
                     flex items-center justify-center gap-1.5"
                 >
                   {rebalanceLoading === 'forward' ? <Spinner size={12} /> : null}
-                  anvil1 → anvil2
+                  {rebalanceToken} anvil1 → anvil2
                 </button>
                 <button
                   onClick={() => handleRebalance('back')}
@@ -817,7 +836,7 @@ export default function App() {
                     flex items-center justify-center gap-1.5"
                 >
                   {rebalanceLoading === 'back' ? <Spinner size={12} /> : null}
-                  anvil2 → anvil1
+                  {rebalanceToken} anvil2 → anvil1
                 </button>
               </div>
 

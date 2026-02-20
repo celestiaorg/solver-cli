@@ -59,7 +59,123 @@ const erc20Abi = parseAbi([
   'function balanceOf(address) view returns (uint256)',
   'function mint(address, uint256)',
   'function decimals() view returns (uint8)',
+  'function approve(address, uint256) returns (bool)',
 ]);
+
+const hypTokenAbi = parseAbi([
+  'function transferRemote(uint32, bytes32, uint256) payable returns (bytes32)',
+  'function balanceOf(address) view returns (uint256)',
+]);
+
+// ── Bech32 → bytes32 (replaces Python script) ───────────────────────────────
+
+const BECH32_CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+
+function bech32ToBytes32(addr) {
+  const pos = addr.lastIndexOf('1');
+  if (pos < 1) throw new Error(`Invalid bech32 address: ${addr}`);
+  const dataPart = addr.slice(pos + 1, -6); // strip checksum (last 6 chars)
+  const values = [...dataPart].map(c => {
+    const idx = BECH32_CHARSET.indexOf(c);
+    if (idx < 0) throw new Error(`Invalid bech32 character: ${c}`);
+    return idx;
+  });
+  // Convert 5-bit groups to 8-bit bytes
+  let acc = 0, bits = 0;
+  const out = [];
+  for (const v of values) {
+    acc = (acc << 5) | v;
+    bits += 5;
+    while (bits >= 8) {
+      bits -= 8;
+      out.push((acc >> bits) & 0xff);
+    }
+  }
+  // Left-pad to 32 bytes
+  const padded = new Uint8Array(32);
+  padded.set(out, 32 - out.length);
+  return '0x' + Buffer.from(padded).toString('hex');
+}
+
+// ── Warp Route Config ────────────────────────────────────────────────────────
+
+/**
+ * Get warp route addresses for a token.
+ * For USDC: reads from hyperlane-addresses.json (backward compat).
+ * For other tokens: reads from .config/warp-routes/{SYMBOL}.json.
+ *
+ * Returns: { anvil1: { underlying, warpToken, domainId, chainId, rpc },
+ *            anvil2: { warpToken, domainId, chainId, rpc } }
+ */
+function getWarpRouteConfig(token) {
+  const state = readState();
+  const hypAddresses = readHyperlaneAddresses();
+  if (!hypAddresses) throw new Error('Hyperlane not deployed — .config/hyperlane-addresses.json not found');
+
+  const anvil1 = hypAddresses.anvil1;
+  const anvil2 = hypAddresses.anvil2;
+  if (!anvil1 || !anvil2) throw new Error('Missing anvil1/anvil2 in hyperlane-addresses.json');
+
+  // Find chain configs from state by name
+  const chain1 = Object.values(state.chains).find(c => c.name === 'anvil1');
+  const chain2 = Object.values(state.chains).find(c => c.name === 'anvil2');
+  if (!chain1 || !chain2) throw new Error('anvil1/anvil2 chains not found in state.json');
+
+  if (token === 'USDC') {
+    // Built-in: read from hyperlane-addresses.json
+    if (!anvil1.mock_usdc || !anvil1.warp_token || !anvil2.warp_token) {
+      throw new Error('USDC warp route not deployed — missing addresses in hyperlane-addresses.json');
+    }
+    return {
+      anvil1: {
+        underlying: anvil1.mock_usdc,
+        warpToken: anvil1.warp_token,
+        warpType: 'collateral',
+        domainId: anvil1.domain_id,
+        chainId: anvil1.chain_id,
+        rpc: chain1.rpc,
+      },
+      anvil2: {
+        warpToken: anvil2.warp_token,
+        warpType: 'synthetic',
+        domainId: anvil2.domain_id,
+        chainId: anvil2.chain_id,
+        rpc: chain2.rpc,
+      },
+      celestiaDomainId: hypAddresses.celestiadev?.domain_id || 69420,
+    };
+  }
+
+  // Other tokens: look for .config/warp-routes/{SYMBOL}.json
+  try {
+    const warpFile = readFileSync(resolve(ROOT, `.config/warp-routes/${token}.json`), 'utf8');
+    const warp = JSON.parse(warpFile);
+    return {
+      anvil1: {
+        underlying: warp.anvil1.underlying,
+        warpToken: warp.anvil1.warpToken,
+        warpType: warp.anvil1.warpType || 'collateral',
+        domainId: anvil1.domain_id,
+        chainId: anvil1.chain_id,
+        rpc: chain1.rpc,
+      },
+      anvil2: {
+        warpToken: warp.anvil2.warpToken,
+        warpType: warp.anvil2.warpType || 'synthetic',
+        domainId: anvil2.domain_id,
+        chainId: anvil2.chain_id,
+        rpc: chain2.rpc,
+      },
+      celestiaDomainId: hypAddresses.celestiadev?.domain_id || 69420,
+    };
+  } catch {
+    throw new Error(
+      `No warp route configured for ${token}. ` +
+      `Create .config/warp-routes/${token}.json with { anvil1: { underlying, warpToken }, anvil2: { warpToken } }. ` +
+      `See docs/deploy-new-token.md`
+    );
+  }
+}
 
 function readHyperlaneAddresses() {
   try {
@@ -279,23 +395,124 @@ app.post('/api/faucet', async (req, res) => {
   }
 });
 
-// Rebalance: bridge USDC between anvil chains via Celestia forwarding
+// Rebalance: bridge tokens between anvil chains via Celestia forwarding
 app.post('/api/rebalance', async (req, res) => {
-  const { direction = 'forward', amount = '10000000' } = req.body;
+  const { direction = 'forward', amount = '10000000', token = 'USDC' } = req.body;
   try {
+    // 1. Load warp route config for this token
+    const warp = getWarpRouteConfig(token);
+    const isForward = direction !== 'back';
+
+    const src = isForward ? warp.anvil1 : warp.anvil2;
+    const dst = isForward ? warp.anvil2 : warp.anvil1;
+
+    // The token to send from (HypCollateral on anvil1, HypSynthetic on anvil2)
+    const srcWarpToken = src.warpToken;
+    // The token to check balance on destination
+    const dstBalanceToken = isForward ? dst.warpToken : warp.anvil1.underlying;
+    // The underlying ERC20 to approve (only needed when sending from collateral side)
+    const underlyingToApprove = isForward ? warp.anvil1.underlying : null;
+
+    // 2. Setup viem clients
+    const solverPk = process.env.SOLVER_PRIVATE_KEY;
+    if (!solverPk) throw new Error('SOLVER_PRIVATE_KEY not set in .env');
+    const solver = privateKeyToAccount(`0x${solverPk.replace('0x', '')}`);
+
+    const srcChain = makeViemChain(src.chainId, isForward ? 'anvil1' : 'anvil2', src.rpc);
+    const dstChain = makeViemChain(dst.chainId, isForward ? 'anvil2' : 'anvil1', dst.rpc);
+
+    const srcWallet = createWalletClient({ account: solver, chain: srcChain, transport: http(src.rpc) });
+    const srcPublic = createPublicClient({ chain: srcChain, transport: http(src.rpc) });
+    const dstPublic = createPublicClient({ chain: dstChain, transport: http(dst.rpc) });
+
+    const solverPadded = '0x000000000000000000000000' + solver.address.slice(2);
+    const amountBigInt = BigInt(amount);
+
+    console.log(`[rebalance] ${token} ${direction}: ${isForward ? 'anvil1→anvil2' : 'anvil2→anvil1'} amount=${amount}`);
+    console.log(`[rebalance] solver=${solver.address} srcWarp=${srcWarpToken} dstBalance=${dstBalanceToken}`);
+
+    // 3. Check initial balance on destination
+    const initialDstBal = await dstPublic.readContract({
+      address: dstBalanceToken, abi: hypTokenAbi,
+      functionName: 'balanceOf', args: [solver.address],
+    });
+    console.log(`[rebalance] Initial dst balance: ${initialDstBal}`);
+
+    // 4. Derive Celestia forwarding address
     const { execSync } = await import('child_process');
-    const target = direction === 'back' ? 'rebalance-back' : 'rebalance';
-    console.log(`[rebalance] Running make ${target} REBALANCE_AMOUNT=${amount}`);
-    const output = execSync(
-      `make ${target} REBALANCE_AMOUNT=${amount}`,
-      { cwd: resolve(__dirname, '..'), timeout: 120000, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
-    );
-    console.log(`[rebalance] Done`);
-    res.json({ success: true, message: `Rebalance ${direction} complete`, output });
+    const forwardAddr = execSync(
+      `docker exec forwarding-relayer forwarding-relayer derive-address --dest-domain ${dst.domainId} --dest-recipient ${solverPadded}`,
+      { encoding: 'utf8', timeout: 10000 }
+    ).trim();
+    console.log(`[rebalance] Forwarding address: ${forwardAddr}`);
+
+    // 5. Register forwarding request with backend
+    const forwardingBackend = process.env.FORWARDING_BACKEND || 'http://127.0.0.1:8080';
+    const registerResp = await fetch(`${forwardingBackend}/forwarding-requests`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        forward_addr: forwardAddr,
+        dest_domain: dst.domainId,
+        dest_recipient: solverPadded,
+      }),
+    });
+    if (!registerResp.ok) {
+      const body = await registerResp.text();
+      throw new Error(`Forwarding registration failed: ${body}`);
+    }
+    console.log(`[rebalance] Forwarding registered`);
+
+    // 6. Approve underlying ERC20 → HypCollateral (only for forward/collateral side)
+    if (underlyingToApprove) {
+      const approveHash = await srcWallet.writeContract({
+        address: underlyingToApprove, abi: erc20Abi,
+        functionName: 'approve', args: [srcWarpToken, amountBigInt],
+      });
+      await srcPublic.waitForTransactionReceipt({ hash: approveHash });
+      console.log(`[rebalance] Approved ${amount} of ${underlyingToApprove} → ${srcWarpToken}`);
+    }
+
+    // 7. Call transferRemote on the warp token
+    const forwardAddrBytes32 = bech32ToBytes32(forwardAddr);
+    console.log(`[rebalance] Forwarding addr bytes32: ${forwardAddrBytes32}`);
+
+    const txHash = await srcWallet.writeContract({
+      address: srcWarpToken, abi: hypTokenAbi,
+      functionName: 'transferRemote',
+      args: [warp.celestiaDomainId, forwardAddrBytes32, amountBigInt],
+      value: 0n,
+    });
+    await srcPublic.waitForTransactionReceipt({ hash: txHash });
+    console.log(`[rebalance] transferRemote sent: ${txHash}`);
+
+    // 8. Poll destination balance (up to 60s)
+    let arrived = false;
+    for (let i = 1; i <= 12; i++) {
+      await new Promise(r => setTimeout(r, 5000));
+      const bal = await dstPublic.readContract({
+        address: dstBalanceToken, abi: hypTokenAbi,
+        functionName: 'balanceOf', args: [solver.address],
+      });
+      console.log(`[rebalance] [${i * 5}s] dst balance: ${bal}`);
+      if (bal !== initialDstBal && bal > 0n) {
+        arrived = true;
+        break;
+      }
+    }
+
+    if (arrived) {
+      res.json({ success: true, message: `Rebalance ${token} ${direction} complete`, txHash });
+    } else {
+      res.json({
+        success: false,
+        message: `Rebalance ${token} ${direction} sent (tx: ${txHash}) but tokens haven't arrived on destination yet. Check Hyperlane relayer logs.`,
+        txHash,
+      });
+    }
   } catch (err) {
-    const stderr = err.stderr || err.message;
-    console.error(`[rebalance] Failed:`, stderr);
-    res.status(500).json({ error: `Rebalance failed: ${stderr.slice(-500)}` });
+    console.error(`[rebalance] Failed:`, err.message);
+    res.status(500).json({ error: `Rebalance failed: ${err.message}` });
   }
 });
 

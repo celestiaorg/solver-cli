@@ -81,9 +81,20 @@ sed -i "s|MOCK_USDC_ADDRESS_PLACEHOLDER|$MOCK_USDC_ADDR|" ./configs/warp-config.
 echo "Deploying Hyperlane warp route (collateral on anvil1, synthetic on anvil2)..."
 hyperlane warp deploy --config ./configs/warp-config.yaml --registry ./registry --yes
 
-# Read warp token addresses
-ANVIL1_WARP_TOKEN=$(grep "addressOrDenom:" ./registry/deployments/warp_routes/USDC/warp-config-config.yaml | head -1 | awk '{print $NF}' | tr -d '"')
-ANVIL2_WARP_TOKEN=$(grep "addressOrDenom:" ./registry/deployments/warp_routes/USDC/warp-config-config.yaml | tail -1 | awk '{print $NF}' | tr -d '"')
+# Read warp token addresses (parse by chainName, not line order — Hyperlane CLI order is not guaranteed)
+WARP_CONFIG=./registry/deployments/warp_routes/USDC/warp-config-config.yaml
+read ANVIL1_WARP_TOKEN ANVIL2_WARP_TOKEN <<< $(node -e "
+  const y = require('fs').readFileSync('$WARP_CONFIG','utf8');
+  // Split into token blocks on '- ' list items
+  const blocks = y.split(/^\s*-\s/m).filter(Boolean);
+  const addrs = {};
+  for (const b of blocks) {
+    const chain = (b.match(/chainName:\s*['\"]?(\w+)/) || [])[1];
+    const addr = (b.match(/addressOrDenom:\s*['\"]?(0x[0-9a-fA-F]+)/) || [])[1];
+    if (chain && addr) addrs[chain] = addr;
+  }
+  console.log((addrs.anvil1 || '') + ' ' + (addrs.anvil2 || ''));
+")
 
 echo "Anvil1 warp token (HypCollateral): $ANVIL1_WARP_TOKEN"
 echo "Anvil2 warp token (HypSynthetic): $ANVIL2_WARP_TOKEN"
