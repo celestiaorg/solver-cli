@@ -249,62 +249,39 @@ sequenceDiagram
 ### Architecture Overview
 
 ```mermaid
-graph TB
-    subgraph "Chain A (anvil1:8545)"
+graph LR
+    U((User)) -->|open intent| A
+    S[Solver] -->|fill order| B
+    B -->|USDC to user| U
+    OO[Oracle Operator] -->|attest| A
+    S -->|claim| A
+
+    subgraph A [Chain A · anvil1]
+        direction TB
         ISE[InputSettlerEscrow]
         CO[CentralizedOracle]
-        HCC[HypCollateral]
-        USDC1[MockERC20 USDC]
-        MB1[Hyperlane Mailbox]
+        HC[HypCollateral]
     end
 
-    subgraph "Celestia"
+    subgraph CEL [Celestia]
+        direction TB
         SYN[Synthetic Token]
-        CMB[Mailbox]
     end
 
-    subgraph "Chain B (anvil2:8546)"
+    subgraph B [Chain B · anvil2]
+        direction TB
         OSS[OutputSettlerSimple]
-        HSS[HypSynthetic]
-        USDC2[Synthetic USDC]
-        MB2[Hyperlane Mailbox]
+        HS[HypSynthetic]
     end
 
-    subgraph Services
-        S[Solver :3000]
-        OO[Oracle Operator]
-        AGG[Aggregator :4000]
-        HR[Hyperlane Relayer]
-        FR[Forwarding Relayer]
-    end
+    HC -. "lock + bridge" .-> SYN
+    SYN -. "forward + bridge" .-> HS
 
-    U((User))
-
-    U -->|"1. open(intent)"| ISE
-    S -->|"2. fill(order)"| OSS
-    OSS -->|"3. USDC to user"| U
-    OO -->|"4. attest fill"| CO
-    S -->|"5. claim escrowed"| ISE
-
-    AGG ---|quotes| S
-
-    S -.->|rebalance| HCC
-    HCC --- MB1
-    MB1 ---|relay| HR
-    HR ---|relay| CMB
-    CMB --- SYN
-    FR -.->|forward| SYN
-    SYN --- CMB
-    HR ---|relay| MB2
-    MB2 --- HSS
-    HSS -.->|mint| USDC2
-
-    style U fill:#f9f,stroke:#333
-    style S fill:#bbf,stroke:#333
-    style OO fill:#fbb,stroke:#333
-    style AGG fill:#bfb,stroke:#333
-    style HR fill:#ff9,stroke:#333
-    style FR fill:#ff9,stroke:#333
+    AGG[Aggregator] ---|quotes| S
+    HR[Hyperlane Relayer] -.->|relay| HC
+    HR -.->|relay| SYN
+    HR -.->|relay| HS
+    FR[Forwarding Relayer] -.->|auto-forward| SYN
 ```
 
 ## Contracts Deployed
