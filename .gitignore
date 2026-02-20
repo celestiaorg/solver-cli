@@ -17,3 +17,6 @@ logs/
 frontend/node_modules/
 frontend/dist/
 *.tsbuildinfo
+
+# Hyperlane CLI binary
+hyperlane/hyp
