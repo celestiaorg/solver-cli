@@ -246,44 +246,6 @@ sequenceDiagram
     HS->>Solver: mint synthetic USDC
 ```
 
-### Architecture Overview
-
-```mermaid
-graph LR
-    U((User)) -->|open intent| A
-    S[Solver] -->|fill order| B
-    B -->|USDC to user| U
-    OO[Oracle Operator] -->|attest| A
-    S -->|claim| A
-
-    subgraph A [Chain A · anvil1]
-        direction TB
-        ISE[InputSettlerEscrow]
-        CO[CentralizedOracle]
-        HC[HypCollateral]
-    end
-
-    subgraph CEL [Celestia]
-        direction TB
-        SYN[Synthetic Token]
-    end
-
-    subgraph B [Chain B · anvil2]
-        direction TB
-        OSS[OutputSettlerSimple]
-        HS[HypSynthetic]
-    end
-
-    HC -. "lock + bridge" .-> SYN
-    SYN -. "forward + bridge" .-> HS
-
-    AGG[Aggregator] ---|quotes| S
-    HR[Hyperlane Relayer] -.->|relay| HC
-    HR -.->|relay| SYN
-    HR -.->|relay| HS
-    FR[Forwarding Relayer] -.->|auto-forward| SYN
-```
-
 ## Contracts Deployed
 
 - **MockERC20** - Mintable test token (USDC, etc.)
