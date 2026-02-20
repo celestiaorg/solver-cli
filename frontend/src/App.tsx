@@ -687,24 +687,36 @@ export default function App() {
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-gray-500">You</span>
                           <div className="flex gap-3">
-                            {Object.entries(cb.balances.user).map(([sym, bal]) => (
-                              <span key={sym} className="text-gray-300 font-mono">
-                                {sym === 'ETH' ? formatETH(bal?.formatted ?? '0') : formatToken(bal?.formatted ?? '0')}
-                                <span className="text-gray-500 ml-1">{sym}</span>
+                            {asset && cb.balances.user[asset] && (
+                              <span className="text-gray-300 font-mono">
+                                {formatToken(cb.balances.user[asset]?.formatted ?? '0')}
+                                <span className="text-gray-500 ml-1">{asset}</span>
                               </span>
-                            ))}
+                            )}
+                            {cb.balances.user['ETH'] && (
+                              <span className="text-gray-300 font-mono">
+                                {formatETH(cb.balances.user['ETH']?.formatted ?? '0')}
+                                <span className="text-gray-500 ml-1">ETH</span>
+                              </span>
+                            )}
                           </div>
                         </div>
                         {/* Solver balances */}
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-gray-500">Solver</span>
                           <div className="flex gap-3">
-                            {Object.entries(cb.balances.solver).map(([sym, bal]) => (
-                              <span key={sym} className="text-gray-300 font-mono">
-                                {sym === 'ETH' ? formatETH(bal?.formatted ?? '0') : formatToken(bal?.formatted ?? '0')}
-                                <span className="text-gray-500 ml-1">{sym}</span>
+                            {asset && cb.balances.solver[asset] && (
+                              <span className="text-gray-300 font-mono">
+                                {formatToken(cb.balances.solver[asset]?.formatted ?? '0')}
+                                <span className="text-gray-500 ml-1">{asset}</span>
                               </span>
-                            ))}
+                            )}
+                            {cb.balances.solver['ETH'] && (
+                              <span className="text-gray-300 font-mono">
+                                {formatETH(cb.balances.solver['ETH']?.formatted ?? '0')}
+                                <span className="text-gray-500 ml-1">ETH</span>
+                              </span>
+                            )}
                           </div>
                         </div>
                       </div>

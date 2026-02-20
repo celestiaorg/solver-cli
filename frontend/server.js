@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { createPublicClient, createWalletClient, http, parseAbi, formatUnits, defineChain } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { config } from 'dotenv';
@@ -100,81 +100,114 @@ function bech32ToBytes32(addr) {
 // ── Warp Route Config ────────────────────────────────────────────────────────
 
 /**
+ * Parse a Hyperlane warp route YAML to extract per-chain addresses.
+ * Returns: { chainName: { addressOrDenom, standard, collateralAddressOrDenom? } }
+ */
+function parseWarpRouteYaml(yamlContent) {
+  const blocks = yamlContent.split(/^\s*-\s/m).filter(Boolean);
+  const result = {};
+  for (const block of blocks) {
+    const chain = (block.match(/chainName:\s*['"]?(\w+)/) || [])[1];
+    const addr = (block.match(/addressOrDenom:\s*['"]?(0x[0-9a-fA-F]+)/) || [])[1];
+    const standard = (block.match(/standard:\s*['"]?(\w+)/) || [])[1];
+    const collateral = (block.match(/collateralAddressOrDenom:\s*['"]?(0x[0-9a-fA-F]+)/) || [])[1];
+    if (chain && addr) {
+      result[chain] = { addressOrDenom: addr, standard, collateralAddressOrDenom: collateral };
+    }
+  }
+  return result;
+}
+
+/**
  * Get warp route addresses for a token.
- * For USDC: reads from hyperlane-addresses.json (backward compat).
- * For other tokens: reads from .config/warp-routes/{SYMBOL}.json.
+ * Auto-discovers from multiple sources:
+ *   1. Hyperlane registry YAML: hyperlane/registry/deployments/warp_routes/{SYMBOL}/
+ *   2. hyperlane-addresses.json (USDC backward compat)
+ *   3. state.json hyperlane.warp_token fields
  *
  * Returns: { anvil1: { underlying, warpToken, domainId, chainId, rpc },
- *            anvil2: { warpToken, domainId, chainId, rpc } }
+ *            anvil2: { warpToken, domainId, chainId, rpc },
+ *            celestiaDomainId }
  */
 function getWarpRouteConfig(token) {
   const state = readState();
   const hypAddresses = readHyperlaneAddresses();
   if (!hypAddresses) throw new Error('Hyperlane not deployed — .config/hyperlane-addresses.json not found');
 
-  const anvil1 = hypAddresses.anvil1;
-  const anvil2 = hypAddresses.anvil2;
-  if (!anvil1 || !anvil2) throw new Error('Missing anvil1/anvil2 in hyperlane-addresses.json');
+  const anvil1Hyp = hypAddresses.anvil1;
+  const anvil2Hyp = hypAddresses.anvil2;
+  if (!anvil1Hyp || !anvil2Hyp) throw new Error('Missing anvil1/anvil2 in hyperlane-addresses.json');
 
-  // Find chain configs from state by name
   const chain1 = Object.values(state.chains).find(c => c.name === 'anvil1');
   const chain2 = Object.values(state.chains).find(c => c.name === 'anvil2');
   if (!chain1 || !chain2) throw new Error('anvil1/anvil2 chains not found in state.json');
 
+  const celestiaDomainId = hypAddresses.celestiadev?.domain_id || 69420;
+
+  // Try to find warp route YAML in the Hyperlane registry
+  const warpDir = resolve(ROOT, `hyperlane/registry/deployments/warp_routes/${token}`);
+  if (existsSync(warpDir)) {
+    const yamlFiles = readdirSync(warpDir).filter(f => f.endsWith('.yaml'));
+    for (const file of yamlFiles) {
+      const yaml = readFileSync(resolve(warpDir, file), 'utf8');
+      const parsed = parseWarpRouteYaml(yaml);
+      if (parsed.anvil1 && parsed.anvil2) {
+        // Determine underlying token: collateralAddressOrDenom from YAML, or from state.json
+        const underlying = parsed.anvil1.collateralAddressOrDenom
+          || chain1.tokens[token]?.address;
+        if (!underlying) {
+          throw new Error(`Found warp route YAML for ${token} but cannot determine underlying ERC20 on anvil1. Register it with: make token-add CHAIN=anvil1 SYMBOL=${token} ADDRESS=<addr> DECIMALS=6`);
+        }
+        return {
+          anvil1: {
+            underlying,
+            warpToken: parsed.anvil1.addressOrDenom,
+            warpType: parsed.anvil1.standard?.includes('Collateral') ? 'collateral' : 'synthetic',
+            domainId: anvil1Hyp.domain_id,
+            chainId: anvil1Hyp.chain_id,
+            rpc: chain1.rpc,
+          },
+          anvil2: {
+            warpToken: parsed.anvil2.addressOrDenom,
+            warpType: parsed.anvil2.standard?.includes('Synthetic') ? 'synthetic' : 'collateral',
+            domainId: anvil2Hyp.domain_id,
+            chainId: anvil2Hyp.chain_id,
+            rpc: chain2.rpc,
+          },
+          celestiaDomainId,
+        };
+      }
+    }
+  }
+
+  // Fallback for USDC: read from hyperlane-addresses.json
   if (token === 'USDC') {
-    // Built-in: read from hyperlane-addresses.json
-    if (!anvil1.mock_usdc || !anvil1.warp_token || !anvil2.warp_token) {
+    if (!anvil1Hyp.mock_usdc || !anvil1Hyp.warp_token || !anvil2Hyp.warp_token) {
       throw new Error('USDC warp route not deployed — missing addresses in hyperlane-addresses.json');
     }
     return {
       anvil1: {
-        underlying: anvil1.mock_usdc,
-        warpToken: anvil1.warp_token,
+        underlying: anvil1Hyp.mock_usdc,
+        warpToken: anvil1Hyp.warp_token,
         warpType: 'collateral',
-        domainId: anvil1.domain_id,
-        chainId: anvil1.chain_id,
+        domainId: anvil1Hyp.domain_id,
+        chainId: anvil1Hyp.chain_id,
         rpc: chain1.rpc,
       },
       anvil2: {
-        warpToken: anvil2.warp_token,
+        warpToken: anvil2Hyp.warp_token,
         warpType: 'synthetic',
-        domainId: anvil2.domain_id,
-        chainId: anvil2.chain_id,
+        domainId: anvil2Hyp.domain_id,
+        chainId: anvil2Hyp.chain_id,
         rpc: chain2.rpc,
       },
-      celestiaDomainId: hypAddresses.celestiadev?.domain_id || 69420,
+      celestiaDomainId,
     };
   }
 
-  // Other tokens: look for .config/warp-routes/{SYMBOL}.json
-  try {
-    const warpFile = readFileSync(resolve(ROOT, `.config/warp-routes/${token}.json`), 'utf8');
-    const warp = JSON.parse(warpFile);
-    return {
-      anvil1: {
-        underlying: warp.anvil1.underlying,
-        warpToken: warp.anvil1.warpToken,
-        warpType: warp.anvil1.warpType || 'collateral',
-        domainId: anvil1.domain_id,
-        chainId: anvil1.chain_id,
-        rpc: chain1.rpc,
-      },
-      anvil2: {
-        warpToken: warp.anvil2.warpToken,
-        warpType: warp.anvil2.warpType || 'synthetic',
-        domainId: anvil2.domain_id,
-        chainId: anvil2.chain_id,
-        rpc: chain2.rpc,
-      },
-      celestiaDomainId: hypAddresses.celestiadev?.domain_id || 69420,
-    };
-  } catch {
-    throw new Error(
-      `No warp route configured for ${token}. ` +
-      `Create .config/warp-routes/${token}.json with { anvil1: { underlying, warpToken }, anvil2: { warpToken } }. ` +
-      `See docs/deploy-new-token.md`
-    );
-  }
+  throw new Error(
+    `No warp route found for ${token}. Deploy a Hyperlane warp route first — see docs/deploy-new-token.md`
+  );
 }
 
 function readHyperlaneAddresses() {

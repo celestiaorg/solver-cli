@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"log"
 	"strconv"
 
@@ -36,6 +37,7 @@ func NewRootCmd() *cobra.Command {
 	rootCmd.AddCommand(getDeployNoopIsmStackCmd())
 	rootCmd.AddCommand(getDeploySyntheticIsmStackCmd())
 	rootCmd.AddCommand(getEnrollRouterCmd())
+	rootCmd.AddCommand(getCreateSyntheticTokenCmd())
 	return rootCmd
 }
 
@@ -85,6 +87,38 @@ func getDeploySyntheticIsmStackCmd() *cobra.Command {
 		},
 	}
 	return deployCmd
+}
+
+func getCreateSyntheticTokenCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "create-synthetic-token [celestia-rpc] [mailbox-id] [ism-id]",
+		Short: "Create a new synthetic token on an existing Celestia Hyperlane deployment",
+		Long: `Creates a new synthetic token reusing an existing mailbox and ISM.
+Use this to add additional tokens (e.g. USDT) after the initial deployment.
+The mailbox-id and ism-id can be found in hyperlane-cosmosnative.json.`,
+		Args: cobra.ExactArgs(3),
+		Run: func(cmd *cobra.Command, args []string) {
+			ctx := cmd.Context()
+			enc := encoding.MakeConfig(app.ModuleEncodingRegisters...)
+
+			rpcAddr := args[0]
+			broadcaster := NewBroadcaster(enc, rpcAddr)
+
+			mailboxID, err := util.DecodeHexAddress(args[1])
+			if err != nil {
+				log.Fatalf("failed to parse mailbox id: %v", err)
+			}
+
+			ismID, err := util.DecodeHexAddress(args[2])
+			if err != nil {
+				log.Fatalf("failed to parse ism id: %v", err)
+			}
+
+			tokenID := CreateSyntheticToken(ctx, broadcaster, mailboxID, ismID)
+			fmt.Printf("%s\n", tokenID)
+		},
+	}
+	return cmd
 }
 
 func getEnrollRouterCmd() *cobra.Command {

@@ -184,6 +184,31 @@ func SetupRemoteRouter(ctx context.Context, broadcaster *Broadcaster, tokenID ut
 	fmt.Printf("successfully registered remote router on Hyperlane cosmosnative: \n%s", recvContract)
 }
 
+// CreateSyntheticToken creates a new synthetic token on an existing Celestia Hyperlane deployment.
+// Unlike SetupSyntheticWithIsm, this does NOT redeploy core infrastructure — it reuses an existing mailbox.
+func CreateSyntheticToken(ctx context.Context, broadcaster *Broadcaster, mailboxID util.HexAddress, ismID util.HexAddress) util.HexAddress {
+	msgCreateSyntheticToken := warptypes.MsgCreateSyntheticToken{
+		Owner:         broadcaster.address.String(),
+		OriginMailbox: mailboxID,
+	}
+
+	res := broadcaster.BroadcastTx(ctx, &msgCreateSyntheticToken)
+	tokenID := parseSyntheticTokenIDFromEvents(res.Events)
+
+	// Set ISM on synthetic token
+	msgSetToken := warptypes.MsgSetToken{
+		Owner:    broadcaster.address.String(),
+		TokenId:  tokenID,
+		IsmId:    &ismID,
+		NewOwner: broadcaster.address.String(),
+	}
+
+	broadcaster.BroadcastTx(ctx, &msgSetToken)
+
+	fmt.Printf("Created synthetic token: %s (mailbox: %s, ism: %s)\n", tokenID, mailboxID, ismID)
+	return tokenID
+}
+
 func writeConfig(cfg *HyperlaneConfig) {
 	out, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
