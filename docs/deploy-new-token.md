@@ -150,7 +150,7 @@ make token-add CHAIN=anvil2 SYMBOL=USDT ADDRESS=$HYP_SYNTHETIC DECIMALS=6
 ```bash
 make configure
 make mint SYMBOL=USDT TO=solver
-make mint SYMBOL=USDT TO=user
+make mint SYMBOL=USDT TO=0x02120571E5804E46592f29B64fD01b1013f8fC18
 ```
 
 ## Step 7: Restart services (not the chains)

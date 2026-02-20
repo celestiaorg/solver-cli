@@ -167,29 +167,145 @@ make operator
 
 ## How It Works
 
-```
-┌─────────────────┐                      ┌─────────────────┐
-│     Chain A     │                      │     Chain B     │
-├─────────────────┤                      ├─────────────────┤
-│ InputSettler    │◄──── Solver ────────►│ OutputSettler   │
-│ (escrow tokens) │      monitors        │ (deliver tokens)│
-├─────────────────┤      all chains      ├─────────────────┤
-│ Oracle          │◄── Oracle Operator ─►│ Oracle          │
-│ (Centralized)   │    (separate service)│ (Centralized)   │
-├─────────────────┤                      ├─────────────────┤
-│ Tokens          │                      │ Tokens          │
-│ (USDC, USDT...) │                      │ (USDC, USDT...) │
-└─────────────────┘                      └─────────────────┘
+### Solving Flow
+
+User submits a cross-chain intent on the origin chain. The solver fills it on the destination chain, an independent oracle operator attests the fill, and the solver claims the escrowed funds.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant ISE as InputSettlerEscrow<br/>(Chain A)
+    participant Solver
+    participant OSS as OutputSettlerSimple<br/>(Chain B)
+    participant OO as Oracle Operator
+    participant Oracle as CentralizedOracle<br/>(Chain A)
+
+    Note over User,Oracle: 1. Intent Submission
+    User->>ISE: approve(token, amount)
+    User->>ISE: open(order)
+    activate ISE
+    ISE-->>ISE: escrow USDC
+    ISE-->>Solver: emit Open(orderId, order)
+
+    Note over User,Oracle: 2. Solver Fills on Destination
+    Solver->>OSS: fill(orderId, output)
+    activate OSS
+    OSS->>User: transfer USDC on Chain B
+    OSS-->>OO: emit OutputFilled(orderId, solver, ...)
+    deactivate OSS
+
+    Note over User,Oracle: 3. Oracle Attestation
+    OO->>OO: detect fill, find origin chain
+    OO->>OO: encode FillDescription, sign attestation
+    OO->>Oracle: submitAttestation(sig, chainId, oracle, app, hash)
+    Oracle-->>Oracle: store attestation
+
+    Note over User,Oracle: 4. Solver Claims Reward
+    Solver->>Oracle: isProven(...)?
+    Oracle-->>Solver: true
+    Solver->>ISE: finalise(order, ...)
+    ISE->>Solver: transfer escrowed USDC
+    deactivate ISE
 ```
 
-### Intent Flow (Chain A -> Chain B)
+### Rebalancing via Celestia
 
-1. **User submits intent** on Chain A
-  - Tokens escrowed in InputSettler
-2. **Solver detects** intent via on-chain polling
-3. **Solver delivers** tokens to user on Chain B
-4. **Oracle operator attests** the fulfillment
-5. **Solver claims** escrowed tokens as reward on Chain A
+After filling orders, the solver's funds accumulate on one chain. Rebalancing moves tokens back through Celestia as a hub using Hyperlane warp routes and a forwarding relayer.
+
+```mermaid
+sequenceDiagram
+    participant Solver
+    participant HC as HypCollateral<br/>(Chain A)
+    participant MB1 as Mailbox<br/>(Chain A)
+    participant HR as Hyperlane<br/>Relayer
+    participant Cel as Celestia<br/>(synthetic token)
+    participant FR as Forwarding<br/>Relayer
+    participant MB2 as Mailbox<br/>(Chain B)
+    participant HS as HypSynthetic<br/>(Chain B)
+
+    Note over Solver,HS: 1. Register Forwarding Route
+    Solver->>FR: derive-address(dest=Chain B, recipient=solver)
+    FR-->>Solver: forwarding address (Celestia)
+    Solver->>FR: register forwarding request
+
+    Note over Solver,HS: 2. Lock Tokens & Send to Celestia
+    Solver->>HC: approve + transferRemote(celestia, fwdAddr, amount)
+    activate HC
+    HC-->>HC: lock USDC
+    HC->>MB1: dispatch(celestia, message)
+    deactivate HC
+    HR->>Cel: relay message
+    Cel-->>Cel: mint synthetic to fwdAddr
+
+    Note over Solver,HS: 3. Auto-Forward to Destination
+    FR->>Cel: detect balance at fwdAddr
+    FR->>Cel: transferRemote(Chain B, solver, amount)
+    Cel-->>Cel: burn synthetic
+    HR->>MB2: relay message
+    MB2->>HS: handle(origin, sender, message)
+    HS->>Solver: mint synthetic USDC
+```
+
+### Architecture Overview
+
+```mermaid
+graph TB
+    subgraph "Chain A (anvil1:8545)"
+        ISE[InputSettlerEscrow]
+        CO[CentralizedOracle]
+        HCC[HypCollateral]
+        USDC1[MockERC20 USDC]
+        MB1[Hyperlane Mailbox]
+    end
+
+    subgraph "Celestia"
+        SYN[Synthetic Token]
+        CMB[Mailbox]
+    end
+
+    subgraph "Chain B (anvil2:8546)"
+        OSS[OutputSettlerSimple]
+        HSS[HypSynthetic]
+        USDC2[Synthetic USDC]
+        MB2[Hyperlane Mailbox]
+    end
+
+    subgraph Services
+        S[Solver :3000]
+        OO[Oracle Operator]
+        AGG[Aggregator :4000]
+        HR[Hyperlane Relayer]
+        FR[Forwarding Relayer]
+    end
+
+    U((User))
+
+    U -->|"1. open(intent)"| ISE
+    S -->|"2. fill(order)"| OSS
+    OSS -->|"3. USDC to user"| U
+    OO -->|"4. attest fill"| CO
+    S -->|"5. claim escrowed"| ISE
+
+    AGG ---|quotes| S
+
+    S -.->|rebalance| HCC
+    HCC --- MB1
+    MB1 ---|relay| HR
+    HR ---|relay| CMB
+    CMB --- SYN
+    FR -.->|forward| SYN
+    SYN --- CMB
+    HR ---|relay| MB2
+    MB2 --- HSS
+    HSS -.->|mint| USDC2
+
+    style U fill:#f9f,stroke:#333
+    style S fill:#bbf,stroke:#333
+    style OO fill:#fbb,stroke:#333
+    style AGG fill:#bfb,stroke:#333
+    style HR fill:#ff9,stroke:#333
+    style FR fill:#ff9,stroke:#333
+```
 
 ## Contracts Deployed
 
