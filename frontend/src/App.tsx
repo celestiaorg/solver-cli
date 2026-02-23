@@ -110,6 +110,8 @@ export default function App() {
   const [rebalanceLoading, setRebalanceLoading] = useState<string | null>(null)
   const [rebalanceMsg, setRebalanceMsg] = useState('')
   const [rebalanceToken, setRebalanceToken] = useState('USDC')
+  const [rebalanceFrom, setRebalanceFrom] = useState('anvil1')
+  const [rebalanceTo, setRebalanceTo] = useState('anvil2')
 
   // Polling ref
   const pollRef = useRef<ReturnType<typeof setInterval>>()
@@ -324,11 +326,11 @@ export default function App() {
 
   // ── Rebalance ─────────────────────────────────────────────────────────
 
-  const handleRebalance = async (direction: 'forward' | 'back') => {
-    setRebalanceLoading(direction)
+  const handleRebalance = async () => {
+    setRebalanceLoading('bridge')
     setRebalanceMsg('')
     try {
-      const resp = await api.rebalance(direction, undefined, rebalanceToken)
+      const resp = await api.rebalance(rebalanceFrom, rebalanceTo, undefined, rebalanceToken)
       setRebalanceMsg(resp.message)
       loadBalances()
     } catch (err: any) {
@@ -810,8 +812,8 @@ export default function App() {
                 Only tokens with Hyperlane warp routes are supported.
               </p>
 
-              {/* Token selector for bridge */}
-              <div className="mb-3">
+              {/* Token + from/to selectors */}
+              <div className="space-y-2 mb-3">
                 <select
                   value={rebalanceToken}
                   onChange={e => setRebalanceToken(e.target.value)}
@@ -825,32 +827,42 @@ export default function App() {
                     ))
                   }
                 </select>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={rebalanceFrom}
+                    onChange={e => setRebalanceFrom(e.target.value)}
+                    className="flex-1 bg-surface-2 border border-border rounded-lg px-3 py-2 text-white text-xs
+                      font-medium outline-none focus:border-brand transition-colors cursor-pointer"
+                  >
+                    {chainEntries.map(([id, c]) => (
+                      <option key={id} value={c.name} disabled={c.name === rebalanceTo}>{c.name}</option>
+                    ))}
+                  </select>
+                  <span className="text-gray-500 text-xs">→</span>
+                  <select
+                    value={rebalanceTo}
+                    onChange={e => setRebalanceTo(e.target.value)}
+                    className="flex-1 bg-surface-2 border border-border rounded-lg px-3 py-2 text-white text-xs
+                      font-medium outline-none focus:border-brand transition-colors cursor-pointer"
+                  >
+                    {chainEntries.map(([id, c]) => (
+                      <option key={id} value={c.name} disabled={c.name === rebalanceFrom}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <button
-                  onClick={() => handleRebalance('forward')}
-                  disabled={rebalanceLoading !== null}
-                  className="w-full py-2 px-3 rounded-lg text-xs font-medium transition-all
-                    bg-surface-2 border border-border hover:border-brand text-gray-300 hover:text-white
-                    disabled:opacity-50 disabled:cursor-not-allowed
-                    flex items-center justify-center gap-1.5"
-                >
-                  {rebalanceLoading === 'forward' ? <Spinner size={12} /> : null}
-                  {rebalanceToken} anvil1 → anvil2
-                </button>
-                <button
-                  onClick={() => handleRebalance('back')}
-                  disabled={rebalanceLoading !== null}
-                  className="w-full py-2 px-3 rounded-lg text-xs font-medium transition-all
-                    bg-surface-2 border border-border hover:border-brand text-gray-300 hover:text-white
-                    disabled:opacity-50 disabled:cursor-not-allowed
-                    flex items-center justify-center gap-1.5"
-                >
-                  {rebalanceLoading === 'back' ? <Spinner size={12} /> : null}
-                  {rebalanceToken} anvil2 → anvil1
-                </button>
-              </div>
+              <button
+                onClick={handleRebalance}
+                disabled={rebalanceLoading !== null || rebalanceFrom === rebalanceTo}
+                className="w-full py-2 px-3 rounded-lg text-xs font-medium transition-all
+                  bg-surface-2 border border-border hover:border-brand text-gray-300 hover:text-white
+                  disabled:opacity-50 disabled:cursor-not-allowed
+                  flex items-center justify-center gap-1.5"
+              >
+                {rebalanceLoading === 'bridge' ? <Spinner size={12} /> : null}
+                Bridge {rebalanceToken}
+              </button>
 
               {rebalanceMsg && (
                 <div className={`mt-3 text-xs p-2 rounded-lg ${

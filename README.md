@@ -85,7 +85,7 @@ See [Deploy New Token](docs/deploy-new-token.md) for detailed environment setup.
 | ----------------- | -------------------------------------------------------- |
 | `make start`      | Start local EVM chain (Anvil)                            |
 | `make stop`       | Stop Anvil, solver, operator, and aggregator             |
-| `make setup`      | Full setup: deploy + configure + fund + mint to user     |
+| `make setup`      | Full setup: init + deploy + configure + fund             |
 | `make deploy`     | Deploy contracts (use `CHAINS=a,b` to limit)             |
 | `make aggregator` | Start the OIF aggregator service (port 4000)             |
 | `make solver`     | Start the solver service                                 |
@@ -134,7 +134,7 @@ make intent
 make intent FROM=sepolia TO=arbitrum ASSET=USDT AMOUNT=5000000
 
 # Or use CLI directly
-solver-cli intent submit --amount 1000000 --asset USDC --from evolve --to sepolia
+solver-cli intent submit --amount 1000000 --asset USDC --from anvil1 --to anvil2
 ```
 
 **Token amounts use raw units** (e.g., USDC has 6 decimals: `1000000` = 1 USDC)
@@ -161,7 +161,7 @@ make operator
 - Health monitoring with circuit breakers
 - Per-solver order routing
 
-**See the [OIF Aggregator Guide](docs/aggregator.md) for complete API documentation and examples.**
+**API endpoints:** `GET /api/v1/solvers`, `POST /api/v1/orders`, `GET /api/v1/quotes`
 
 ## How It Works
 
@@ -263,10 +263,10 @@ make operator
 
 ### Wrong solver address funded
 
-The solver uses `SOLVER_PRIVATE_KEY` (falls back to `SEPOLIA_PK`). Verify:
+The solver uses `SOLVER_PRIVATE_KEY`. Verify:
 
 ```bash
-cast wallet address --private-key 0x$SEPOLIA_PK
+cast wallet address --private-key $SOLVER_PRIVATE_KEY
 ```
 
 ### Insufficient gas

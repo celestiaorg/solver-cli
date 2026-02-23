@@ -173,7 +173,7 @@ network_ids = [{chain_ids_str}]
 
 [discovery.implementations.onchain_eip7683]
 network_ids = [{chain_ids_str}]
-polling_interval_secs = 2
+polling_interval_secs = 12
 
 [discovery.implementations.offchain_eip7683]
 # Offchain discovery runs its own API server for order submission
@@ -210,7 +210,7 @@ primary = "mock"
 # SETTLEMENT
 # ============================================================================
 [settlement]
-settlement_poll_interval_seconds = 3
+settlement_poll_interval_seconds = 12
 
 [settlement.implementations.centralized]
 order = "eip7683"

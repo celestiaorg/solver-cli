@@ -136,10 +136,10 @@ export const api = {
       body: JSON.stringify({ chainName, type, ...(address ? { address } : {}), ...(symbol ? { symbol } : {}) }),
     }),
 
-  rebalance: (direction: 'forward' | 'back', amount?: string, token?: string) =>
+  rebalance: (from: string, to: string, amount?: string, token?: string) =>
     json<{ success: boolean; message: string; txHash?: string }>(`${BASE}/rebalance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ direction, amount, ...(token ? { token } : {}) }),
+      body: JSON.stringify({ from, to, amount, ...(token ? { token } : {}) }),
     }),
 }

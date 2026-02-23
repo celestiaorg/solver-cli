@@ -1,12 +1,25 @@
 # Adding Sepolia to a Running anvil1 + anvil2 System
 
-This guide walks through connecting Sepolia testnet to an already-running local setup (anvil1 + anvil2 + Celestia). No Hyperlane changes are needed — Sepolia plugs straight into OIF.
+This guide adds Sepolia testnet as a third chain. After completing it, users can bridge USDC between any pair of chains and the solver will fill intents in all directions.
 
 **Prerequisites:**
 - `make start && make setup` completed successfully
 - Solver and oracle operator running (`make solver`, `make operator`)
-- A wallet with Sepolia ETH (get some from [sepoliafaucet.com](https://sepoliafaucet.com))
+- A funded Sepolia wallet — get ETH from [sepoliafaucet.com](https://sepoliafaucet.com)
 - Foundry installed (`forge`, `cast`)
+
+**Overview of steps:**
+1. Add Sepolia env vars
+2. Deploy OIF contracts (oracle, escrow, settler) to Sepolia
+3. Register Sepolia in the local Hyperlane registry
+4. Deploy the USDC bridge token on Sepolia
+5. Connect Sepolia into the existing Celestia warp route
+6. Add Sepolia to the Hyperlane relayer
+7. Register the USDC token address with the CLI
+8. Fund the solver and oracle operator with Sepolia ETH
+9. Regenerate solver + oracle configs
+10. Bridge USDC inventory to Sepolia
+11. Restart services and verify
 
 ---
 
@@ -16,13 +29,13 @@ Append to your `.env`:
 
 ```bash
 SEPOLIA_RPC=https://ethereum-sepolia-rpc.publicnode.com
-SEPOLIA_PK=<your-funded-sepolia-key-without-0x>
+SEPOLIA_PK=<your-funded-sepolia-key>
 SEPOLIA_CHAIN_ID=11155111
 ```
 
-The CLI auto-detects chains by scanning for `{CHAIN}_RPC` + `{CHAIN}_PK` pairs. Adding these three lines is enough for `sepolia` to appear as a configured chain.
+The CLI auto-detects chains by scanning for `{CHAIN}_RPC` + `{CHAIN}_PK` pairs — no other config needed.
 
-> **Key security note:** `SEPOLIA_PK` is just the **deployer key** for Sepolia — the account paying gas for contract deployment. The solver itself uses `SOLVER_PRIVATE_KEY` on all chains.
+> `SEPOLIA_PK` is the **deployer key** for paying gas on Sepolia. The solver itself uses `SOLVER_PRIVATE_KEY` on all chains.
 
 ---
 
@@ -32,12 +45,12 @@ The CLI auto-detects chains by scanning for `{CHAIN}_RPC` + `{CHAIN}_PK` pairs. 
 make deploy CHAINS=sepolia
 ```
 
-This deploys three contracts to Sepolia:
-- `CentralizedOracle` — stores fill attestations
-- `InputSettlerEscrow` — holds user funds on the origin chain
-- `OutputSettlerSimple` — where the solver delivers on the destination chain
+Deploys three contracts to Sepolia:
+- **CentralizedOracle** — stores fill attestations from the oracle operator
+- **InputSettlerEscrow** — holds user funds when Sepolia is the origin chain
+- **OutputSettlerSimple** — where the solver delivers when Sepolia is the destination
 
-The operator address baked into `CentralizedOracle` is derived from `ORACLE_OPERATOR_PK` (same as on anvil1/anvil2). Verify the addresses were saved:
+Verify the addresses were saved:
 
 ```bash
 cat .config/state.json | jq '.chains | to_entries[] | select(.value.name == "sepolia")'
@@ -45,36 +58,205 @@ cat .config/state.json | jq '.chains | to_entries[] | select(.value.name == "sep
 
 ---
 
-## Step 3: Deploy MockERC20 USDC on Sepolia
+## Step 3: Deploy Hyperlane core contracts to Sepolia
 
-OIF contract deployment does not deploy a token. You need to do this separately.
+Create the chain metadata file so the Hyperlane CLI knows about Sepolia:
+
+```bash
+mkdir -p hyperlane/registry/chains/sepolia
+
+cat > hyperlane/registry/chains/sepolia/metadata.yaml <<EOF
+chainId: 11155111
+displayName: Sepolia
+domainId: 11155111
+isTestnet: true
+name: sepolia
+nativeToken:
+  decimals: 18
+  name: Ether
+  symbol: ETH
+protocol: ethereum
+rpcUrls:
+  - http: $SEPOLIA_RPC
+technicalStack: other
+EOF
+```
+
+Deploy Hyperlane core contracts (Mailbox, ISM, hooks) to Sepolia:
+
+```bash
+docker run --rm \
+  -v "$(pwd)/hyperlane:/home/hyperlane" \
+  -w /home/hyperlane \
+  --entrypoint hyperlane \
+  ghcr.io/celestiaorg/hyperlane-init:local \
+  core deploy \
+    --chain sepolia \
+    --registry ./registry \
+    --key $SEPOLIA_PK \
+    --yes \
+  2>/dev/null
+```
+
+Verify the addresses were written:
+
+```bash
+cat hyperlane/registry/chains/sepolia/addresses.yaml
+```
+
+---
+
+## Step 4: Deploy USDC bridge token on Sepolia
+
+The token on Sepolia is a **HypSynthetic** — a bridge endpoint that represents USDC locked on anvil1 and routed through Celestia. You're not deploying a new token; you're deploying the Sepolia side of the bridge.
+
+Create the config:
+
+```bash
+. ./.env
+SEPOLIA_DEPLOYER=$(cast wallet address --private-key $SEPOLIA_PK)
+
+cat > hyperlane/configs/warp-config-sepolia.yaml <<EOF
+sepolia:
+  type: synthetic
+  owner: "$SEPOLIA_DEPLOYER"
+  name: "USDC"
+  symbol: "USDC"
+  decimals: 6
+EOF
+```
+
+Deploy:
+
+```bash
+docker run --rm \
+  -v "$(pwd)/hyperlane:/home/hyperlane" \
+  -w /home/hyperlane \
+  --entrypoint hyperlane \
+  ghcr.io/celestiaorg/hyperlane-init:local \
+  warp deploy \
+    --config ./configs/warp-config-sepolia.yaml \
+    --registry ./registry \
+    --key $SEPOLIA_PK \
+    --yes \
+  2>/dev/null
+```
+
+> Etherscan verification errors are suppressed — they're non-fatal and the deployment succeeds regardless.
+
+The output ends with the deployed contract address:
+
+```
+    tokens:
+      - chainName: sepolia
+        ...
+        addressOrDenom: "0x3FECb5509689C514da6f65CC547b5407E731978b"
+```
+
+Copy the `addressOrDenom` value and export it:
+
+```bash
+export HYP_SYNTHETIC_SEPOLIA=0x...   # paste from deploy output above
+```
+
+---
+
+## Step 5: Connect Sepolia into the Celestia warp route
+
+The warp route currently connects anvil1 ↔ Celestia ↔ anvil2. You need to enroll Sepolia as a spoke on Celestia — this is a two-sided handshake: Sepolia must know about Celestia, and Celestia must know about Sepolia.
+
+Get the Celestia token address:
+
+```bash
+cat hyperlane/hyperlane-addresses.json | jq -r '.celestiadev.synthetic_token'
+export CEL_TOKEN=0x...   # paste from above
+```
+
+**Enroll Celestia on Sepolia** — tells Sepolia's bridge contract that Celestia (domain 69420) is a valid route:
+
+```bash
+. ./.env
+cast send $HYP_SYNTHETIC_SEPOLIA \
+  "enrollRemoteRouter(uint32,bytes32)" \
+  69420 $CEL_TOKEN \
+  --private-key $SEPOLIA_PK \
+  --rpc-url $SEPOLIA_RPC
+```
+
+**Enroll Sepolia on Celestia** — tells Celestia's token that Sepolia (domain 11155111) is a valid route:
+
+```bash
+# Celestia expects the address lowercase, without 0x, padded to 32 bytes
+HYP_SYNTHETIC_LOWER=$(echo $HYP_SYNTHETIC_SEPOLIA | tr '[:upper:]' '[:lower:]' | cut -c 3-)
+
+docker run --rm \
+  --network solver-cli_solver-net \
+  --entrypoint bash \
+  -v "$(pwd)/hyperlane:/home/hyperlane" \
+  -w /home/hyperlane \
+  ghcr.io/celestiaorg/hyperlane-init:local \
+  -c "hyp enroll-remote-router http://celestia-validator:26657 $CEL_TOKEN 11155111 0x000000000000000000000000$HYP_SYNTHETIC_LOWER"
+```
+
+After this step the warp route topology is:
+
+```
+anvil1 (HypCollateral) ↔ Celestia (native synthetic) ↔ anvil2 (HypSynthetic)
+                                   ↕
+                              Sepolia (HypSynthetic)
+```
+
+> Domain IDs: `131337` = anvil1, `31338` = anvil2, `69420` = Celestia, `11155111` = Sepolia.
+
+---
+
+## Step 6: Add Sepolia to the Hyperlane relayer
+
+The relayer passes messages between chains. Add Sepolia to `hyperlane/relayer-config.json`:
 
 ```bash
 . ./.env
 
-forge create oif/oif-contracts/src/MockERC20.sol:MockERC20 \
-  --private-key $SEPOLIA_PK \
-  --rpc-url $SEPOLIA_RPC \
-  --broadcast \
-  --constructor-args "USD Coin" "USDC" 6
+# Read the Sepolia mailbox address from the registry file downloaded in Step 3
+SEPOLIA_MAILBOX=$(grep "^mailbox:" hyperlane/registry/chains/sepolia/addresses.yaml | awk '{print $2}' | tr -d '"')
+echo "Sepolia mailbox: $SEPOLIA_MAILBOX"
+
+node -e "
+const fs = require('fs');
+const cfg = JSON.parse(fs.readFileSync('hyperlane/relayer-config.json', 'utf8'));
+cfg.chains.sepolia = {
+  blocks: { confirmations: 1, estimateBlockTime: 12, reorgPeriod: 5 },
+  chainId: 11155111,
+  displayName: 'Sepolia',
+  domainId: 11155111,
+  isTestnet: true,
+  name: 'sepolia',
+  nativeToken: { decimals: 18, name: 'Ether', symbol: 'ETH' },
+  protocol: 'ethereum',
+  rpcUrls: [{ http: '$SEPOLIA_RPC' }],
+  signer: { type: 'hexKey', key: '0x$SEPOLIA_PK' },
+  mailbox: '$SEPOLIA_MAILBOX'
+};
+cfg.relayChains += ',sepolia';
+fs.writeFileSync('hyperlane/relayer-config.json', JSON.stringify(cfg, null, 4) + '\n');
+console.log('Done — relayer-config.json updated');
+"
 ```
 
-> `--constructor-args` must come **last** — it's variadic and swallows any flags that follow it.
-
-Note the deployed address from the output:
+Restart the relayer to pick up the new config:
 
 ```bash
-export SEPOLIA_USDC=0x...   # "Deployed to:" address from forge output
+docker compose restart relayer
 ```
-
-**Alternative:** Use Circle's pre-deployed testnet USDC at `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238`. You won't be able to `mint()` it, so skip Step 5 and acquire USDC another way (e.g., a Sepolia USDC faucet).
 
 ---
 
-## Step 4: Register the token in state
+## Step 7: Register USDC token address for Sepolia
+
+Tell the solver CLI which contract is USDC on Sepolia:
 
 ```bash
-make token-add CHAIN=sepolia SYMBOL=USDC ADDRESS=$SEPOLIA_USDC DECIMALS=6
+make token-add CHAIN=sepolia SYMBOL=USDC ADDRESS=$HYP_SYNTHETIC_SEPOLIA DECIMALS=6
 ```
 
 Verify:
@@ -85,59 +267,38 @@ make token-list CHAIN=sepolia
 
 ---
 
-## Step 5: Mint tokens to solver and user
+## Step 8: Fund the solver and oracle operator
 
-This only works with MockERC20 (which has a public `mint()` function).
-
-```bash
-# Mint 100 USDC to solver (inventory for filling orders on Sepolia)
-make mint CHAIN=sepolia SYMBOL=USDC TO=solver AMOUNT=100000000
-
-# Mint 10 USDC to user (for submitting test intents)
-make mint CHAIN=sepolia SYMBOL=USDC TO=user AMOUNT=10000000
-```
-
----
-
-## Step 6: Fund solver with Sepolia ETH
-
-The solver needs native ETH on Sepolia to pay gas when filling orders there.
+**Solver** — needs ETH on Sepolia to pay gas when filling orders there:
 
 ```bash
 . ./.env
 SOLVER_ADDR=$(cast wallet address --private-key $SOLVER_PRIVATE_KEY)
-echo "Solver address: $SOLVER_ADDR"
+echo "Funding solver: $SOLVER_ADDR"
 
-cast send \
+cast send $SOLVER_ADDR \
   --rpc-url $SEPOLIA_RPC \
   --private-key $SEPOLIA_PK \
-  --value 0.1ether \
-  $SOLVER_ADDR
+  --value 0.1ether
 ```
 
----
-
-## Step 7: Fund oracle operator with Sepolia ETH
-
-The oracle operator submits attestations to the **origin chain's** oracle. For intents originating on Sepolia (fill on anvil1), the operator needs ETH on Sepolia.
+**Oracle operator** — needs ETH on Sepolia to submit attestations when Sepolia is the origin chain:
 
 ```bash
-. ./.env
-OPERATOR_ADDR=$(grep 'operator_address' .config/oracle.toml | cut -d'"' -f2)
-echo "Operator address: $OPERATOR_ADDR"
+OPERATOR_ADDR=$(cat .config/oracle.toml | grep 'operator_address' | cut -d'"' -f2)
+echo "Funding operator: $OPERATOR_ADDR"
 
-cast send \
+cast send $OPERATOR_ADDR \
   --rpc-url $SEPOLIA_RPC \
   --private-key $SEPOLIA_PK \
-  --value 0.1ether \
-  $OPERATOR_ADDR
+  --value 0.1ether
 ```
 
 > For intents originating on anvil1 (fill on Sepolia), the operator needs ETH on **anvil1** — already covered by `make setup`.
 
 ---
 
-## Step 8: Regenerate configs
+## Step 9: Regenerate solver and oracle configs
 
 ```bash
 make configure
@@ -146,113 +307,132 @@ make configure
 This rewrites `.config/solver.toml` and `.config/oracle.toml` to include Sepolia with all-to-all routes:
 - anvil1 ↔ sepolia
 - anvil2 ↔ sepolia
-- (existing) anvil1 ↔ anvil2
+- anvil1 ↔ anvil2 (unchanged)
 
-Verify the new routes were added:
+Verify Sepolia is included in the routes:
 
 ```bash
-grep 'dest_chain' .config/solver.toml | sort -u
+grep -A3 'centralized.routes' .config/solver.toml
 ```
 
 ---
 
-## Step 9: Restart solver and oracle operator
+## Step 10: Bridge USDC inventory to Sepolia
 
-The solver and operator must reload their configs to pick up the new chain.
+The solver needs USDC on Sepolia to fill orders. Since Sepolia USDC is a HypSynthetic (bridged, not mintable), inventory comes from bridging anvil1 USDC through Celestia.
+
+**Easiest:** after restarting the frontend in Step 11, use the UI bridge panel — select **anvil1 → sepolia** and click **Bridge USDC**.
+
+<details>
+<summary>Manual bridge (alternative)</summary>
 
 ```bash
-# In the solver terminal: Ctrl+C, then:
-make solver
+. ./.env
 
-# In the operator terminal: Ctrl+C, then:
-make operator
+ADDRESSES=$(cat hyperlane/hyperlane-addresses.json)
+MOCK_USDC=$(echo $ADDRESSES | jq -r '.anvil1.mock_usdc')
+ANVIL1_WARP=$(echo $ADDRESSES | jq -r '.anvil1.warp_token')
+SOLVER_ADDR=$(cast wallet address --private-key $SOLVER_PRIVATE_KEY)
+SOLVER_ADDR_PADDED=$(printf '0x000000000000000000000000%s' ${SOLVER_ADDR#0x})
+
+# Derive the Celestia forwarding address that will route to Sepolia
+FORWARD_ADDR=$(docker exec forwarding-relayer forwarding-relayer derive-address \
+  --dest-domain 11155111 \
+  --dest-recipient $SOLVER_ADDR_PADDED)
+
+# Register the forwarding route
+curl -sf -X POST http://127.0.0.1:8080/forwarding-requests \
+  -H "Content-Type: application/json" \
+  -d "{\"forward_addr\": \"$FORWARD_ADDR\", \"dest_domain\": 11155111, \"dest_recipient\": \"$SOLVER_ADDR_PADDED\"}"
+
+# Approve and send 10 USDC via the warp route
+FORWARD_ADDR_HEX=$(python3 scripts/bech32_to_bytes32.py "$FORWARD_ADDR")
+cast send $MOCK_USDC "approve(address,uint256)" $ANVIL1_WARP 10000000 \
+  --rpc-url $ANVIL1_RPC --private-key $SOLVER_PRIVATE_KEY
+cast send $ANVIL1_WARP "transferRemote(uint32,bytes32,uint256)" \
+  69420 $FORWARD_ADDR_HEX 10000000 \
+  --rpc-url $ANVIL1_RPC --private-key $SOLVER_PRIVATE_KEY --value 0
 ```
+
+Wait ~30 seconds for the relayer to process the message.
+
+</details>
 
 ---
 
-## Step 10: Verify and test
+## Step 11: Restart services and verify
 
-Check all balances:
+The solver, oracle operator, and frontend must reload their configs to pick up the new chain. Kill only the services — **not** the Docker stack (that would destroy your deployed contracts):
+
+```bash
+pkill -f "solver-cli solver start" || true
+pkill -f oracle-operator || true
+pkill -f oif-aggregator || true
+pkill -f "node server.js" || true
+pkill -f vite || true
+```
+
+Restart:
+
+```bash
+./scripts/start-services.sh
+./scripts/start-frontend.sh
+```
+
+Check all balances (Sepolia should now appear):
 
 ```bash
 make balances
 ```
 
-Expected output (Sepolia should now appear):
+Expected output (exact amounts depend on prior activity):
 
 ```
   Chain    │ Account │ Balance
   ─────────┼─────────┼────────
   anvil1   │ User    │ 10 USDC
   anvil1   │ Solver  │ 100 USDC
-  anvil2   │ User    │ 10 USDC
-  anvil2   │ Solver  │ 100 USDC
-  sepolia  │ User    │ 10 USDC
-  sepolia  │ Solver  │ 100 USDC
+  anvil2   │ User    │ 0 USDC
+  anvil2   │ Solver  │ 0 USDC
+  sepolia  │ User    │ 0 USDC
+  sepolia  │ Solver  │ 10 USDC
 ```
 
-Submit a test intent:
+Test an intent in each direction:
 
 ```bash
-# anvil1 → Sepolia
 make intent FROM=anvil1 TO=sepolia AMOUNT=1000000
-
-# Sepolia → anvil1
 make intent FROM=sepolia TO=anvil1 AMOUNT=1000000
 ```
 
 ---
 
-## Solver inventory management
+## Rebalancing solver inventory
 
-The solver needs token inventory on every chain it fills orders on. How you replenish that inventory differs between the local chains and Sepolia.
-
-### anvil1 ↔ anvil2: Hyperlane bridge via Celestia
-
-The two local Anvil chains are isolated — they can only exchange tokens through the Hyperlane warp route deployed during `make start`. USDC on anvil1 is a `HypCollateral` (wraps the MockERC20), and on anvil2 it's a `HypSynthetic`. They're bridged through Celestia.
-
-After the solver spends USDC filling orders on anvil2, rebalance from anvil1:
+All inventory flows through the Celestia hub. Faucet (`mint`) is only available on anvil1.
 
 ```bash
-make rebalance          # anvil1 → Celestia → anvil2
-make rebalance-back     # anvil2 → Celestia → anvil1
+make rebalance TO=sepolia     # bridge: anvil1 → Celestia → Sepolia
+make rebalance TO=anvil2      # bridge: anvil1 → Celestia → anvil2
+make rebalance-back           # bridge: anvil2 → Celestia → anvil1
+
+make mint CHAIN=anvil1 SYMBOL=USDC TO=solver AMOUNT=100000000   # mint on anvil1 only
 ```
-
-Sepolia has no role in this flow. The bridge is a closed circuit: anvil1 ↔ Celestia ↔ anvil2.
-
-### Sepolia: mint directly
-
-Sepolia's USDC is an independent MockERC20 with no bridge to the local chains. Replenish it by minting:
-
-```bash
-make mint CHAIN=sepolia SYMBOL=USDC TO=solver AMOUNT=100000000
-```
-
-There's no equivalent of `make rebalance` for Sepolia — inventory on Sepolia is completely separate from inventory on anvil1/anvil2.
-
----
-
-## What just happened
-
-Adding Sepolia required no Hyperlane changes. The OIF oracle flow works entirely through the `CentralizedOracle` contracts:
-
-1. User locks USDC in `InputSettlerEscrow` on the origin chain
-2. Solver detects the intent and fills from its own USDC inventory on the destination chain
-3. Oracle operator sees the `OutputFilled` event, queries all chains to find the origin, signs an attestation with `ORACLE_OPERATOR_PK`, and submits it to the origin chain's `CentralizedOracle`
-4. Solver polls `isProven()` on the origin chain and claims the escrowed funds
-
-The Hyperlane bridge (anvil1 ↔ Celestia ↔ anvil2) is only used to **rebalance the solver's token inventory** between the two local chains. Sepolia is funded independently — no bridging required.
 
 ---
 
 ## Removing Sepolia
 
-To undo:
-
 ```bash
 make chain-remove CHAIN=sepolia
 make configure
-# Restart solver and operator
+# Restart all services (same as Step 11)
+```
+
+Remove Sepolia from `hyperlane/relayer-config.json` (delete `chains.sepolia` and remove `sepolia` from `relayChains`), then restart the relayer:
+
+```bash
+docker compose restart relayer
 ```
 
 Remove the three lines from `.env`:

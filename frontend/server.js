@@ -132,82 +132,78 @@ function parseWarpRouteYaml(yamlContent) {
 function getWarpRouteConfig(token) {
   const state = readState();
   const hypAddresses = readHyperlaneAddresses();
-  if (!hypAddresses) throw new Error('Hyperlane not deployed — .config/hyperlane-addresses.json not found');
-
-  const anvil1Hyp = hypAddresses.anvil1;
-  const anvil2Hyp = hypAddresses.anvil2;
-  if (!anvil1Hyp || !anvil2Hyp) throw new Error('Missing anvil1/anvil2 in hyperlane-addresses.json');
-
-  const chain1 = Object.values(state.chains).find(c => c.name === 'anvil1');
-  const chain2 = Object.values(state.chains).find(c => c.name === 'anvil2');
-  if (!chain1 || !chain2) throw new Error('anvil1/anvil2 chains not found in state.json');
+  if (!hypAddresses) throw new Error('Hyperlane not deployed — hyperlane-addresses.json not found');
 
   const celestiaDomainId = hypAddresses.celestiadev?.domain_id || 69420;
 
-  // Try to find warp route YAML in the Hyperlane registry
+  // Build chain metadata lookup by name from state.json
+  const stateChainsByName = {};
+  for (const chain of Object.values(state.chains)) {
+    stateChainsByName[chain.name] = chain;
+  }
+
+  // Build domain ID lookup: hyperlane-addresses.json first, then relayer-config.json as fallback
+  const domainIds = {};
+  for (const [name, data] of Object.entries(hypAddresses)) {
+    if (data.domain_id) domainIds[name] = data.domain_id;
+  }
+  try {
+    const relayerCfg = JSON.parse(readFileSync(resolve(ROOT, 'hyperlane/relayer-config.json'), 'utf8'));
+    for (const [name, data] of Object.entries(relayerCfg.chains || {})) {
+      if (!domainIds[name] && data.domainId) domainIds[name] = data.domainId;
+    }
+  } catch {}
+
+  // Merge all warp route YAML files for this token (handles routes added incrementally per chain)
+  const allParsed = {};
   const warpDir = resolve(ROOT, `hyperlane/registry/deployments/warp_routes/${token}`);
   if (existsSync(warpDir)) {
-    const yamlFiles = readdirSync(warpDir).filter(f => f.endsWith('.yaml'));
-    for (const file of yamlFiles) {
-      const yaml = readFileSync(resolve(warpDir, file), 'utf8');
-      const parsed = parseWarpRouteYaml(yaml);
-      if (parsed.anvil1 && parsed.anvil2) {
-        // Determine underlying token: collateralAddressOrDenom from YAML, or from state.json
-        const underlying = parsed.anvil1.collateralAddressOrDenom
-          || chain1.tokens[token]?.address;
-        if (!underlying) {
-          throw new Error(`Found warp route YAML for ${token} but cannot determine underlying ERC20 on anvil1. Register it with: make token-add CHAIN=anvil1 SYMBOL=${token} ADDRESS=<addr> DECIMALS=6`);
-        }
-        return {
-          anvil1: {
-            underlying,
-            warpToken: parsed.anvil1.addressOrDenom,
-            warpType: parsed.anvil1.standard?.includes('Collateral') ? 'collateral' : 'synthetic',
-            domainId: anvil1Hyp.domain_id,
-            chainId: anvil1Hyp.chain_id,
-            rpc: chain1.rpc,
-          },
-          anvil2: {
-            warpToken: parsed.anvil2.addressOrDenom,
-            warpType: parsed.anvil2.standard?.includes('Synthetic') ? 'synthetic' : 'collateral',
-            domainId: anvil2Hyp.domain_id,
-            chainId: anvil2Hyp.chain_id,
-            rpc: chain2.rpc,
-          },
-          celestiaDomainId,
-        };
-      }
+    for (const file of readdirSync(warpDir).filter(f => f.endsWith('.yaml'))) {
+      Object.assign(allParsed, parseWarpRouteYaml(readFileSync(resolve(warpDir, file), 'utf8')));
     }
   }
 
   // Fallback for USDC: read from hyperlane-addresses.json
-  if (token === 'USDC') {
-    if (!anvil1Hyp.mock_usdc || !anvil1Hyp.warp_token || !anvil2Hyp.warp_token) {
+  if (token === 'USDC' && Object.keys(allParsed).length === 0) {
+    const a1 = hypAddresses.anvil1;
+    const a2 = hypAddresses.anvil2;
+    if (!a1?.mock_usdc || !a1?.warp_token || !a2?.warp_token) {
       throw new Error('USDC warp route not deployed — missing addresses in hyperlane-addresses.json');
     }
-    return {
-      anvil1: {
-        underlying: anvil1Hyp.mock_usdc,
-        warpToken: anvil1Hyp.warp_token,
-        warpType: 'collateral',
-        domainId: anvil1Hyp.domain_id,
-        chainId: anvil1Hyp.chain_id,
-        rpc: chain1.rpc,
-      },
-      anvil2: {
-        warpToken: anvil2Hyp.warp_token,
-        warpType: 'synthetic',
-        domainId: anvil2Hyp.domain_id,
-        chainId: anvil2Hyp.chain_id,
-        rpc: chain2.rpc,
-      },
-      celestiaDomainId,
+    allParsed.anvil1 = { addressOrDenom: a1.warp_token, collateralAddressOrDenom: a1.mock_usdc, standard: 'HypERC20Collateral' };
+    allParsed.anvil2 = { addressOrDenom: a2.warp_token, standard: 'HypERC20' };
+  }
+
+  if (Object.keys(allParsed).length === 0) {
+    throw new Error(`No warp route found for ${token}. Deploy a Hyperlane warp route first — see docs/deploy-new-token.md`);
+  }
+
+  // Build the chains map for all EVM chains (skip Celestia hub)
+  const chains = {};
+  for (const [chainName, entry] of Object.entries(allParsed)) {
+    if (chainName === 'celestiadev') continue;
+    const stateChain = stateChainsByName[chainName];
+    if (!stateChain) continue; // chain not in state.json, skip
+    const isCollateral = !!(entry.standard?.includes('Collateral') || entry.collateralAddressOrDenom);
+    const underlying = entry.collateralAddressOrDenom || stateChain.tokens?.[token]?.address;
+    if (isCollateral && !underlying) {
+      throw new Error(`Warp route for ${token}/${chainName} is collateral type but no underlying ERC20 found. Register it with: make token-add CHAIN=${chainName} SYMBOL=${token} ADDRESS=<addr> DECIMALS=6`);
+    }
+    chains[chainName] = {
+      warpToken: entry.addressOrDenom,
+      warpType: isCollateral ? 'collateral' : 'synthetic',
+      underlying: isCollateral ? underlying : undefined,
+      domainId: domainIds[chainName] ?? stateChain.chain_id,
+      chainId: stateChain.chain_id,
+      rpc: stateChain.rpc,
     };
   }
 
-  throw new Error(
-    `No warp route found for ${token}. Deploy a Hyperlane warp route first — see docs/deploy-new-token.md`
-  );
+  if (Object.keys(chains).length === 0) {
+    throw new Error(`Warp route for ${token} found but no chains matched state.json. Run make deploy first.`);
+  }
+
+  return { chains, celestiaDomainId };
 }
 
 function readHyperlaneAddresses() {
@@ -428,31 +424,30 @@ app.post('/api/faucet', async (req, res) => {
   }
 });
 
-// Rebalance: bridge tokens between anvil chains via Celestia forwarding
+// Rebalance: bridge tokens between any two chains via Celestia forwarding
 app.post('/api/rebalance', async (req, res) => {
-  const { direction = 'forward', amount = '10000000', token = 'USDC' } = req.body;
+  const { from, to, amount = '10000000', token = 'USDC' } = req.body;
+  if (!from || !to) return res.status(400).json({ error: '"from" and "to" chain names are required' });
   try {
     // 1. Load warp route config for this token
     const warp = getWarpRouteConfig(token);
-    const isForward = direction !== 'back';
+    const src = warp.chains[from];
+    const dst = warp.chains[to];
+    if (!src) throw new Error(`Chain "${from}" not found in ${token} warp route. Have you enrolled the routers?`);
+    if (!dst) throw new Error(`Chain "${to}" not found in ${token} warp route. Have you enrolled the routers?`);
 
-    const src = isForward ? warp.anvil1 : warp.anvil2;
-    const dst = isForward ? warp.anvil2 : warp.anvil1;
-
-    // The token to send from (HypCollateral on anvil1, HypSynthetic on anvil2)
-    const srcWarpToken = src.warpToken;
-    // The token to check balance on destination
-    const dstBalanceToken = isForward ? dst.warpToken : warp.anvil1.underlying;
-    // The underlying ERC20 to approve (only needed when sending from collateral side)
-    const underlyingToApprove = isForward ? warp.anvil1.underlying : null;
+    // Only the collateral side needs an ERC20 approve before transferRemote
+    const underlyingToApprove = src.warpType === 'collateral' ? src.underlying : null;
+    // On the collateral side, received tokens land as the underlying ERC20 (not the warp token)
+    const dstBalanceToken = dst.warpType === 'collateral' ? dst.underlying : dst.warpToken;
 
     // 2. Setup viem clients
     const solverPk = process.env.SOLVER_PRIVATE_KEY;
     if (!solverPk) throw new Error('SOLVER_PRIVATE_KEY not set in .env');
     const solver = privateKeyToAccount(`0x${solverPk.replace('0x', '')}`);
 
-    const srcChain = makeViemChain(src.chainId, isForward ? 'anvil1' : 'anvil2', src.rpc);
-    const dstChain = makeViemChain(dst.chainId, isForward ? 'anvil2' : 'anvil1', dst.rpc);
+    const srcChain = makeViemChain(src.chainId, from, src.rpc);
+    const dstChain = makeViemChain(dst.chainId, to, dst.rpc);
 
     const srcWallet = createWalletClient({ account: solver, chain: srcChain, transport: http(src.rpc) });
     const srcPublic = createPublicClient({ chain: srcChain, transport: http(src.rpc) });
@@ -461,8 +456,8 @@ app.post('/api/rebalance', async (req, res) => {
     const solverPadded = '0x000000000000000000000000' + solver.address.slice(2);
     const amountBigInt = BigInt(amount);
 
-    console.log(`[rebalance] ${token} ${direction}: ${isForward ? 'anvil1→anvil2' : 'anvil2→anvil1'} amount=${amount}`);
-    console.log(`[rebalance] solver=${solver.address} srcWarp=${srcWarpToken} dstBalance=${dstBalanceToken}`);
+    console.log(`[rebalance] ${token} ${from}→${to} amount=${amount}`);
+    console.log(`[rebalance] solver=${solver.address} srcWarp=${src.warpToken} dstBalance=${dstBalanceToken}`);
 
     // 3. Check initial balance on destination
     const initialDstBal = await dstPublic.readContract({
@@ -496,22 +491,20 @@ app.post('/api/rebalance', async (req, res) => {
     }
     console.log(`[rebalance] Forwarding registered`);
 
-    // 6. Approve underlying ERC20 → HypCollateral (only for forward/collateral side)
+    // 6. Approve underlying ERC20 → HypCollateral (only for collateral source)
     if (underlyingToApprove) {
       const approveHash = await srcWallet.writeContract({
         address: underlyingToApprove, abi: erc20Abi,
-        functionName: 'approve', args: [srcWarpToken, amountBigInt],
+        functionName: 'approve', args: [src.warpToken, amountBigInt],
       });
       await srcPublic.waitForTransactionReceipt({ hash: approveHash });
-      console.log(`[rebalance] Approved ${amount} of ${underlyingToApprove} → ${srcWarpToken}`);
+      console.log(`[rebalance] Approved ${amount} of ${underlyingToApprove} → ${src.warpToken}`);
     }
 
     // 7. Call transferRemote on the warp token
     const forwardAddrBytes32 = bech32ToBytes32(forwardAddr);
-    console.log(`[rebalance] Forwarding addr bytes32: ${forwardAddrBytes32}`);
-
     const txHash = await srcWallet.writeContract({
-      address: srcWarpToken, abi: hypTokenAbi,
+      address: src.warpToken, abi: hypTokenAbi,
       functionName: 'transferRemote',
       args: [warp.celestiaDomainId, forwardAddrBytes32, amountBigInt],
       value: 0n,
@@ -528,18 +521,15 @@ app.post('/api/rebalance', async (req, res) => {
         functionName: 'balanceOf', args: [solver.address],
       });
       console.log(`[rebalance] [${i * 5}s] dst balance: ${bal}`);
-      if (bal !== initialDstBal && bal > 0n) {
-        arrived = true;
-        break;
-      }
+      if (bal !== initialDstBal && bal > 0n) { arrived = true; break; }
     }
 
     if (arrived) {
-      res.json({ success: true, message: `Rebalance ${token} ${direction} complete`, txHash });
+      res.json({ success: true, message: `Bridged ${token} from ${from} to ${to}`, txHash });
     } else {
       res.json({
         success: false,
-        message: `Rebalance ${token} ${direction} sent (tx: ${txHash}) but tokens haven't arrived on destination yet. Check Hyperlane relayer logs.`,
+        message: `Bridge tx sent (${txHash}) but tokens haven't arrived on ${to} yet. Check Hyperlane relayer logs.`,
         txHash,
       });
     }

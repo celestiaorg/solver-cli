@@ -1,0 +1,13 @@
+chainId: 11155111
+displayName: Sepolia
+domainId: 11155111
+isTestnet: true
+name: sepolia
+nativeToken:
+  decimals: 18
+  name: Ether
+  symbol: ETH
+protocol: ethereum
+rpcUrls:
+  - http: https://ethereum-sepolia-rpc.publicnode.com
+technicalStack: other
