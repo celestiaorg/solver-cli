@@ -135,7 +135,7 @@ services:
   # Forwarding Relayer (Backend + Relayer)
   # ============================================================================
   forwarding-backend:
-    image: forwarding-relayer:local
+    image: ghcr.io/celestiaorg/forwarding-relayer@sha256:0195cd4bd9665cc4105b42fb75a175f234626c678ac5e96ef47043fa96a20010
     container_name: forwarding-backend
     ports:
       - "8080:8080"
@@ -158,7 +158,7 @@ services:
       start_period: 5s
 
   forwarding-relayer:
-    image: forwarding-relayer:local
+    image: ghcr.io/celestiaorg/forwarding-relayer@sha256:0195cd4bd9665cc4105b42fb75a175f234626c678ac5e96ef47043fa96a20010
     container_name: forwarding-relayer
     environment:
       - CELESTIA_RPC=http://celestia-validator:26657

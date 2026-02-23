@@ -1,0 +1,17 @@
+# Warp route config: collateral USDC on anvil1, synthetic USDC on anvil2
+# The token address for anvil1 is filled dynamically by the entrypoint script
+# after deploying MockERC20
+anvil1:
+  type: collateral
+  token: "MOCK_USDC_ADDRESS_PLACEHOLDER"
+  owner: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+  name: "USDC"
+  symbol: "USDC"
+  decimals: 6
+
+anvil2:
+  type: synthetic
+  owner: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+  name: "USDC"
+  symbol: "USDC"
+  decimals: 6
