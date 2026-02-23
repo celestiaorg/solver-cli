@@ -152,7 +152,7 @@ impl TokenCommand {
                 ));
             }
 
-            print_kv("Chain", &format!("{} ({})", chain.name, chain.chain_id));
+            print_kv("Chain", format!("{} ({})", chain.name, chain.chain_id));
             print_kv("Symbol", &symbol_upper);
             print_address("Address", &address);
             print_kv("Decimals", decimals);
@@ -367,7 +367,6 @@ impl TokenCommand {
         let minter_pk = env_config
             .get_chain(&chain.name)
             .map(|c| c.private_key.clone())
-            .or_else(|| env_config.get_any_pk())
             .ok_or_else(|| {
                 anyhow::anyhow!(
                     "No private key found for {}. Set {}_PK in .env",

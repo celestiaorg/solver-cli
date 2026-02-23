@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::path::Path;
@@ -181,21 +179,6 @@ impl ForgeRunner {
         None
     }
 
-    /// Check if forge is available
-    pub async fn check_forge() -> Result<()> {
-        let output = Command::new("forge")
-            .arg("--version")
-            .output()
-            .await
-            .context("Forge not found. Please install Foundry.")?;
-
-        if !output.status.success() {
-            anyhow::bail!("Forge check failed");
-        }
-
-        Ok(())
-    }
-
     /// Build contracts
     pub async fn build(&self) -> Result<()> {
         info!("Building contracts...");
@@ -222,10 +205,6 @@ pub struct DeploymentOutput {
 }
 
 impl DeploymentOutput {
-    pub fn get(&self, name: &str) -> Option<&String> {
-        self.addresses.get(name)
-    }
-
     pub fn oracle(&self) -> Option<&String> {
         self.addresses
             .get("CentralizedOracle")
@@ -244,25 +223,6 @@ impl DeploymentOutput {
         self.addresses
             .get("OutputSettlerSimple")
             .or_else(|| self.addresses.get("OutputSettler"))
-    }
-
-    pub fn token(&self) -> Option<&String> {
-        self.addresses
-            .get("MockERC20")
-            .or_else(|| self.addresses.get("Token"))
-            // Handle format "MockERC20 (SYMBOL)"
-            .or_else(|| {
-                self.addresses
-                    .iter()
-                    .find(|(k, _)| k.starts_with("MockERC20"))
-                    .map(|(_, v)| v)
-            })
-            // Handle JSON output format with quotes
-            .or_else(|| self.addresses.get("\"token\""))
-    }
-
-    pub fn operator(&self) -> Option<&String> {
-        self.addresses.get("Operator")
     }
 
     pub fn permit2(&self) -> Option<&String> {

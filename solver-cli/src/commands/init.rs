@@ -52,7 +52,6 @@ impl InitCommand {
         let env_file = project_dir.join(".env");
         if !env_file.exists() {
             print_warning(".env file not found. Create one with required variables.");
-            print_info("Required: EVOLVE_RPC, SEPOLIA_RPC, EVOLVE_PK, SEPOLIA_PK");
         } else {
             print_success(".env file found");
         }

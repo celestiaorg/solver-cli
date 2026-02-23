@@ -115,6 +115,17 @@ pub enum IntentCommand {
     },
 }
 
+struct IntentSubmitParams {
+    dir: Option<PathBuf>,
+    amount: String,
+    asset: String,
+    from: Option<String>,
+    to: Option<String>,
+    wait: bool,
+    timeout: u64,
+    expiry: u64,
+}
+
 impl IntentCommand {
     pub async fn run(self, output: OutputFormat) -> Result<()> {
         match self {
@@ -127,7 +138,13 @@ impl IntentCommand {
                 wait,
                 timeout,
                 expiry,
-            } => Self::submit(dir, amount, asset, from, to, wait, timeout, expiry, output).await,
+            } => {
+                Self::submit(
+                    IntentSubmitParams { dir, amount, asset, from, to, wait, timeout, expiry },
+                    output,
+                )
+                .await
+            }
             IntentCommand::Refund {
                 tx_hash,
                 dir,
@@ -149,17 +166,8 @@ impl IntentCommand {
         }
     }
 
-    async fn submit(
-        dir: Option<PathBuf>,
-        amount: String,
-        asset: String,
-        from: Option<String>,
-        to: Option<String>,
-        wait: bool,
-        timeout: u64,
-        expiry: u64,
-        output: OutputFormat,
-    ) -> Result<()> {
+    async fn submit(params: IntentSubmitParams, output: OutputFormat) -> Result<()> {
+        let IntentSubmitParams { dir, amount, asset, from, to, wait, timeout, expiry } = params;
         let out = OutputFormatter::new(output);
         let project_dir = dir.unwrap_or_else(|| env::current_dir().unwrap());
         let state_mgr = StateManager::new(&project_dir);
@@ -203,8 +211,7 @@ impl IntentCommand {
                 // Pick first different chain as destination
                 let dst = chain_ids
                     .iter()
-                    .filter(|&&id| id != src.chain_id)
-                    .next()
+                    .find(|&&id| id != src.chain_id)
                     .and_then(|&id| state.get_chain(id))
                     .ok_or_else(|| anyhow::anyhow!("No destination chain available"))?
                     .clone();
@@ -217,8 +224,7 @@ impl IntentCommand {
                 // Pick first different chain as source
                 let src = chain_ids
                     .iter()
-                    .filter(|&&id| id != dst.chain_id)
-                    .next()
+                    .find(|&&id| id != dst.chain_id)
                     .and_then(|&id| state.get_chain(id))
                     .ok_or_else(|| anyhow::anyhow!("No source chain available"))?
                     .clone();
@@ -238,8 +244,8 @@ impl IntentCommand {
             anyhow::bail!("Source and destination chains must be different");
         }
 
-        print_kv("Source", &format!("{} ({})", source.name, source.chain_id));
-        print_kv("Destination", &format!("{} ({})", dest.name, dest.chain_id));
+        print_kv("Source", format!("{} ({})", source.name, source.chain_id));
+        print_kv("Destination", format!("{} ({})", dest.name, dest.chain_id));
 
         // Get token info
         let source_token = source
@@ -524,7 +530,7 @@ impl IntentCommand {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         // cast returns format like "20000000 [2e7]" - extract just the first number
-        let balance_str = stdout.trim().split_whitespace().next().unwrap_or("0");
+        let balance_str = stdout.split_whitespace().next().unwrap_or("0");
 
         // Parse the balance (cast returns decimal)
         let balance = U256::from_str(balance_str)
@@ -803,7 +809,7 @@ impl IntentCommand {
 
         print_kv(
             "Chain",
-            &format!("{} ({})", source_chain.name, source_chain.chain_id),
+            format!("{} ({})", source_chain.name, source_chain.chain_id),
         );
         print_kv("TX Hash", &tx_hash);
 

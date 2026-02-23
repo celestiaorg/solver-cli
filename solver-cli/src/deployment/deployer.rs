@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 #![allow(clippy::too_many_arguments)]
 
 use anyhow::{Context, Result};
@@ -67,16 +66,6 @@ impl Deployer {
         })
     }
 
-    /// Check if contracts are already deployed
-    pub async fn check_deployment(&self, config: &ChainConfig) -> Result<bool> {
-        if !config.contracts.is_complete() {
-            return Ok(false);
-        }
-
-        // TODO: Optionally verify bytecode matches
-        Ok(true)
-    }
-
     /// Build contracts without deploying
     pub async fn build(&self) -> Result<()> {
         self.forge.build().await
@@ -103,8 +92,7 @@ impl Deployer {
 
         // Derive operator address from ORACLE_OPERATOR_PK
         let operator_pk = std::env::var("ORACLE_OPERATOR_PK")
-            .or_else(|_| std::env::var("SEPOLIA_PK"))
-            .context("ORACLE_OPERATOR_PK or SEPOLIA_PK must be set")?;
+            .context("Missing required environment variable: ORACLE_OPERATOR_PK")?;
         let operator_address = format!("{:?}", ChainClient::address_from_pk(&operator_pk)?);
         info!(
             "Using operator address: {} (derived from ORACLE_OPERATOR_PK)",
@@ -116,7 +104,9 @@ impl Deployer {
         if hyperlane_addresses.is_some() {
             info!("Found Hyperlane deployment artifacts — will use warp route token addresses");
         } else {
-            info!("No Hyperlane artifacts found — tokens must be added manually or via mock deploy");
+            info!(
+                "No Hyperlane artifacts found — tokens must be added manually or via mock deploy"
+            );
         }
 
         // Deploy to each chain

@@ -4,14 +4,12 @@ Cross-chain intent solver supporting **any number of EVM chains**.
 
 This CLI deploys OIF contracts, runs a solver, and executes cross-chain token transfers.
 
-## Choose Your Path
+## Guides
 
-| Guide                                                  | Use Case                                            |
-| ------------------------------------------------------ | --------------------------------------------------- |
-| [Multi-Chain Setup](docs/multi-chain-setup.md)         | **START HERE** - Complete N-chain guide with 3-chain quickstart |
-| [OIF Aggregator](docs/aggregator.md)                   | Multi-solver quote aggregation with REST API        |
-| [Deploy New Token](docs/deploy-new-token.md)           | Fresh deployment with new contracts and mock tokens |
-| [Solve Existing Tokens](docs/solve-existing-tokens.md) | Add existing chains and real tokens to solve        |
+| Guide                                              | Use Case                                            |
+| -------------------------------------------------- | --------------------------------------------------- |
+| [Deploy New Token](docs/deploy-new-token.md)       | Deploy a new token alongside USDC with Hyperlane     |
+| [Add Chain: Sepolia](docs/add-chain-sepolia.md)    | Add Sepolia testnet to a running anvil1 + anvil2 setup |
 
 
 ## Prerequisites

@@ -17,8 +17,7 @@ impl ConfigGenerator {
 
         // Read private key from environment at generation time
         let solver_private_key = std::env::var("SOLVER_PRIVATE_KEY")
-            .or_else(|_| std::env::var("SEPOLIA_PK"))
-            .map_err(|_| anyhow::anyhow!("SOLVER_PRIVATE_KEY or SEPOLIA_PK must be set"))?;
+            .context("Missing required environment variable: SOLVER_PRIVATE_KEY")?;
 
         // Ensure the key has 0x prefix
         let solver_private_key = if solver_private_key.starts_with("0x") {
@@ -266,10 +265,7 @@ output = {{ {output_oracles} }}
 
         // Read operator private key from environment at generation time
         let operator_private_key = std::env::var("ORACLE_OPERATOR_PK")
-            .or_else(|_| std::env::var("SEPOLIA_PK"))
-            .map_err(|_| {
-                anyhow::anyhow!("ORACLE_OPERATOR_PK or SEPOLIA_PK must be set for oracle operator")
-            })?;
+            .context("Missing required environment variable: ORACLE_OPERATOR_PK")?;
 
         // Ensure the key has 0x prefix
         let operator_private_key = if operator_private_key.starts_with("0x") {
@@ -506,12 +502,7 @@ poll_interval_seconds = 3
 
         // Read signer keys from environment
         let evm_signer_key = std::env::var("SOLVER_PRIVATE_KEY")
-            .or_else(|_| std::env::var("SEPOLIA_PK"))
-            .or_else(|_| std::env::var("ANVIL1_PK"))
-            .unwrap_or_else(|_| {
-                // Default Anvil account[0] key for local dev
-                "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string()
-            });
+            .context("Missing required environment variable: SOLVER_PRIVATE_KEY")?;
         let evm_signer_key = if evm_signer_key.starts_with("0x") {
             evm_signer_key
         } else {
@@ -543,9 +534,7 @@ poll_interval_seconds = 3
             let validator_announce = hyp
                 .and_then(|h| h.validator_announce.as_deref())
                 .unwrap_or("PLACEHOLDER");
-            let igp = hyp
-                .and_then(|h| h.igp.as_deref())
-                .unwrap_or("PLACEHOLDER");
+            let igp = hyp.and_then(|h| h.igp.as_deref()).unwrap_or("PLACEHOLDER");
 
             let display_name = {
                 let mut chars = chain.name.chars();
@@ -588,12 +577,12 @@ poll_interval_seconds = 3
         }
 
         // Add Celestia chain (infrastructure only, not an EVM chain in state)
-        let celestia_rpc =
-            std::env::var("CELESTIA_RPC").unwrap_or_else(|_| "http://celestia-validator:26657".to_string());
-        let celestia_rest =
-            std::env::var("CELESTIA_REST").unwrap_or_else(|_| "http://celestia-validator:1317".to_string());
-        let celestia_grpc =
-            std::env::var("CELESTIA_GRPC").unwrap_or_else(|_| "http://celestia-validator:9090".to_string());
+        let celestia_rpc = std::env::var("CELESTIA_RPC")
+            .unwrap_or_else(|_| "http://celestia-validator:26657".to_string());
+        let celestia_rest = std::env::var("CELESTIA_REST")
+            .unwrap_or_else(|_| "http://celestia-validator:1317".to_string());
+        let celestia_grpc = std::env::var("CELESTIA_GRPC")
+            .unwrap_or_else(|_| "http://celestia-validator:9090".to_string());
 
         // Try to read Celestia Hyperlane addresses from the hyperlane-addresses.json
         let celestia_hyp = Self::read_celestia_hyperlane_addresses();
@@ -661,7 +650,8 @@ poll_interval_seconds = 3
             "relayChains": relay_chain_names.join(",")
         });
 
-        serde_json::to_string_pretty(&config).context("Failed to serialize Hyperlane relayer config")
+        serde_json::to_string_pretty(&config)
+            .context("Failed to serialize Hyperlane relayer config")
     }
 
     /// Map EVM chain ID to Hyperlane domain ID.

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use alloy::{
     network::TransactionBuilder,
     primitives::{Address, Bytes, U256},
@@ -28,16 +26,13 @@ type HttpProvider = alloy::providers::fillers::FillProvider<
 
 /// Client for interacting with an EVM chain
 pub struct ChainClient {
-    pub name: String,
     pub chain_id: u64,
-    pub rpc_url: String,
     provider: HttpProvider,
-    signer: Option<PrivateKeySigner>,
 }
 
 impl ChainClient {
     /// Create a new chain client
-    pub async fn new(name: &str, rpc_url: &str) -> Result<Self> {
+    pub async fn new(_name: &str, rpc_url: &str) -> Result<Self> {
         let url: reqwest::Url = rpc_url.parse().context("Invalid RPC URL")?;
         let provider = ProviderBuilder::new().connect_http(url);
 
@@ -46,44 +41,7 @@ impl ChainClient {
             rpc_url
         ))?;
 
-        Ok(Self {
-            name: name.to_string(),
-            chain_id,
-            rpc_url: rpc_url.to_string(),
-            provider,
-            signer: None,
-        })
-    }
-
-    /// Create a new chain client with a signer
-    pub async fn new_with_signer(name: &str, rpc_url: &str, private_key: &str) -> Result<Self> {
-        let mut client = Self::new(name, rpc_url).await?;
-        client.set_signer(private_key)?;
-        Ok(client)
-    }
-
-    /// Set the signer for this client
-    pub fn set_signer(&mut self, private_key: &str) -> Result<()> {
-        let pk = private_key.strip_prefix("0x").unwrap_or(private_key);
-        let signer: PrivateKeySigner = pk.parse().context("Invalid private key")?;
-        self.signer = Some(signer);
-        Ok(())
-    }
-
-    /// Get the signer's address
-    pub fn signer_address(&self) -> Result<Address> {
-        self.signer
-            .as_ref()
-            .map(|s| s.address())
-            .ok_or_else(|| anyhow::anyhow!("No signer configured"))
-    }
-
-    /// Get native balance of an address
-    pub async fn get_balance(&self, address: Address) -> Result<U256> {
-        self.provider
-            .get_balance(address)
-            .await
-            .context("Failed to get balance")
+        Ok(Self { chain_id, provider })
     }
 
     /// Get ERC20 token balance
@@ -111,59 +69,11 @@ impl ChainClient {
         Ok(balance)
     }
 
-    /// Get ERC20 token decimals
-    pub async fn get_token_decimals(&self, token: Address) -> Result<u8> {
-        use alloy::sol;
-
-        sol! {
-            function decimals() external view returns (uint8);
-        }
-
-        let call = decimalsCall {};
-        let call_data: Bytes = call.abi_encode().into();
-
-        let tx = alloy::rpc::types::TransactionRequest::default()
-            .with_to(token)
-            .with_input(call_data);
-
-        let result = self
-            .provider
-            .call(tx)
-            .await
-            .context("Failed to call decimals")?;
-
-        // Last byte is the decimals
-        let decimals = result.last().copied().unwrap_or(18);
-        Ok(decimals)
-    }
-
-    /// Check if RPC is reachable
-    pub async fn health_check(&self) -> Result<()> {
-        self.provider
-            .get_chain_id()
-            .await
-            .context("RPC health check failed")?;
-        Ok(())
-    }
-
-    /// Get the current block number
-    pub async fn block_number(&self) -> Result<u64> {
-        self.provider
-            .get_block_number()
-            .await
-            .context("Failed to get block number")
-    }
-
     /// Derive address from private key
     pub fn address_from_pk(private_key: &str) -> Result<Address> {
         let pk = private_key.strip_prefix("0x").unwrap_or(private_key);
         let signer: PrivateKeySigner = pk.parse().context("Invalid private key")?;
         Ok(signer.address())
-    }
-
-    /// Get signer reference
-    pub fn signer(&self) -> Option<&PrivateKeySigner> {
-        self.signer.as_ref()
     }
 }
 
@@ -182,27 +92,3 @@ pub fn format_token_amount(amount: U256, decimals: u8) -> String {
     }
 }
 
-/// Parse a human-readable amount to U256 with decimals
-pub fn parse_token_amount(amount: &str, decimals: u8) -> Result<U256> {
-    let parts: Vec<&str> = amount.split('.').collect();
-
-    match parts.as_slice() {
-        [whole] => {
-            let whole: U256 = whole.parse().context("Invalid amount")?;
-            let multiplier = U256::from(10u64).pow(U256::from(decimals));
-            Ok(whole * multiplier)
-        }
-        [whole, frac] => {
-            let whole: U256 = whole.parse().context("Invalid whole part")?;
-            let frac_len = frac.len();
-            if frac_len > decimals as usize {
-                anyhow::bail!("Too many decimal places");
-            }
-            let frac_padded = format!("{:0<width$}", frac, width = decimals as usize);
-            let frac: U256 = frac_padded.parse().context("Invalid fractional part")?;
-            let multiplier = U256::from(10u64).pow(U256::from(decimals));
-            Ok(whole * multiplier + frac)
-        }
-        _ => anyhow::bail!("Invalid amount format"),
-    }
-}

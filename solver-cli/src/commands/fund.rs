@@ -89,10 +89,13 @@ impl FundCommand {
 
             // Get the private key for this chain (to pay gas for minting)
             let chain_env = env_config.get_chain(&chain.name);
-            let funder_pk = chain_env
-                .map(|c| c.private_key.clone())
-                .or_else(|| env_config.get_any_pk())
-                .ok_or_else(|| anyhow::anyhow!("No private key found for chain {}", chain.name))?;
+            let funder_pk = chain_env.map(|c| c.private_key.clone()).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "No private key found for chain {}. Set {}_PK in .env",
+                    chain.name,
+                    chain.name.to_uppercase()
+                )
+            })?;
 
             // 1. Check and fund native tokens (for gas)
             if !self.skip_native {
@@ -212,7 +215,7 @@ impl FundCommand {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         // cast may return format like "1000000 [1e6]" - extract just the first number
-        let balance_str = stdout.trim().split_whitespace().next().unwrap_or("0");
+        let balance_str = stdout.split_whitespace().next().unwrap_or("0");
 
         let balance = U256::from_str(balance_str)
             .or_else(|_| U256::from_str_radix(balance_str.trim_start_matches("0x"), 16))

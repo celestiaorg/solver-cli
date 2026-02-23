@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -240,23 +238,6 @@ impl std::fmt::Display for IntentStatus {
     }
 }
 
-/// Token registry entry (from tokens.json)
-/// Generic structure supporting any chain by name
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TokenRegistryEntry {
-    pub decimals: u8,
-    /// Chain-specific token info, keyed by chain name (e.g., "sepolia", "anvil1")
-    #[serde(flatten)]
-    pub chains: HashMap<String, TokenChainInfo>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TokenChainInfo {
-    pub address: String,
-    #[serde(rename = "type")]
-    pub token_type: String,
-}
-
 /// Helper methods for working with chain configs
 impl SolverState {
     /// Get all chain IDs
@@ -281,17 +262,4 @@ impl SolverState {
         !self.chains.is_empty() && self.chains.values().all(|c| c.contracts.is_complete())
     }
 
-    /// Get routes between all chains (all-to-all)
-    pub fn get_all_routes(&self) -> Vec<(u64, u64)> {
-        let chain_ids: Vec<u64> = self.chain_ids();
-        let mut routes = Vec::new();
-        for &from in &chain_ids {
-            for &to in &chain_ids {
-                if from != to {
-                    routes.push((from, to));
-                }
-            }
-        }
-        routes
-    }
 }

@@ -109,6 +109,18 @@ fn parse_token_arg(s: &str) -> Result<ParsedToken, String> {
     })
 }
 
+struct ChainAddParams {
+    name: String,
+    rpc: String,
+    chain_id: Option<u64>,
+    input_settler: String,
+    output_settler: String,
+    oracle: String,
+    tokens: Vec<ParsedToken>,
+    default_decimals: u8,
+    dir: Option<PathBuf>,
+}
+
 impl ChainCommand {
     pub async fn run(self, output: OutputFormat) -> Result<()> {
         match self {
@@ -124,15 +136,17 @@ impl ChainCommand {
                 dir,
             } => {
                 Self::add(
-                    name,
-                    rpc,
-                    chain_id,
-                    input_settler,
-                    output_settler,
-                    oracle,
-                    token,
-                    decimals,
-                    dir,
+                    ChainAddParams {
+                        name,
+                        rpc,
+                        chain_id,
+                        input_settler,
+                        output_settler,
+                        oracle,
+                        tokens: token,
+                        default_decimals: decimals,
+                        dir,
+                    },
                     output,
                 )
                 .await
@@ -142,18 +156,18 @@ impl ChainCommand {
         }
     }
 
-    async fn add(
-        name: String,
-        rpc: String,
-        chain_id: Option<u64>,
-        input_settler: String,
-        output_settler: String,
-        oracle: String,
-        tokens: Vec<ParsedToken>,
-        default_decimals: u8,
-        dir: Option<PathBuf>,
-        output: OutputFormat,
-    ) -> Result<()> {
+    async fn add(params: ChainAddParams, output: OutputFormat) -> Result<()> {
+        let ChainAddParams {
+            name,
+            rpc,
+            chain_id,
+            input_settler,
+            output_settler,
+            oracle,
+            tokens,
+            default_decimals,
+            dir,
+        } = params;
         let out = OutputFormatter::new(output);
         let project_dir = dir.unwrap_or_else(|| env::current_dir().unwrap());
         let state_mgr = StateManager::new(&project_dir);
