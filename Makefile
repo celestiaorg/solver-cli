@@ -24,10 +24,10 @@ docker-build-hyperlane:
 
 ## docker-build: Build all required Docker images
 ## Note: celestia-app uses pre-built ghcr.io/celestiaorg/celestia-app-standalone:v7.0.0-rc0
-## Note: forwarding-relayer:local must be built separately from ../forwarding-relayer
 docker-build: docker-build-hyperlane
 	@docker image inspect forwarding-relayer:local > /dev/null 2>&1 || \
-		(echo "ERROR: forwarding-relayer:local image not found. Build it from ../forwarding-relayer first." && exit 1)
+		(docker pull ghcr.io/celestiaorg/forwarding-relayer@sha256:0195cd4bd9665cc4105b42fb75a175f234626c678ac5e96ef47043fa96a20010 && \
+		 docker tag ghcr.io/celestiaorg/forwarding-relayer@sha256:0195cd4bd9665cc4105b42fb75a175f234626c678ac5e96ef47043fa96a20010 forwarding-relayer:local)
 	@echo "All Docker images ready!"
 .PHONY: docker-build
 
