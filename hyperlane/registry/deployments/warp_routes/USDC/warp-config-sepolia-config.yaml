@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=../schema.json
 tokens:
-  - addressOrDenom: "0xDFd503312a1f6E3853a15ba0C76F5AFA4DE1a60e"
+  - addressOrDenom: "0x3Be329Ce05442c6B4b055C68141b2bCa568223C0"
     chainName: sepolia
     decimals: 6
     name: USDC
