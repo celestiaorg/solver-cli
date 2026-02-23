@@ -237,7 +237,9 @@ cfg.chains.sepolia = {
   signer: { type: 'hexKey', key: '0x$SEPOLIA_PK' },
   mailbox: '$SEPOLIA_MAILBOX'
 };
-cfg.relayChains += ',sepolia';
+const chains = cfg.relayChains.split(',').filter(Boolean);
+if (!chains.includes('sepolia')) chains.push('sepolia');
+cfg.relayChains = chains.join(',');
 fs.writeFileSync('hyperlane/relayer-config.json', JSON.stringify(cfg, null, 4) + '\n');
 console.log('Done — relayer-config.json updated');
 "

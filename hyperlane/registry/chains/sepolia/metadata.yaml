@@ -9,5 +9,5 @@ nativeToken:
   symbol: ETH
 protocol: ethereum
 rpcUrls:
-  - http: https://ethereum-sepolia-rpc.publicnode.com
+  - http: https://rpc.ankr.com/eth_sepolia/3afc3fea39333420bb3a7b29067d4291b79d761cd18faafec716442cd0be0be2
 technicalStack: other
