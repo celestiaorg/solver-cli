@@ -8,19 +8,6 @@ This guide adds Sepolia testnet as a third chain. After completing it, users can
 - A funded Sepolia wallet — get ETH from [sepoliafaucet.com](https://sepoliafaucet.com)
 - Foundry installed (`forge`, `cast`)
 
-**Overview of steps:**
-1. Add Sepolia env vars
-2. Deploy OIF contracts (oracle, escrow, settler) to Sepolia
-3. Register Sepolia in the local Hyperlane registry
-4. Deploy the USDC bridge token on Sepolia
-5. Connect Sepolia into the existing Celestia warp route
-6. Add Sepolia to the Hyperlane relayer
-7. Register the USDC token address with the CLI
-8. Fund the solver and oracle operator with Sepolia ETH
-9. Regenerate solver + oracle configs
-10. Bridge USDC inventory to Sepolia
-11. Restart services and verify
-
 ---
 
 ## Step 1: Add Sepolia to .env
@@ -317,52 +304,7 @@ Verify Sepolia is included in the routes:
 grep -A3 'centralized.routes' .config/solver.toml
 ```
 
----
-
-## Step 10: Bridge USDC inventory to Sepolia
-
-The solver needs USDC on Sepolia to fill orders. Since Sepolia USDC is a HypSynthetic (bridged, not mintable), inventory comes from bridging anvil1 USDC through Celestia.
-
-**Easiest:** after restarting the frontend in Step 11, use the UI bridge panel — select **anvil1 → sepolia** and click **Bridge USDC**.
-
-<details>
-<summary>Manual bridge (alternative)</summary>
-
-```bash
-. ./.env
-
-ADDRESSES=$(cat hyperlane/hyperlane-addresses.json)
-MOCK_USDC=$(echo $ADDRESSES | jq -r '.anvil1.mock_usdc')
-ANVIL1_WARP=$(echo $ADDRESSES | jq -r '.anvil1.warp_token')
-SOLVER_ADDR=$(cast wallet address --private-key $SOLVER_PRIVATE_KEY)
-SOLVER_ADDR_PADDED=$(printf '0x000000000000000000000000%s' ${SOLVER_ADDR#0x})
-
-# Derive the Celestia forwarding address that will route to Sepolia
-FORWARD_ADDR=$(docker exec forwarding-relayer forwarding-relayer derive-address \
-  --dest-domain 11155111 \
-  --dest-recipient $SOLVER_ADDR_PADDED)
-
-# Register the forwarding route
-curl -sf -X POST http://127.0.0.1:8080/forwarding-requests \
-  -H "Content-Type: application/json" \
-  -d "{\"forward_addr\": \"$FORWARD_ADDR\", \"dest_domain\": 11155111, \"dest_recipient\": \"$SOLVER_ADDR_PADDED\"}"
-
-# Approve and send 10 USDC via the warp route
-FORWARD_ADDR_HEX=$(python3 scripts/bech32_to_bytes32.py "$FORWARD_ADDR")
-cast send $MOCK_USDC "approve(address,uint256)" $ANVIL1_WARP 10000000 \
-  --rpc-url $ANVIL1_RPC --private-key $SOLVER_PRIVATE_KEY
-cast send $ANVIL1_WARP "transferRemote(uint32,bytes32,uint256)" \
-  69420 $FORWARD_ADDR_HEX 10000000 \
-  --rpc-url $ANVIL1_RPC --private-key $SOLVER_PRIVATE_KEY --value 0
-```
-
-Wait ~30 seconds for the relayer to process the message.
-
-</details>
-
----
-
-## Step 11: Restart services and verify
+## Step 10: Restart services and verify
 
 The solver, oracle operator, and frontend must reload their configs to pick up the new chain. Kill only the services — **not** the Docker stack (that would destroy your deployed contracts):
 
