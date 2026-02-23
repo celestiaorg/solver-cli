@@ -422,8 +422,8 @@ poll_interval_seconds = 3
     }}
   }},
   "aggregation": {{
-    "global_timeout_ms": 10000,
-    "per_solver_timeout_ms": 5000,
+    "global_timeout_ms": 60000,
+    "per_solver_timeout_ms": 60000,
     "max_concurrent_solvers": 10,
     "max_retries_per_solver": 2,
     "retry_delay_ms": 500,

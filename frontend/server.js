@@ -576,7 +576,7 @@ app.post('/api/quote', async (req, res) => {
         swapType: 'exact-input',
       },
       supportedTypes: ['oif-escrow-v0'],
-      solverOptions: { timeout: 5000, minQuotes: 1 },
+      solverOptions: { timeout: 60000, minQuotes: 1 },
     };
 
     console.log(`[quote] user=${userAddress} from=${fromChainId}(${fromChain.name}) to=${toChainId}(${toChain.name}) amount=${amount}`);
