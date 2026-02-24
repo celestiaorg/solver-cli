@@ -42,6 +42,7 @@ impl ConfigGenerator {
 [networks.{}]
 input_settler_address = "{}"
 output_settler_address = "{}"
+permit2_address = "{}"
 
 [[networks.{}.rpc_urls]]
 http = "{}"
@@ -55,6 +56,11 @@ http = "{}"
                 chain
                     .contracts
                     .output_settler_simple
+                    .as_deref()
+                    .unwrap_or(""),
+                chain
+                    .contracts
+                    .permit2
                     .as_deref()
                     .unwrap_or(""),
                 chain.chain_id,
@@ -174,6 +180,12 @@ network_ids = [{chain_ids_str}]
 [discovery.implementations.onchain_eip7683]
 network_ids = [{chain_ids_str}]
 polling_interval_secs = 12
+
+[discovery.implementations.offchain_eip7683]
+# Offchain discovery runs its own API server for order submission
+api_host = "127.0.0.1"
+api_port = 5002
+network_ids = [{chain_ids_str}]
 
 [discovery.implementations.offchain_eip7683]
 # Offchain discovery runs its own API server for order submission
