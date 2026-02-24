@@ -187,12 +187,6 @@ api_host = "127.0.0.1"
 api_port = 5002
 network_ids = [{chain_ids_str}]
 
-[discovery.implementations.offchain_eip7683]
-# Offchain discovery runs its own API server for order submission
-api_host = "127.0.0.1"
-api_port = 5002
-network_ids = [{chain_ids_str}]
-
 # ============================================================================
 # ORDER
 # ============================================================================

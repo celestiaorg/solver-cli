@@ -228,8 +228,4 @@ impl DeploymentOutput {
     pub fn permit2(&self) -> Option<&String> {
         self.addresses.get("Permit2")
     }
-
-    pub fn permit2(&self) -> Option<&String> {
-        self.addresses.get("Permit2")
-    }
 }
