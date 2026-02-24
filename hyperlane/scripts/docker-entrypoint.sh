@@ -76,7 +76,7 @@ echo "Anvil2 Mailbox: $ANVIL2_MAILBOX"
 # Step 3: Deploy warp route on EVM chains (collateral on anvil1, synthetic on anvil2)
 # ============================================================================
 echo "Updating warp-config.yaml with MockERC20 address..."
-sed -i '' "s|MOCK_USDC_ADDRESS_PLACEHOLDER|$MOCK_USDC_ADDR|" ./configs/warp-config.yaml
+sed -i "s|MOCK_USDC_ADDRESS_PLACEHOLDER|$MOCK_USDC_ADDR|" ./configs/warp-config.yaml
 
 echo "Deploying Hyperlane warp route (collateral on anvil1, synthetic on anvil2)..."
 hyperlane warp deploy --config ./configs/warp-config.yaml --registry ./registry --yes
