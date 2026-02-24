@@ -133,6 +133,38 @@ fn read_env_key(name: &str) -> Result<Option<String>> {
 mod tests {
     use super::*;
     use crate::config::SignerConfig;
+    use std::sync::{LazyLock, Mutex};
+
+    static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    const KEY_ONE: &str =
+        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+    const ADDR_ONE: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+    const KEY_TWO: &str =
+        "0x59c6995e998f97a5a0044966f0945387dc9e86dae88c7a8412f4603b6b78690d";
+    const ADDR_TWO: &str = "0x1f73f05F1C220E57e4D43c5D9B55063B92E5758E";
+
+    fn parse_address(raw: &str) -> Address {
+        raw.parse::<Address>().unwrap()
+    }
+
+    fn clear_signer_env() {
+        std::env::remove_var("REBALANCER_PRIVATE_KEY");
+        std::env::remove_var("REBALANCER_EVOLVE_PK");
+        std::env::remove_var("REBALANCER_ARB_SEPOLIA_PK");
+    }
+
+    fn lock_env() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    struct EnvCleanup;
+
+    impl Drop for EnvCleanup {
+        fn drop(&mut self) {
+            clear_signer_env();
+        }
+    }
 
     fn sample_chain(name: &str, signer: SignerConfig) -> ChainConfig {
         ChainConfig {
@@ -153,39 +185,78 @@ mod tests {
         assert_eq!(normalize_env_key("base.sepolia"), "BASE_SEPOLIA");
     }
 
-    #[tokio::test]
-    async fn env_signer_uses_global_fallback() {
-        std::env::remove_var("REBALANCER_EVOLVE_PK");
-        std::env::set_var(
-            "REBALANCER_PRIVATE_KEY",
-            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
-        );
+    #[test]
+    fn env_signer_uses_global_fallback() {
+        let _env_lock = lock_env();
+        let _cleanup = EnvCleanup;
+        clear_signer_env();
+        std::env::set_var("REBALANCER_PRIVATE_KEY", KEY_ONE);
+        let chain = sample_chain("evolve", SignerConfig::Env);
+        let signer = TxSigner::from_env(&chain).unwrap();
+        assert_eq!(signer.address, parse_address(ADDR_ONE));
+    }
+
+    #[test]
+    fn env_signer_prefers_chain_specific_key_over_global_fallback() {
+        let _env_lock = lock_env();
+        let _cleanup = EnvCleanup;
+        clear_signer_env();
+        std::env::set_var("REBALANCER_EVOLVE_PK", KEY_TWO);
+        std::env::set_var("REBALANCER_PRIVATE_KEY", KEY_ONE);
 
         let chain = sample_chain("evolve", SignerConfig::Env);
-        let signer = TxSigner::new(&chain).await.unwrap();
-        assert_eq!(
-            signer.address,
-            "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
-                .parse::<Address>()
-                .unwrap()
+        let signer = TxSigner::from_env(&chain).unwrap();
+        assert_eq!(signer.address, parse_address(ADDR_TWO));
+    }
+
+    #[test]
+    fn env_signer_errors_when_no_key_available() {
+        let _env_lock = lock_env();
+        let _cleanup = EnvCleanup;
+        clear_signer_env();
+
+        let chain = sample_chain("evolve", SignerConfig::Env);
+        let err = TxSigner::from_env(&chain).unwrap_err();
+        assert!(
+            err.to_string().contains(
+                "No key found for chain evolve. Tried REBALANCER_EVOLVE_PK then REBALANCER_PRIVATE_KEY"
+            )
         );
     }
 
-    #[tokio::test]
-    async fn file_signer_reads_key_field() {
-        let chain = sample_chain(
-            "evolve",
-            SignerConfig::File {
-                key: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-                    .to_string(),
-            },
+    #[test]
+    fn env_signer_errors_when_chain_key_is_empty() {
+        let _env_lock = lock_env();
+        let _cleanup = EnvCleanup;
+        clear_signer_env();
+        std::env::set_var("REBALANCER_EVOLVE_PK", "   ");
+        std::env::set_var("REBALANCER_PRIVATE_KEY", KEY_ONE);
+
+        let chain = sample_chain("evolve", SignerConfig::Env);
+        let err = TxSigner::from_env(&chain).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Environment variable REBALANCER_EVOLVE_PK is set but empty")
         );
-        let signer = TxSigner::new(&chain).await.unwrap();
-        assert_eq!(
-            signer.address,
-            "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
-                .parse::<Address>()
-                .unwrap()
-        );
+    }
+
+    #[test]
+    fn file_signer_reads_key_field() {
+        let signer = TxSigner::from_file(KEY_ONE, "chains.signer.key").unwrap();
+        assert_eq!(signer.address, parse_address(ADDR_ONE));
+    }
+
+    #[test]
+    fn file_signer_accepts_key_without_0x_prefix() {
+        let signer = TxSigner::from_file(&KEY_ONE[2..], "chains.signer.key").unwrap();
+        assert_eq!(signer.address, parse_address(ADDR_ONE));
+    }
+
+    #[test]
+    fn file_signer_rejects_invalid_key() {
+        let err = TxSigner::from_file("not-a-private-key", "chains.signer.key")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Invalid private key format from chains.signer.key"));
     }
 }
