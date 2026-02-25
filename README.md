@@ -6,9 +6,10 @@ This CLI deploys OIF contracts, runs a solver, and executes cross-chain token tr
 
 ## Choose Your Path
 
-
 | Guide                                                  | Use Case                                            |
 | ------------------------------------------------------ | --------------------------------------------------- |
+| [Multi-Chain Setup](docs/multi-chain-setup.md)         | **START HERE** - Complete N-chain guide with 3-chain quickstart |
+| [OIF Aggregator](docs/aggregator.md)                   | Multi-solver quote aggregation with REST API        |
 | [Deploy New Token](docs/deploy-new-token.md)           | Fresh deployment with new contracts and mock tokens |
 | [Solve Existing Tokens](docs/solve-existing-tokens.md) | Add existing chains and real tokens to solve        |
 
@@ -21,6 +22,8 @@ This CLI deploys OIF contracts, runs a solver, and executes cross-chain token tr
 - **Testnet ETH** - Get testnet ETH from a [faucet](https://sepoliafaucet.com)
 
 ## Quick Start: E2E Test
+
+### Option 1: Direct to Chain (Simpler)
 
 ```bash
 # 1. Start local EVM chain
@@ -47,6 +50,25 @@ make intent
 make balances
 ```
 
+### Option 2: With Aggregator (Recommended for Multi-Solver)
+
+```bash
+# 1-3. Same as above (start chain, configure, setup)
+
+# 4. Start aggregator (Terminal 1)
+make aggregator
+
+# 5. Start solver (Terminal 2)
+make solver
+
+# 6. Start oracle operator (Terminal 3)
+make operator
+
+# 7. Use aggregator API or CLI
+curl http://localhost:4000/api/v1/solvers
+make intent
+```
+
 ## Environment Setup
 
 Chains are configured with the pattern `{CHAIN}_RPC` and `{CHAIN}_PK`:
@@ -64,9 +86,10 @@ See [Deploy New Token](docs/deploy-new-token.md) for detailed environment setup.
 | Command           | Description                                              |
 | ----------------- | -------------------------------------------------------- |
 | `make start`      | Start local EVM chain (Anvil)                            |
-| `make stop`       | Stop Anvil and solver                                    |
+| `make stop`       | Stop Anvil, solver, operator, and aggregator             |
 | `make setup`      | Full setup: deploy + configure + fund + mint to user     |
 | `make deploy`     | Deploy contracts (use `CHAINS=a,b` to limit)             |
+| `make aggregator` | Start the OIF aggregator service (port 4000)             |
 | `make solver`     | Start the solver service                                 |
 | `make operator`   | Start the oracle operator service                        |
 | `make mint`       | Mint mock tokens (`CHAIN=`, `SYMBOL=`, `TO=`, `AMOUNT=`) |
@@ -117,6 +140,30 @@ solver-cli intent submit --amount 1000000 --asset USDC --from evolve --to sepoli
 ```
 
 **Token amounts use raw units** (e.g., USDC has 6 decimals: `1000000` = 1 USDC)
+
+## OIF Aggregator
+
+The aggregator provides multi-solver quote aggregation and order routing via a REST API.
+
+**Quick Start:**
+```bash
+# Terminal 1
+make aggregator
+
+# Terminal 2
+make solver
+
+# Terminal 3
+make operator
+```
+
+**Key Features:**
+- Aggregate quotes from multiple solvers
+- Best price selection
+- Health monitoring with circuit breakers
+- Per-solver order routing
+
+**See the [OIF Aggregator Guide](docs/aggregator.md) for complete API documentation and examples.**
 
 ## How It Works
 

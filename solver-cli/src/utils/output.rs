@@ -13,12 +13,12 @@ pub fn print_header(title: &str) {
 
 /// Print a success message
 pub fn print_success(msg: &str) {
-    println!("{} {}", "✓".green(), msg);
+    println!("{} {}", "[OK]".green(), msg);
 }
 
 /// Print an error message
 pub fn print_error(msg: &str) {
-    eprintln!("{} {}", "✗".red(), msg.red());
+    eprintln!("{} {}", "[ERROR]".red(), msg.red());
 }
 
 /// Print a warning message

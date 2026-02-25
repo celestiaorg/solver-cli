@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
     let log_dir = PathBuf::from("./logs/oracle");
     let _guard = setup_logging(&log_dir)?;
 
-    info!("🔮 Starting Oracle Operator Service");
+    info!("Starting Oracle Operator Service");
     info!("Logs written to {:?}", log_dir);
 
     // Load config

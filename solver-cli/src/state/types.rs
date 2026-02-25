@@ -97,6 +97,9 @@ pub struct ContractAddresses {
 
     /// Oracle contract
     pub oracle: Option<String>,
+
+    /// Permit2 contract
+    pub permit2: Option<String>,
 }
 
 impl ContractAddresses {
@@ -104,6 +107,7 @@ impl ContractAddresses {
         self.input_settler_escrow.is_some()
             && self.output_settler_simple.is_some()
             && self.oracle.is_some()
+            && self.permit2.is_some()
     }
 }
 

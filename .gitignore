@@ -3,14 +3,17 @@
 **/cache/
 **/broadcast/
 **/logs/
-.anvil.log
-.anvil.pid
+.anvil1.log
+.anvil1.pid
+.anvil2.log
+.anvil2.pid
 .env
 config/
 .solver
 .rebalancer
 .docs/
 .DS_Store
+.claude
 
 # Nested dependency lockfiles (e.g. oif-contracts libs) — reduces PR diff
 **/lib/**/package-lock.json
