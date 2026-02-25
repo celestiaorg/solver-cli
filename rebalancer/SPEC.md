@@ -3,10 +3,10 @@
 ## 1) Purpose
 
 The solver naturally moves inventory across chains:
-- It spends tokens on output/destination chains to fill orders.
-- It claims tokens on input/source chains after oracle proof.
+- it spends tokens on destination chains to fill orders
+- it claims tokens on source chains after oracle proof
 
-Over time this can skew inventory distribution and starve some destination chains. This service continuously monitors balances and executes cross-chain rebalancing transfers to maintain configured target distribution.
+Over time this can skew inventory distribution and starve some destination chains. The rebalancer continuously monitors balances and executes cross-chain transfers to maintain configured target distribution.
 
 ## 2) Goals
 
@@ -16,51 +16,52 @@ Over time this can skew inventory distribution and starve some destination chain
 4. Be safe and idempotent without local persisted control state.
 5. Provide clear observability and deterministic behavior.
 
-## 3) Non-goals (v1)
+## 3) Non-goals (current)
 
 1. Price optimization across multiple transport routes.
-2. Protocol abstraction layer in v1.
+2. Protocol abstraction layer.
 3. Automatic fee token top-ups.
 4. Predictive inventory optimization based on future order flow.
-5. Partial fills across multiple intermediate hops.
+5. Persistent in-flight transfer reservation state.
 
 ## 4) Service Model
 
-The rebalancer is an independent long-running service (similar operationally to solver and oracle operator).
-Runtime entrypoint should be integrated into `solver-cli` so operators can run:
+The rebalancer is an independent long-running service integrated into `solver-cli`.
+
+Runtime entrypoints:
 - `solver-cli rebalancer start`
 - `solver-cli rebalancer start --once`
 
 High-level loop:
-1. At startup, compute `total_balance` per asset from configured chain balances (fail startup if incomplete).
+1. Startup: create per-chain clients and compute startup `total_balance` per asset from chain reads.
 2. Poll live balances per chain and asset each cycle.
-3. Detect deficits based on thresholds.
+3. Detect deficits based on `min_weight`.
 4. Build a rebalance plan (source -> destination transfers).
-5. Execute Hyperlane Warp transfers.
-6. Apply per-source nonce guard before submission (`pending` vs `latest` nonce).
-7. Repeat.
+5. Apply size bounds and per-cycle parallel cap.
+6. Apply per-source nonce guard (`pending <= latest`) before submission.
+7. Quote and submit Hyperlane Warp transfers (unless `dry_run = true`).
+8. Repeat.
 
 ## 5) Core Concepts
 
-For a given asset `A` across chains `C`:
+For asset `A` across chains `C`:
 
-- `balance[A][c]`: on-chain token balance owned by rebalancer wallet on chain `c`.
-- `observed_total[A] = sum(balance[A][c])` from the current cycle (diagnostics only).
-- `total_balance[A]`: startup canonical total computed once at service start.
-- `current_weight[A][c] = balance[A][c] / total_balance[A]` (if `total_balance[A] > 0`).
+- `balance[A][c]`: on-chain balance for rebalancer account on chain `c`.
+- `observed_total[A] = sum(balance[A][c])` from current cycle (diagnostics).
+- `total_balance[A]`: startup canonical total computed once per process run.
+- `current_weight[A][c] = balance[A][c] / total_balance[A]` when `total_balance[A] > 0`.
 - `target_weight[A][c]`: configured desired weight.
 - `min_weight[A][c]`: configured lower-bound trigger threshold.
 
 Deficit condition:
-- Chain `c` is deficit for asset `A` if `current_weight[A][c] < min_weight[A][c]`.
+- chain `c` is deficit if `current_weight + 1e-9 < min_weight`.
 
-Transfer sizing target:
-- Move toward `target_weight`, not only `min_weight`, to reduce churn.
-- v1 keeps sizing chain-agnostic and simple: no USD pricing feeds, only per-asset percentage bounds on total inventory.
+Sizing target:
+- move toward target weights (not only min weights).
 
 ## 6) Configuration
 
-File path (proposed): `config/rebalancer.toml`
+File path: `config/rebalancer.toml`
 
 Example:
 
@@ -73,203 +74,176 @@ dry_run = false
 min_transfer_bps = 50
 max_transfer_bps = 5000
 
-[[chains]]
-name = "evolve"
-chain_id = 1234
-rpc_url = "http://127.0.0.1:8545"
-account = "rebalancer"
+[accounts]
+rebalancer = "0xD5E85E86FC692CEdaD6D6992F1f0ccf273e39913"
 
 [[chains]]
 name = "sepolia"
 chain_id = 11155111
+domain_id = 11155111 # optional; defaults to chain_id
 rpc_url = "https://ethereum-sepolia-rpc.publicnode.com"
 account = "rebalancer"
+  [chains.signer]
+  type = "env" # env | file | aws_kms
+
+[[chains]]
+name = "eden"
+chain_id = 3735928814
+domain_id = 2147483647
+rpc_url = "https://ev-reth-eden-testnet.binarybuilders.services:8545/"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
 
 [[assets]]
 symbol = "USDC"
 decimals = 6
 
   [[assets.tokens]]
-  chain_id = 1234
-  address = "0x..."
+  chain_id = 11155111
+  type = "erc20" # optional, defaults to erc20
+  address = "0xf77764d1E232Ec088150a3E434678768f8774f21"
+  collateral_token = "0x22cCd0e1efc2beF46143eA00e3868A35ebA16113" # optional for erc20; defaults to address
 
   [[assets.tokens]]
-  chain_id = 11155111
-  address = "0x..."
+  chain_id = 3735928814
+  type = "erc20"
+  address = "0x0C1c5a78669ea6cb269883ad1B65334319Aacfd7"
 
   [assets.weights]
-  "1234" = 0.50
   "11155111" = 0.50
+  "3735928814" = 0.50
 
   [assets.min_weights]
-  "1234" = 0.40
   "11155111" = 0.40
+  "3735928814" = 0.40
 
 [hyperlane]
 default_timeout_seconds = 1800
 ```
 
+Native asset token entry:
+
+```toml
+[[assets.tokens]]
+chain_id = 11155111
+type = "native"
+collateral_token = "0x..."
+```
+
 Validation rules:
-1. `weights` must sum to `1.0` per asset (tolerance: `1e-6`).
+1. `weights` must sum to `1.0` per asset (tolerance `1e-6`).
 2. Every chain in `weights` must exist in `chains`.
 3. `0 <= min_weight[c] <= target_weight[c] <= 1`.
-4. Token address must be present for every `(asset, chain)` pair used in weights.
+4. Every weighted chain must have a token entry.
 5. At least 2 chains per asset.
 6. `0 <= min_transfer_bps <= max_transfer_bps <= 10000`.
+7. `domain_id` defaults to `chain_id`, must fit `uint32`, and must be unique across chains.
+8. `chains.signer` is required.
+
+Token rules:
+1. `type = "erc20"`:
+   - `address` required and non-zero
+   - `collateral_token` optional; defaults to `address` when omitted
+2. `type = "native"`:
+   - `address` must be omitted
+   - `collateral_token` required and non-zero
+3. `router_address` is not supported and fails parsing.
+
+Signer rules:
+1. `type = "env"` supports only `type`.
+2. `type = "file"` requires `key`.
+3. `type = "aws_kms"` requires `key_id` and `region`.
+
+`env` signer runtime key lookup order:
+1. `REBALANCER_<NORMALIZED_CHAIN_NAME>_PK`
+2. `REBALANCER_PRIVATE_KEY`
 
 ## 7) Rebalance Algorithm
 
-Per asset:
-1. Fetch balances on all configured chains.
-2. Compute `observed_total` for diagnostics.
-3. Use startup `total_balance` for planning denominator.
-4. Compute `current_weight`.
-5. Build deficits:
+Per asset each cycle:
+1. Fetch balances on all weighted chains.
+2. If any balance read fails for that asset, skip planning/execution for that asset this cycle.
+3. Compute `observed_total` for diagnostics.
+4. Use startup `total_balance` as planning denominator.
+5. Compute deficits:
+   - `target_balance[c] = target_weight[c] * total_balance`
    - `deficit_amount[c] = max(0, target_balance[c] - current_balance[c])`
-   - where `target_balance[c] = target_weight[c] * total_balance`.
-6. Build surpluses:
-   - `surplus_amount[c] = max(0, current_balance[c] - target_balance[c])`.
-7. If no deficit chain violates `min_weight`, do nothing.
-8. Match surplus chains to deficit chains greedily:
-   - largest deficit first
-   - source from largest surplus
-   - split if needed.
-9. Apply execution constraints:
-   - min/max transfer size as % of total inventory for that asset
-   - max transfers submitted per cycle (`max_parallel_transfers`)
-   - per-source nonce guard (`pending_nonce <= latest_nonce`) before submission.
-10. Emit transfer intents and execute via Hyperlane Warp integration.
+6. Compute surpluses:
+   - `surplus_amount[c] = max(0, current_balance[c] - target_balance[c])`
+7. If no chain is below `min_weight`, do nothing.
+8. Greedy match largest deficits with largest surpluses.
+9. Apply transfer-size bounds:
+   - `min_transfer_raw = ceil(total_balance * min_transfer_bps / 10000)`
+   - `max_transfer_raw = floor(total_balance * max_transfer_bps / 10000)`
+   - below min: skip
+   - above max: cap
+10. Apply per-cycle transfer cap (`max_parallel_transfers`), blocking tail transfers.
+11. If not dry-run, execute emitted transfers with nonce guard and quote/submit flow.
 
-Transfer size bounds (per asset, per cycle):
-- `total_balance`: startup canonical value for the asset.
-- `min_transfer_raw = ceil(total_balance * min_transfer_bps / 10000)`.
-- `max_transfer_raw = floor(total_balance * max_transfer_bps / 10000)`.
-- Candidate transfers below `min_transfer_raw` are skipped.
-- Candidate transfers above `max_transfer_raw` are capped to `max_transfer_raw`.
+## 8) Hyperlane Warp Integration
 
-Concrete example (applies per candidate route transfer):
-- `total_balance = 20 USDC`, `min_transfer_bps = 50`, `max_transfer_bps = 5000`.
-- `min_transfer = 0.1 USDC` and `max_transfer = 10 USDC`.
-- Planned `0.04 USDC` transfer: skipped (below min).
-- Planned `3 USDC` transfer: unchanged.
-- Planned `14 USDC` transfer: capped to `10 USDC`.
+Execution flow per transfer:
+1. Resolve source `collateral_token` for quote/submit.
+2. Call `quoteTransferRemote(...)` on source `collateral_token`.
+3. Use destination chain `domain_id` (not `chain_id`).
+4. Extract native fee from quote entries where `token == zero address`; use as `msg.value`.
+5. Call `transferRemote(...)` on source `collateral_token`.
+6. Log tx hash and optional message id.
 
-Design choice (v1 simplicity):
-- No USD conversion and no per-asset price dependency.
-- No slippage guard parameter in v1; keep route safety to existing quote/submit error handling.
-- If deficits exist but no surplus is available under startup `total_balance`, emit no transfer and log the condition explicitly.
-
-Recommended anti-flap controls:
-1. Deficit trigger strictly at `current_weight < min_weight`.
-2. Per-cycle transfer cap via `max_parallel_transfers`.
-3. Nonce guard on source account to avoid re-submitting while source tx is still pending.
-
-## 8) Hyperlane Warp Integration (v1)
-
-v1 executes rebalances directly through Hyperlane Warp code paths.
-
-Execution flow:
-1. Build a Hyperlane Warp transfer request from `(asset, source_chain, destination_chain, amount, recipient)`.
-2. Quote fees with `quoteTransferRemote(...)`.
-3. Submit source-chain transaction via `transferRemote(...)` with required `msg.value`.
-4. Log submission results (tx hash + optional message id) for operator visibility.
-
-Required Rust ABI bindings (Alloy `sol!`) for Phase 3:
-
-```rust
-use alloy::sol;
-
-sol! {
-    struct Quote {
-        address token;
-        uint256 amount;
-    }
-
-    #[sol(rpc)]
-    interface ITokenRouter {
-        function token() external view returns (address);
-
-        function quoteTransferRemote(
-            uint32 _destination,
-            bytes32 _recipient,
-            uint256 _amount
-        ) external view returns (Quote[] memory quotes);
-
-        function transferRemote(
-            uint32 _destination,
-            bytes32 _recipient,
-            uint256 _amount
-        ) external payable returns (bytes32 messageId);
-    }
-}
-```
-
-Phase 3 integration notes:
-1. `quoteTransferRemote` returns multiple quotes; v1 should at minimum use the native-fee quote for `msg.value` and log all quote entries.
-2. Recipient passed to router is `bytes32` (address must be converted to bytes32 format expected by Hyperlane).
-3. `token()` should be called to validate expected route token semantics and improve diagnostics.
-
-Design note:
-- We intentionally defer protocol abstraction until we have a second real transport integration and concrete integration pressure.
+Notes:
+1. Balance polling uses asset `address` for ERC20 and native balance for `type = native`.
+2. Quote/submit always target `collateral_token`.
+3. Current implementation does not call `token()` for diagnostics.
 
 ## 9) Stateless Operation
 
-The rebalancer does not persist local control state. There is no `.rebalancer/state.json` dependency.
+The rebalancer does not persist local control state.
 
-Control behavior uses startup totals plus live chain reads:
-1. Startup computes per-asset `total_balance`; if any required balance read fails, startup fails.
+Behavior:
+1. Startup computes per-asset `total_balance`; startup fails if incomplete.
 2. Per-cycle live balances determine distribution and deficits.
-3. Source-account nonces (`latest` and `pending`) gate submissions.
-4. If `pending_nonce > latest_nonce`, skip submissions from that source chain in the current cycle.
-5. If pending nonce lookup fails, skip submissions from that source chain in the current cycle (fail closed).
-6. Resync policy is manual: restart (or explicit operator resync action) to refresh `total_balance`.
+3. Nonce guard blocks source submissions when pending nonce is ahead of latest.
+4. If nonce lookup fails, skip that source chain for the cycle.
+5. Resync policy is restart to recompute startup totals.
 
 ## 10) Error Handling
 
-1. Startup RPC failures for canonical totals:
-   - fail service startup
-   - operator retries when RPCs are healthy.
-2. Per-cycle RPC failures:
-   - mark snapshot as partial
-   - skip execution for affected asset this cycle
-   - retry next poll.
-3. Hyperlane submission failure:
-   - log failed attempt with reason
-   - retry in a later cycle based on fresh balances and nonce guard.
-4. Nonce guard lookup failure:
-   - skip submissions for that source chain in this cycle.
-5. Insufficient source balance at execution time:
-   - recalculate plan next cycle.
+1. Startup balance-read failures:
+   - fail service startup.
+2. Per-cycle balance-read failures:
+   - skip that asset for the cycle.
+3. Quote failure:
+   - log warning and continue with other transfers.
+4. Submission failure:
+   - log warning and continue with other transfers.
+5. Nonce guard lookup failure:
+   - skip submissions from that source chain for the cycle.
 
 ## 11) Observability
 
-Logs:
-1. Snapshot summary per asset: `total_balance`, `observed_total`, balances, current weights, target weights.
-2. Trigger decisions: why rebalance fired or skipped.
-3. Transfer submission events: quoted, submitted, failed.
-4. Nonce guard decisions per source chain (allowed/blocked/error).
-5. Deficit-without-surplus condition when triggered.
+Structured logs include:
+1. Startup config summary.
+2. Per-asset chain config (`type`, `address`, `collateral_token`).
+3. Startup totals.
+4. Per-cycle snapshot (`total_balance`, `observed_total`, available slots).
+5. Trigger decisions and planned transfers.
+6. Min/max transfer-size blocks and caps.
+7. Nonce guard allow/block decisions.
+8. Quote summary and quote entries (debug).
+9. Transfer submission success/failure.
+10. Inventory drift (`observed_total` vs startup `total_balance`).
 
-Escrow visibility note:
-1. Escrow contract token balance is queryable.
-2. Per-order escrow status is queryable.
-3. Solver-aggregate claimable escrow amount is not directly queryable in a single contract call.
-
-Metrics:
-1. `rebalancer_asset_weight{asset,chain}`
-2. `rebalancer_deficit_trigger_total{asset,chain}`
-3. `rebalancer_transfer_submitted_total{asset,src,dst}`
-4. `rebalancer_transfer_failed_total{asset,src,dst}`
-5. `rebalancer_nonce_guard_block_total{chain}`
+Metrics are not yet implemented in this crate.
 
 ## 12) Security and Key Management
 
 1. Prefer dedicated rebalancer keys per chain.
-2. Keep keys in env/config references, not committed files.
-3. Validate destination recipient and token addresses from config only.
-4. Enforce allowlisted chain pairs.
+2. Keep private keys out of committed files.
+3. Validate signer/account address match at startup.
+4. Use config-driven token/router addresses only.
 
-## 13) Proposed Project Layout
+## 13) Project Layout
 
 ```text
 rebalancer/
@@ -281,72 +255,43 @@ rebalancer/
     service.rs
     planner.rs
     client.rs
+    signer.rs
 ```
 
 ## 14) Integration Points
 
-1. Add Make target:
-   - `make rebalancer-start` (or alias `make rebalancer`)
-2. Add CLI entrypoint in `solver-cli`:
-   - `solver-cli rebalancer start [--config config/rebalancer.toml]`
-   - This should call the rebalancer service directly (not shelling out to an external process wrapper).
-3. Add config generation hook (optional phase 2):
-   - generate `config/rebalancer.toml` from existing chain/token state.
-4. Reuse existing chain/token metadata from `solver-cli` state where possible.
+1. Make target:
+   - `make rebalancer-start` (alias `make rebalancer`)
+2. CLI:
+   - `solver-cli rebalancer start [--config config/rebalancer.toml] [--once]`
+3. Config generation:
+   - `solver-cli configure` generates `config/rebalancer.toml`.
 
-## 15) Implementation Plan
+## 15) Implementation Status
 
-### Phase 1: Skeleton + Config + Polling
-1. Create `rebalancer/` crate scaffold.
-2. Implement config parser + validation.
-3. Implement balance polling per asset/chain.
-4. Implement dry-run planning logs only (no transfers).
-5. Add `solver-cli rebalancer start` command and wire `make rebalancer`.
+Implemented:
+1. Config parser/validation for chain, signer, domain, asset type, and token semantics.
+2. Stateless planner and execution loop.
+3. Native + ERC20 balance polling.
+4. Hyperlane quote/submit execution via `collateral_token`.
+5. Transfer bounds, per-cycle parallel cap, and nonce guard.
+6. `dry_run` planning mode.
 
-Deliverable:
-- Service prints deterministic rebalance plans from live balances.
-- Service is invocable from top-level UX (`solver-cli` and `make`).
-
-### Phase 2: Stateless Planner + Submission Controls
-1. Implement deficit/surplus planner with constraints.
-2. Keep planner stateless: no in-flight reservation/hysteresis persistence.
-3. Add per-cycle caps and nonce-guard submission gating.
-
-Deliverable:
-- Stable stateless plan generation from live balances and nonce data.
-
-### Phase 3: Hyperlane Warp Execution
-1. Add Alloy `sol!` bindings for `token()`, `quoteTransferRemote(...)`, and `transferRemote(...)`.
-2. Implement direct Hyperlane Warp quote + transfer submission.
-3. Execute one transfer at a time per asset route with idempotency guards.
-4. Log source tx hash / message id on submission (no local persistence).
-
-Deliverable:
-- End-to-end rebalance transfer execution.
-
-### Phase 4: Hardening + Ops
-1. Add retries/backoff around quote/submit failures.
-2. Add metrics and structured logs.
-3. Add Make target and operator runbook docs.
-
-Deliverable:
-- Production-usable rebalancer service with operational visibility.
-
-### Phase 5 (Optional): Protocol Abstraction Extraction
-1. If/when a second transport integration is added, extract a protocol interface from the proven Hyperlane implementation.
-2. Keep Hyperlane as the reference implementation and migrate behavior behind the new interface incrementally.
+Current gaps:
+1. No retry/backoff strategy beyond next-cycle retry.
+2. No metrics export yet.
+3. `hyperlane.default_timeout_seconds` is parsed/logged but not yet enforced in transfer control logic.
 
 ## 16) Acceptance Criteria
 
 1. For configured assets, service detects weight breaches and plans transfers correctly.
-2. When below thresholds, service submits Hyperlane transfers with nonce-guarded source-chain idempotency.
-3. Service restart remains safe without local state; pending nonce gap blocks duplicate source submissions.
-4. Distribution converges toward configured target weights over time.
+2. When below thresholds and not dry-run, service submits Hyperlane transfers to configured domain IDs.
+3. Quote/submit targets use `collateral_token`; ERC20 balances use `address`; native balances use `eth_getBalance`.
+4. Service restart remains safe without local state; nonce guard blocks duplicate source submissions when pending is ahead.
 5. Dry-run mode emits plans with zero on-chain writes.
 
 ## 17) Open Decisions
 
-1. Key strategy:
-   - reuse solver keys initially vs dedicated rebalancer keys immediately.
-2. Hyperlane confirmation semantics:
-   - source tx finality only vs destination receipt proof required before closure.
+1. Whether to enforce per-transfer timeout semantics using `hyperlane.default_timeout_seconds`.
+2. Whether to add retry/backoff and/or circuit breaking around repeated route failures.
+3. Whether to introduce protocol abstraction once a second transport is added.
