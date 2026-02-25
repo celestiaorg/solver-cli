@@ -126,6 +126,7 @@ impl ConfigBuilder {
 				id: self.solver_id,
 				min_profitability_pct: self.min_profitability_pct,
 				monitoring_timeout_seconds: self.monitoring_timeout_seconds,
+				ofac_list: None,
 			},
 			networks: self.networks.unwrap_or_default(),
 			storage: StorageConfig {

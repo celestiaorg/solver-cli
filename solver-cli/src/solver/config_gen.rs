@@ -90,6 +90,13 @@ decimals = {}
             output_oracles.push(format!("{} = [\"{}\"]", chain.chain_id, oracle));
         }
 
+        // Include OFAC list path if the file exists
+        let ofac_line = if std::path::Path::new(".config/ofac.json").exists() {
+            "ofac_list = \".config/ofac.json\"\n".to_string()
+        } else {
+            String::new()
+        };
+
         // Build mock price pairs from all configured tokens
         let mut price_symbols: Vec<String> = state
             .chains
@@ -127,6 +134,7 @@ decimals = {}
 id = "{solver_id}"
 min_profitability_pct = -1000.0  # Allow massive losses for testing
 monitoring_timeout_seconds = 28800
+{ofac_line}
 
 # ============================================================================
 # HTTP API
@@ -238,6 +246,7 @@ output = {{ {output_oracles} }}
             solver_private_key = solver_private_key,
             networks_section = networks_section.trim(),
             chain_ids_str = chain_ids_str,
+            ofac_line = ofac_line,
             input_oracles = input_oracles.join(", "),
             output_oracles = output_oracles.join(", "),
             routes = routes.join("\n"),

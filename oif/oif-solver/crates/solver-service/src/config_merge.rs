@@ -198,6 +198,7 @@ fn build_solver_config(solver_id: &str, defaults: &SeedDefaults) -> SolverConfig
 		id: solver_id.to_string(),
 		min_profitability_pct: defaults.min_profitability_pct,
 		monitoring_timeout_seconds: defaults.monitoring_timeout_seconds,
+		ofac_list: None,
 	}
 }
 

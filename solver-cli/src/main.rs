@@ -12,7 +12,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use commands::{
     balances::BalancesCommand, chain::ChainCommand, configure::ConfigureCommand,
     deploy::DeployCommand, fund::FundCommand, init::InitCommand, intent::IntentCommand,
-    order::OrderCommand, solver::SolverCommand, token::TokenCommand,
+    ofac::OfacCommand, order::OrderCommand, solver::SolverCommand, token::TokenCommand,
 };
 
 #[derive(Parser)]
@@ -74,6 +74,10 @@ enum Commands {
 
     /// Check token balances on all chains
     Balances(BalancesCommand),
+
+    /// OFAC sanctions list management
+    #[command(subcommand)]
+    Ofac(OfacCommand),
 }
 
 fn setup_logging(level: &str) -> anyhow::Result<()> {
@@ -108,6 +112,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Intent(cmd) => cmd.run(cli.output).await,
         Commands::Order(cmd) => cmd.run(cli.output).await,
         Commands::Balances(cmd) => cmd.run(cli.output).await,
+        Commands::Ofac(cmd) => cmd.run(cli.output).await,
     };
 
     if let Err(e) = result {

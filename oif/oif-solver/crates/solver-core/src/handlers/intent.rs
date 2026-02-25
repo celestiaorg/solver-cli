@@ -17,6 +17,7 @@ use solver_types::{
 	truncate_id, with_0x_prefix, Address, DiscoveryEvent, Eip7683OrderData, ExecutionDecision,
 	ExecutionParams, Intent, OrderEvent, SolverEvent, StorageKey,
 };
+use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use thiserror::Error;
@@ -55,6 +56,9 @@ pub struct IntentHandler {
 	/// In-memory LRU cache for fast intent deduplication to prevent race conditions
 	/// Automatically evicts oldest entries when capacity is exceeded
 	processed_intents: Arc<RwLock<LruCache<String, ()>>>,
+	/// OFAC-sanctioned Ethereum addresses (lowercase hex with 0x prefix).
+	/// Loaded once at startup from `config.solver.ofac_list` if set.
+	ofac_addresses: HashSet<String>,
 }
 
 impl IntentHandler {
@@ -70,6 +74,7 @@ impl IntentHandler {
 		cost_profit_service: Arc<CostProfitService>,
 		config: Config,
 	) -> Self {
+		let ofac_addresses = Self::load_ofac_list(config.solver.ofac_list.as_deref());
 		Self {
 			order_service,
 			storage,
@@ -83,6 +88,41 @@ impl IntentHandler {
 			processed_intents: Arc::new(RwLock::new(LruCache::new(
 				NonZeroUsize::new(10000).unwrap(),
 			))),
+			ofac_addresses,
+		}
+	}
+
+	/// Load OFAC-sanctioned addresses from a JSON file.
+	///
+	/// Returns an empty set if no path is configured, the file is missing,
+	/// or the file cannot be parsed. All addresses are stored in lowercase.
+	fn load_ofac_list(path: Option<&str>) -> HashSet<String> {
+		let path = match path {
+			Some(p) if !p.is_empty() => p,
+			_ => return HashSet::new(),
+		};
+
+		match std::fs::read_to_string(path) {
+			Ok(content) => match serde_json::from_str::<Vec<String>>(&content) {
+				Ok(addrs) => {
+					let set: HashSet<String> =
+						addrs.into_iter().map(|a| a.to_lowercase()).collect();
+					tracing::info!(
+						path = %path,
+						count = %set.len(),
+						"Loaded OFAC sanctions list"
+					);
+					set
+				},
+				Err(e) => {
+					tracing::warn!(path = %path, error = %e, "Failed to parse OFAC list");
+					HashSet::new()
+				},
+			},
+			Err(e) => {
+				tracing::warn!(path = %path, error = %e, "Failed to read OFAC list");
+				HashSet::new()
+			},
 		}
 	}
 
@@ -124,6 +164,52 @@ impl IntentHandler {
 		if exists {
 			tracing::debug!("Duplicate intent detected in persistent storage, already processed");
 			return Ok(());
+		}
+
+		// OFAC sanctions check — runs before storing to avoid polluting the dedup cache
+		// with addresses that will always be rejected.
+		if !self.ofac_addresses.is_empty() {
+			if let Ok(order_data) = serde_json::from_value::<Eip7683OrderData>(intent.data.clone())
+			{
+				// Check the order sender (user field).
+				let user_addr = order_data.user.to_lowercase();
+				if self.ofac_addresses.contains(&user_addr) {
+					tracing::warn!(
+						intent_id = %intent.id,
+						address = %user_addr,
+						"Intent rejected: sender is on OFAC sanctions list"
+					);
+					self.event_bus
+						.publish(SolverEvent::Discovery(DiscoveryEvent::IntentRejected {
+							intent_id: intent.id,
+							reason: "Sender address is on OFAC sanctions list".to_string(),
+						}))
+						.ok();
+					return Ok(());
+				}
+
+				// Check every output recipient.
+				for output in &order_data.outputs {
+					// recipient is bytes32; the Ethereum address occupies the last 20 bytes.
+					let addr_bytes = &output.recipient[12..];
+					let hex_str: String = addr_bytes.iter().map(|b| format!("{:02x}", b)).collect();
+					let recipient_addr = format!("0x{}", hex_str);
+					if self.ofac_addresses.contains(&recipient_addr) {
+						tracing::warn!(
+							intent_id = %intent.id,
+							address = %recipient_addr,
+							"Intent rejected: recipient is on OFAC sanctions list"
+						);
+						self.event_bus
+							.publish(SolverEvent::Discovery(DiscoveryEvent::IntentRejected {
+								intent_id: intent.id,
+								reason: "Recipient address is on OFAC sanctions list".to_string(),
+							}))
+							.ok();
+						return Ok(());
+					}
+				}
+			}
 		}
 
 		// Store intent immediately to prevent race conditions with duplicate discovery
@@ -1101,5 +1187,244 @@ mod tests {
 			},
 			_ => panic!("Expected Preparing event"),
 		}
+	}
+
+	// -------------------------------------------------------------------------
+	// OFAC tests
+	// -------------------------------------------------------------------------
+
+	/// Write a JSON array of addresses to a temp file and return the path.
+	fn write_ofac_temp_file(addresses: &[&str]) -> std::path::PathBuf {
+		let path = std::env::temp_dir().join(format!(
+			"ofac_test_{}.json",
+			std::time::SystemTime::now()
+				.duration_since(std::time::UNIX_EPOCH)
+				.unwrap()
+				.subsec_nanos()
+		));
+		let json = serde_json::to_string(addresses).unwrap();
+		std::fs::write(&path, json).unwrap();
+		path
+	}
+
+	/// Build an intent whose `data` is a fully populated `Eip7683OrderData` JSON.
+	fn intent_with_order_data(order_data: &solver_types::Eip7683OrderData) -> Intent {
+		let data = serde_json::to_value(order_data).unwrap();
+		IntentBuilder::new().with_data(data).build()
+	}
+
+	/// Minimal handler wired to a single-use event bus, ready for OFAC tests.
+	fn make_handler_with_config(
+		config: Config,
+		mock_storage: MockStorageInterface,
+	) -> (IntentHandler, tokio::sync::broadcast::Receiver<SolverEvent>) {
+		use solver_account::MockAccountInterface;
+		use solver_pricing::{MockPricingInterface, PricingService};
+
+		let storage = Arc::new(StorageService::new(Box::new(mock_storage)));
+		let order_service = Arc::new(OrderService::new(
+			HashMap::new(),
+			Box::new(MockExecutionStrategy::new()),
+		));
+		let state_machine = Arc::new(OrderStateMachine::new(storage.clone()));
+		let event_bus = EventBus::new(100);
+		let receiver = event_bus.subscribe();
+
+		let delivery = Arc::new(solver_delivery::DeliveryService::new(HashMap::new(), 1, 20));
+
+		let mut mock_pricing = MockPricingInterface::new();
+		mock_pricing
+			.expect_wei_to_currency()
+			.returning(|_, _| Box::pin(async { Ok("0.01".to_string()) }));
+		mock_pricing
+			.expect_convert_asset()
+			.returning(|_, _, amount| {
+				let amount = amount.to_string();
+				Box::pin(async move { Ok(amount) })
+			});
+		mock_pricing
+			.expect_get_supported_pairs()
+			.returning(|| Box::pin(async { vec![] }));
+
+		let pricing = Arc::new(PricingService::new(Box::new(mock_pricing), Vec::new()));
+
+		let token_manager = Arc::new(TokenManager::new(
+			Default::default(),
+			delivery.clone(),
+			Arc::new(solver_account::AccountService::new(Box::new(
+				MockAccountInterface::new(),
+			))),
+		));
+
+		let cost_profit = Arc::new(CostProfitService::new(
+			pricing,
+			delivery.clone(),
+			token_manager.clone(),
+			Arc::new(StorageService::new(Box::new(MockStorageInterface::new()))),
+		));
+
+		let handler = IntentHandler::new(
+			order_service,
+			storage,
+			state_machine,
+			event_bus,
+			delivery,
+			create_test_address(),
+			token_manager,
+			cost_profit,
+			config,
+		);
+
+		(handler, receiver)
+	}
+
+	#[tokio::test]
+	async fn test_ofac_sender_blocked() {
+		// The sanctioned sender address (matches a real Lazarus Group address format).
+		let sanctioned = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+		let ofac_file = write_ofac_temp_file(&[sanctioned]);
+
+		let order_data = Eip7683OrderDataBuilder::new()
+			.user(sanctioned) // <- sanctioned sender
+			.build();
+
+		let intent = intent_with_order_data(&order_data);
+		let intent_id = intent.id.clone();
+
+		let mut mock_storage = MockStorageInterface::new();
+		// Deduplication check passes (intent not seen before).
+		mock_storage
+			.expect_exists()
+			.times(1)
+			.returning(|_| Box::pin(async { Ok(false) }));
+		// set_bytes must NOT be called — OFAC check returns before storing.
+
+		let mut config = create_test_config();
+		config.solver.ofac_list = Some(ofac_file.to_string_lossy().to_string());
+
+		let (handler, mut receiver) = make_handler_with_config(config, mock_storage);
+
+		let result = handler.handle(intent).await;
+		assert!(result.is_ok(), "handler should not error on OFAC rejection");
+
+		// Expect IntentRejected event with a "sender" reason.
+		let event = tokio::time::timeout(std::time::Duration::from_millis(200), receiver.recv())
+			.await
+			.expect("expected an event within timeout")
+			.expect("event channel closed");
+
+		match event {
+			SolverEvent::Discovery(solver_types::DiscoveryEvent::IntentRejected {
+				intent_id: eid,
+				reason,
+			}) => {
+				assert_eq!(eid, intent_id);
+				assert!(
+					reason.to_lowercase().contains("sender"),
+					"reason should mention 'sender', got: {reason}"
+				);
+			},
+			other => panic!("expected IntentRejected, got {other:?}"),
+		}
+
+		let _ = std::fs::remove_file(ofac_file);
+	}
+
+	#[tokio::test]
+	async fn test_ofac_recipient_blocked() {
+		// Build a bytes32 recipient whose last 20 bytes spell out 0xbb...bb.
+		let mut recipient_bytes32 = [0u8; 32];
+		recipient_bytes32[12..].copy_from_slice(&[0xbbu8; 20]);
+		let sanctioned_recipient = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+		let ofac_file = write_ofac_temp_file(&[sanctioned_recipient]);
+
+		let order_data = Eip7683OrderDataBuilder::new()
+			.outputs(vec![solver_types::standards::eip7683::MandateOutput {
+				oracle: [0u8; 32],
+				settler: [0u8; 32],
+				chain_id: alloy_primitives::U256::from(137),
+				token: [0u8; 32],
+				amount: alloy_primitives::U256::from(1u64),
+				recipient: recipient_bytes32, // <- sanctioned recipient
+				call: vec![],
+				context: vec![],
+			}])
+			.build();
+
+		let intent = intent_with_order_data(&order_data);
+		let intent_id = intent.id.clone();
+
+		let mut mock_storage = MockStorageInterface::new();
+		mock_storage
+			.expect_exists()
+			.times(1)
+			.returning(|_| Box::pin(async { Ok(false) }));
+
+		let mut config = create_test_config();
+		config.solver.ofac_list = Some(ofac_file.to_string_lossy().to_string());
+
+		let (handler, mut receiver) = make_handler_with_config(config, mock_storage);
+
+		let result = handler.handle(intent).await;
+		assert!(result.is_ok());
+
+		let event = tokio::time::timeout(std::time::Duration::from_millis(200), receiver.recv())
+			.await
+			.expect("expected an event within timeout")
+			.expect("event channel closed");
+
+		match event {
+			SolverEvent::Discovery(solver_types::DiscoveryEvent::IntentRejected {
+				intent_id: eid,
+				reason,
+			}) => {
+				assert_eq!(eid, intent_id);
+				assert!(
+					reason.to_lowercase().contains("recipient"),
+					"reason should mention 'recipient', got: {reason}"
+				);
+			},
+			other => panic!("expected IntentRejected, got {other:?}"),
+		}
+
+		let _ = std::fs::remove_file(ofac_file);
+	}
+
+	#[tokio::test]
+	async fn test_ofac_unlisted_address_passes_through() {
+		// OFAC list contains only one address that is NOT used in the intent.
+		let ofac_file = write_ofac_temp_file(&["0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"]);
+
+		// Default builder uses a different user address (0x1234...7890).
+		let order_data = Eip7683OrderDataBuilder::new().build();
+		let intent = intent_with_order_data(&order_data);
+
+		let mut mock_storage = MockStorageInterface::new();
+		mock_storage
+			.expect_exists()
+			.times(1)
+			.returning(|_| Box::pin(async { Ok(false) }));
+		// The handler reaches the store step — expect at least one set_bytes call.
+		mock_storage
+			.expect_set_bytes()
+			.times(1..)
+			.returning(|_, _, _, _| Box::pin(async { Ok(()) }));
+
+		let mut config = create_test_config();
+		config.solver.ofac_list = Some(ofac_file.to_string_lossy().to_string());
+
+		let (handler, _receiver) = make_handler_with_config(config, mock_storage);
+
+		// The handler will attempt order validation (no order impl → rejected), but that
+		// happens *after* the OFAC check, proving the intent was not blocked by OFAC.
+		let result = handler.handle(intent).await;
+		assert!(
+			result.is_ok(),
+			"handler should not error when address is not sanctioned"
+		);
+
+		let _ = std::fs::remove_file(ofac_file);
 	}
 }
