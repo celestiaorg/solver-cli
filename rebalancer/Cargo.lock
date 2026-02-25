@@ -3534,11 +3534,9 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "anyhow",
- "async-trait",
  "clap",
  "reqwest",
  "serde",
- "serde_json",
  "tokio",
  "toml",
  "tracing",

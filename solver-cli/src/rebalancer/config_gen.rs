@@ -90,8 +90,6 @@ decimals = {decimals}
 
         let config = format!(
             r#"# Auto-generated rebalancer configuration
-# DO NOT EDIT MANUALLY - regenerate with 'solver-cli configure'
-# Supports {chain_count} chain(s)
 
 poll_interval_seconds = 30
 max_parallel_transfers = 2
@@ -105,7 +103,6 @@ max_transfer_bps = 5000
 
 {assets_section}
 "#,
-            chain_count = chains.len(),
             chains_section = chains_section.trim(),
             assets_section = assets_section.trim(),
         );

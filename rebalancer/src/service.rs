@@ -653,7 +653,7 @@ impl RebalancerService {
         }
 
         for transfer in blocked_by_parallel {
-            self.log_transfer(plan, transfer, "max_parallel block");
+            self.log_transfer(plan, transfer, "per-cycle cap block");
         }
 
         info!(

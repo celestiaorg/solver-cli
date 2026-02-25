@@ -30,7 +30,7 @@ impl TxSigner {
                     key_id: key_id.clone(),
                     region: region.clone(),
                 };
-                backend.new(chain).await
+                backend.load_signer(chain).await
             }
         }
     }
@@ -69,7 +69,7 @@ pub struct AwsKmsRemoteSignerBackend {
 }
 
 impl AwsKmsRemoteSignerBackend {
-    async fn new(&self, chain: &ChainConfig) -> Result<TxSigner> {
+    async fn load_signer(&self, chain: &ChainConfig) -> Result<TxSigner> {
         let sdk_config = aws_config::defaults(BehaviorVersion::latest())
             .region(Region::new(self.region.clone()))
             .load()
@@ -137,11 +137,9 @@ mod tests {
 
     static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
-    const KEY_ONE: &str =
-        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+    const KEY_ONE: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
     const ADDR_ONE: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
-    const KEY_TWO: &str =
-        "0x59c6995e998f97a5a0044966f0945387dc9e86dae88c7a8412f4603b6b78690d";
+    const KEY_TWO: &str = "0x59c6995e998f97a5a0044966f0945387dc9e86dae88c7a8412f4603b6b78690d";
     const ADDR_TWO: &str = "0x1f73f05F1C220E57e4D43c5D9B55063B92E5758E";
 
     fn parse_address(raw: &str) -> Address {
@@ -155,7 +153,9 @@ mod tests {
     }
 
     fn lock_env() -> std::sync::MutexGuard<'static, ()> {
-        ENV_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+        ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     struct EnvCleanup;
@@ -172,7 +172,6 @@ mod tests {
             chain_id: 1,
             domain_id: 1,
             rpc_url: "http://127.0.0.1:8545".to_string(),
-            account: "0x0000000000000000000000000000000000000001".to_string(),
             account_address: "0x0000000000000000000000000000000000000001"
                 .parse()
                 .unwrap(),
@@ -218,11 +217,9 @@ mod tests {
 
         let chain = sample_chain("evolve", SignerConfig::Env);
         let err = TxSigner::from_env(&chain).unwrap_err();
-        assert!(
-            err.to_string().contains(
-                "No key found for chain evolve. Tried REBALANCER_EVOLVE_PK then REBALANCER_PRIVATE_KEY"
-            )
-        );
+        assert!(err.to_string().contains(
+            "No key found for chain evolve. Tried REBALANCER_EVOLVE_PK then REBALANCER_PRIVATE_KEY"
+        ));
     }
 
     #[test]
@@ -235,10 +232,9 @@ mod tests {
 
         let chain = sample_chain("evolve", SignerConfig::Env);
         let err = TxSigner::from_env(&chain).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("Environment variable REBALANCER_EVOLVE_PK is set but empty")
-        );
+        assert!(err
+            .to_string()
+            .contains("Environment variable REBALANCER_EVOLVE_PK is set but empty"));
     }
 
     #[test]

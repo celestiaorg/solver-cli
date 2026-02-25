@@ -37,7 +37,7 @@ High-level loop:
 2. Poll live balances per chain and asset each cycle.
 3. Detect deficits based on `min_weight`.
 4. Build a rebalance plan (source -> destination transfers).
-5. Apply size bounds and per-cycle parallel cap.
+5. Apply size bounds and per-cycle transfer cap (submissions are sequential, not concurrent).
 6. Apply per-source nonce guard (`pending <= latest`) before submission.
 7. Quote and submit Hyperlane Warp transfers (unless `dry_run = true`).
 8. Repeat.
@@ -67,7 +67,7 @@ Example:
 
 ```toml
 poll_interval_seconds = 30
-max_parallel_transfers = 2
+max_parallel_transfers = 2 # per-cycle transfer cap; not concurrent execution
 dry_run = false
 
 [execution]
@@ -177,6 +177,7 @@ Per asset each cycle:
    - below min: skip
    - above max: cap
 10. Apply per-cycle transfer cap (`max_parallel_transfers`), blocking tail transfers.
+    - This limits transfers emitted each cycle; execution remains sequential.
 11. If not dry-run, execute emitted transfers with nonce guard and quote/submit flow.
 
 ## 8) Hyperlane Warp Integration
@@ -272,7 +273,7 @@ Implemented:
 2. Stateless planner and execution loop.
 3. Native + ERC20 balance polling.
 4. Hyperlane quote/submit execution via `collateral_token`.
-5. Transfer bounds, per-cycle parallel cap, and nonce guard.
+5. Transfer bounds, per-cycle transfer cap, and nonce guard.
 6. `dry_run` planning mode.
 
 Current gaps:

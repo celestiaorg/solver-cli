@@ -4,8 +4,9 @@ use std::collections::BTreeMap;
 
 use crate::config::AssetConfig;
 
-const MIN_TRANSFER_RAW: f64 = 1.0;
-const WEIGHT_EPSILON: f64 = 1e-9;
+const MIN_TRANSFER_RAW: u128 = 1;
+const WEIGHT_SCALE: u128 = 1_000_000_000;
+const WEIGHT_EPSILON_UNITS: u128 = 1;
 
 #[derive(Debug, Clone)]
 pub struct AssetPlan {
@@ -26,7 +27,7 @@ pub struct TransferPlan {
 #[derive(Debug, Clone)]
 struct WorkingAmount {
     chain_id: u64,
-    amount_raw: f64,
+    amount_raw: U256,
 }
 
 impl AssetPlan {
@@ -48,15 +49,12 @@ impl AssetPlan {
             });
         }
 
-        let total_balance_f64 = Self::u256_to_f64(total_balance)?;
-
         let mut active_deficit_chain_ids = Vec::new();
         let mut deficits = Vec::new();
         let mut surpluses = Vec::new();
 
         for chain_id in chain_ids {
             let current_balance = *observed_balances.get(&chain_id).unwrap_or(&U256::ZERO);
-            let current_f64 = Self::u256_to_f64(current_balance)?;
 
             let target_weight = *asset
                 .weights
@@ -67,22 +65,25 @@ impl AssetPlan {
                 .get(&chain_id)
                 .with_context(|| format!("Missing min_weight for chain {}", chain_id))?;
 
-            let current_weight = current_f64 / total_balance_f64;
-            let target_balance_raw = total_balance_f64 * target_weight;
-            let deficit_raw = (target_balance_raw - current_f64).max(0.0);
-            let surplus_raw = (current_f64 - target_balance_raw).max(0.0);
+            let target_weight_units = Self::fixed_weight(target_weight, "target_weight", chain_id)?;
+            let min_weight_units = Self::fixed_weight(min_weight, "min_weight", chain_id)?;
+            let current_weight_units = Self::current_weight_units(current_balance, total_balance);
 
-            if current_weight + WEIGHT_EPSILON < min_weight {
+            let target_balance_raw = Self::target_balance(total_balance, target_weight_units);
+            let deficit_raw = target_balance_raw.saturating_sub(current_balance);
+            let surplus_raw = current_balance.saturating_sub(target_balance_raw);
+
+            if current_weight_units.saturating_add(WEIGHT_EPSILON_UNITS) < min_weight_units {
                 active_deficit_chain_ids.push(chain_id);
             }
 
-            if deficit_raw >= MIN_TRANSFER_RAW {
+            if deficit_raw >= U256::from(MIN_TRANSFER_RAW) {
                 deficits.push(WorkingAmount {
                     chain_id,
                     amount_raw: deficit_raw,
                 });
             }
-            if surplus_raw >= MIN_TRANSFER_RAW {
+            if surplus_raw >= U256::from(MIN_TRANSFER_RAW) {
                 surpluses.push(WorkingAmount {
                     chain_id,
                     amount_raw: surplus_raw,
@@ -118,8 +119,8 @@ impl AssetPlan {
         let mut transfers = Vec::new();
 
         loop {
-            deficits.retain(|d| d.amount_raw >= MIN_TRANSFER_RAW);
-            surpluses.retain(|s| s.amount_raw >= MIN_TRANSFER_RAW);
+            deficits.retain(|d| d.amount_raw >= U256::from(MIN_TRANSFER_RAW));
+            surpluses.retain(|s| s.amount_raw >= U256::from(MIN_TRANSFER_RAW));
 
             if deficits.is_empty() || surpluses.is_empty() {
                 break;
@@ -127,28 +128,24 @@ impl AssetPlan {
 
             deficits.sort_by(|a, b| {
                 b.amount_raw
-                    .total_cmp(&a.amount_raw)
+                    .cmp(&a.amount_raw)
                     .then_with(|| a.chain_id.cmp(&b.chain_id))
             });
             surpluses.sort_by(|a, b| {
                 b.amount_raw
-                    .total_cmp(&a.amount_raw)
+                    .cmp(&a.amount_raw)
                     .then_with(|| a.chain_id.cmp(&b.chain_id))
             });
 
             let deficit = &deficits[0];
             let surplus = &surpluses[0];
-            let matched_raw = deficit.amount_raw.min(surplus.amount_raw).floor();
+            let matched_raw = deficit.amount_raw.min(surplus.amount_raw);
 
-            if matched_raw < MIN_TRANSFER_RAW {
+            if matched_raw < U256::from(MIN_TRANSFER_RAW) {
                 break;
             }
 
-            let amount_raw = if matched_raw > u128::MAX as f64 {
-                u128::MAX
-            } else {
-                matched_raw as u128
-            };
+            let amount_raw = Self::u256_to_u128_saturating(matched_raw);
 
             if amount_raw == 0 {
                 break;
@@ -160,18 +157,61 @@ impl AssetPlan {
                 amount_raw,
             });
 
-            deficits[0].amount_raw -= amount_raw as f64;
-            surpluses[0].amount_raw -= amount_raw as f64;
+            let matched_u256 = U256::from(amount_raw);
+            deficits[0].amount_raw -= matched_u256;
+            surpluses[0].amount_raw -= matched_u256;
         }
 
         transfers
     }
 
-    fn u256_to_f64(value: U256) -> Result<f64> {
-        value
-            .to_string()
-            .parse::<f64>()
-            .context("Failed to convert U256 to f64 for planning math")
+    fn fixed_weight(value: f64, label: &str, chain_id: u64) -> Result<u128> {
+        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+            anyhow::bail!(
+                "Invalid {} for chain {}: expected finite value in [0,1], got {}",
+                label,
+                chain_id,
+                value
+            );
+        }
+
+        let scaled = (value * WEIGHT_SCALE as f64).round();
+        if !(0.0..=WEIGHT_SCALE as f64).contains(&scaled) {
+            anyhow::bail!(
+                "Invalid {} for chain {} after fixed-point conversion: {}",
+                label,
+                chain_id,
+                scaled
+            );
+        }
+
+        Ok(scaled as u128)
+    }
+
+    fn current_weight_units(current_balance: U256, total_balance: U256) -> u128 {
+        if total_balance.is_zero() {
+            return 0;
+        }
+        let scaled = (current_balance * U256::from(WEIGHT_SCALE)) / total_balance;
+        Self::u256_to_u128_saturating(scaled).min(WEIGHT_SCALE)
+    }
+
+    fn target_balance(total_balance: U256, target_weight_units: u128) -> U256 {
+        if target_weight_units == 0 {
+            return U256::ZERO;
+        }
+
+        let numerator =
+            (total_balance * U256::from(target_weight_units)) + U256::from(WEIGHT_SCALE / 2);
+        numerator / U256::from(WEIGHT_SCALE)
+    }
+
+    fn u256_to_u128_saturating(value: U256) -> u128 {
+        if value > U256::from(u128::MAX) {
+            u128::MAX
+        } else {
+            value.to::<u128>()
+        }
     }
 }
 
@@ -440,5 +480,29 @@ mod tests {
         let observed = BTreeMap::from([(1u64, U256::from(100u64)), (2u64, U256::from(200u64))]);
         let plan = AssetPlan::new(&asset, &observed, U256::from(999u64)).unwrap();
         assert_eq!(plan.total_balance, U256::from(999u64));
+    }
+
+    #[test]
+    fn plans_deterministically_with_large_u256_balances() {
+        let asset = sample_asset();
+        let total = U256::from(10u64).pow(U256::from(30u64));
+        let chain_one = (total * U256::from(39u64)) / U256::from(100u64);
+        let chain_two = total - chain_one;
+        let observed = BTreeMap::from([(1u64, chain_one), (2u64, chain_two)]);
+
+        let plan_a = AssetPlan::new(&asset, &observed, total).unwrap();
+        let plan_b = AssetPlan::new(&asset, &observed, total).unwrap();
+
+        assert_eq!(plan_a.active_deficit_chain_ids, vec![1u64]);
+        assert_eq!(plan_a.transfers.len(), 1);
+        assert_eq!(plan_b.transfers.len(), 1);
+        assert_eq!(plan_a.transfers[0].source_chain_id, 2u64);
+        assert_eq!(plan_a.transfers[0].destination_chain_id, 1u64);
+        assert_eq!(plan_b.transfers[0].source_chain_id, 2u64);
+        assert_eq!(plan_b.transfers[0].destination_chain_id, 1u64);
+
+        let expected = ((total / U256::from(2u64)) - chain_one).to::<u128>();
+        assert_eq!(plan_a.transfers[0].amount_raw, expected);
+        assert_eq!(plan_b.transfers[0].amount_raw, expected);
     }
 }

@@ -29,7 +29,6 @@ pub struct ChainConfig {
     pub chain_id: u64,
     pub domain_id: u32,
     pub rpc_url: String,
-    pub account: String,
     pub account_address: Address,
     pub signer: SignerConfig,
 }
@@ -64,6 +63,7 @@ pub struct AssetTokenConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawRebalancerConfig {
     #[serde(default = "default_poll_interval_seconds")]
     poll_interval_seconds: u64,
@@ -80,6 +80,7 @@ struct RawRebalancerConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawChainConfig {
     name: String,
     chain_id: u64,
@@ -90,6 +91,7 @@ struct RawChainConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawAssetConfig {
     symbol: String,
     decimals: u8,
@@ -108,20 +110,16 @@ struct RawTokenConfig {
     collateral_token: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Clone, Copy, Default)]
 #[serde(rename_all = "snake_case")]
 enum RawAssetType {
+    #[default]
     Erc20,
     Native,
 }
 
-impl Default for RawAssetType {
-    fn default() -> Self {
-        Self::Erc20
-    }
-}
-
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawExecutionConfig {
     #[serde(default = "default_min_transfer_bps")]
     min_transfer_bps: u16,
@@ -244,7 +242,6 @@ impl RebalancerConfig {
                 chain_id: chain.chain_id,
                 domain_id,
                 rpc_url: chain.rpc_url,
-                account: chain.account,
                 account_address,
                 signer,
             });
