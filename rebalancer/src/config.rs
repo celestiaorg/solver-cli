@@ -27,6 +27,7 @@ pub struct ExecutionConfig {
 pub struct ChainConfig {
     pub name: String,
     pub chain_id: u64,
+    pub domain_id: u32,
     pub rpc_url: String,
     pub account: String,
     pub account_address: Address,
@@ -44,9 +45,22 @@ pub enum SignerConfig {
 pub struct AssetConfig {
     pub symbol: String,
     pub decimals: u8,
-    pub tokens: HashMap<u64, Address>,
+    pub tokens: HashMap<u64, AssetTokenConfig>,
     pub weights: HashMap<u64, f64>,
     pub min_weights: HashMap<u64, f64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AssetType {
+    Erc20,
+    Native,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AssetTokenConfig {
+    pub asset_type: AssetType,
+    pub address: Option<Address>,
+    pub collateral_token: Address,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -76,6 +90,7 @@ struct RawRebalancerConfig {
 struct RawChainConfig {
     name: String,
     chain_id: u64,
+    domain_id: Option<u64>,
     rpc_url: String,
     account: String,
     signer: Option<RawSignerConfig>,
@@ -91,9 +106,26 @@ struct RawAssetConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawTokenConfig {
     chain_id: u64,
-    address: String,
+    #[serde(rename = "type", default)]
+    asset_type: RawAssetType,
+    address: Option<String>,
+    collateral_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy)]
+#[serde(rename_all = "snake_case")]
+enum RawAssetType {
+    Erc20,
+    Native,
+}
+
+impl Default for RawAssetType {
+    fn default() -> Self {
+        Self::Erc20
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -188,6 +220,7 @@ impl RebalancerConfig {
         }
 
         let mut seen_chain_ids = HashSet::new();
+        let mut seen_domain_ids = HashSet::new();
         let mut seen_chain_names = HashSet::new();
         let mut chains = Vec::with_capacity(raw.chains.len());
         let dry_run = raw.dry_run;
@@ -213,10 +246,21 @@ impl RebalancerConfig {
                 .with_context(|| format!("Failed to resolve account for chain {}", chain.name))?;
             let signer = parse_signer_config(chain.signer)
                 .with_context(|| format!("Invalid signer config for chain {}", chain.name))?;
+            let raw_domain_id = chain.domain_id.unwrap_or(chain.chain_id);
+            let domain_id = u32::try_from(raw_domain_id).with_context(|| {
+                format!(
+                    "Invalid domain_id for chain {}: {} (must fit uint32)",
+                    chain.name, raw_domain_id
+                )
+            })?;
+            if !seen_domain_ids.insert(domain_id) {
+                bail!("Duplicate domain_id in chains: {}", domain_id);
+            }
 
             chains.push(ChainConfig {
                 name: chain.name,
                 chain_id: chain.chain_id,
+                domain_id,
                 rpc_url: chain.rpc_url,
                 account: chain.account,
                 account_address,
@@ -307,15 +351,105 @@ impl RebalancerConfig {
                 }
             }
 
-            let mut tokens: HashMap<u64, Address> = HashMap::new();
+            let mut token_configs: HashMap<u64, AssetTokenConfig> = HashMap::new();
             for token in asset.tokens {
-                let address: Address = token.address.parse().with_context(|| {
-                    format!(
-                        "Invalid token address for asset {} chain {}: {}",
-                        asset.symbol, token.chain_id, token.address
-                    )
-                })?;
-                if tokens.insert(token.chain_id, address).is_some() {
+                if !chain_id_set.contains(&token.chain_id) {
+                    bail!(
+                        "Asset {} token entry references unknown chain {}",
+                        asset.symbol,
+                        token.chain_id
+                    );
+                }
+
+                let parsed = match token.asset_type {
+                    RawAssetType::Erc20 => {
+                        let address_raw = token.address.ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Asset {} chain {} type=erc20 requires address",
+                                asset.symbol,
+                                token.chain_id
+                            )
+                        })?;
+                        let address: Address = address_raw.parse().with_context(|| {
+                            format!(
+                                "Invalid address for asset {} chain {}: {}",
+                                asset.symbol, token.chain_id, address_raw
+                            )
+                        })?;
+                        if address.is_zero() {
+                            bail!(
+                                "Asset {} chain {} type=erc20 requires non-zero address",
+                                asset.symbol,
+                                token.chain_id
+                            );
+                        }
+
+                        let collateral_token = match token.collateral_token {
+                            Some(collateral_raw) => {
+                                let parsed: Address =
+                                    collateral_raw.parse().with_context(|| {
+                                        format!(
+                                            "Invalid collateral_token for asset {} chain {}: {}",
+                                            asset.symbol, token.chain_id, collateral_raw
+                                        )
+                                    })?;
+                                if parsed.is_zero() {
+                                    bail!(
+                                        "Asset {} chain {} requires non-zero collateral_token",
+                                        asset.symbol,
+                                        token.chain_id
+                                    );
+                                }
+                                parsed
+                            }
+                            None => address,
+                        };
+
+                        AssetTokenConfig {
+                            asset_type: AssetType::Erc20,
+                            address: Some(address),
+                            collateral_token,
+                        }
+                    }
+                    RawAssetType::Native => {
+                        if token.address.is_some() {
+                            bail!(
+                                "Asset {} chain {} type=native must omit address",
+                                asset.symbol,
+                                token.chain_id
+                            );
+                        }
+                        let collateral_raw = token.collateral_token.ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "Asset {} chain {} type=native requires collateral_token",
+                                asset.symbol,
+                                token.chain_id
+                            )
+                        })?;
+                        let collateral_token: Address =
+                            collateral_raw.parse().with_context(|| {
+                                format!(
+                                    "Invalid collateral_token for asset {} chain {}: {}",
+                                    asset.symbol, token.chain_id, collateral_raw
+                                )
+                            })?;
+                        if collateral_token.is_zero() {
+                            bail!(
+                                "Asset {} chain {} type=native requires non-zero collateral_token",
+                                asset.symbol,
+                                token.chain_id
+                            );
+                        }
+
+                        AssetTokenConfig {
+                            asset_type: AssetType::Native,
+                            address: None,
+                            collateral_token,
+                        }
+                    }
+                };
+
+                if token_configs.insert(token.chain_id, parsed).is_some() {
                     bail!(
                         "Duplicate token entry for asset {} chain {}",
                         asset.symbol,
@@ -325,9 +459,9 @@ impl RebalancerConfig {
             }
 
             for &chain_id in weights.keys() {
-                if !tokens.contains_key(&chain_id) {
+                if !token_configs.contains_key(&chain_id) {
                     bail!(
-                        "Asset {} missing token address for weighted chain {}",
+                        "Asset {} missing token config for weighted chain {}",
                         asset.symbol,
                         chain_id
                     );
@@ -337,7 +471,7 @@ impl RebalancerConfig {
             assets.push(AssetConfig {
                 symbol: asset.symbol,
                 decimals: asset.decimals,
-                tokens,
+                tokens: token_configs,
                 weights,
                 min_weights,
             });
@@ -744,7 +878,7 @@ decimals = 6
 
         let raw: RawRebalancerConfig = toml::from_str(toml).expect("valid TOML");
         let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
-        assert!(err.to_string().contains("Missing chains.signer"));
+        assert!(err.to_string().contains("Invalid signer config for chain"));
     }
 
     #[test]
@@ -796,5 +930,315 @@ decimals = 6
         let raw: RawRebalancerConfig = toml::from_str(toml).expect("valid TOML");
         let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
         assert!(err.to_string().contains("Invalid signer config for chain"));
+    }
+
+    #[test]
+    fn supports_optional_collateral_token_with_fallback_to_address() {
+        let toml = r#"
+dry_run = true
+
+[accounts]
+rebalancer = "0x000000000000000000000000000000000000dEaD"
+
+[[chains]]
+name = "evolve"
+chain_id = 1234
+rpc_url = "http://127.0.0.1:8545"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[chains]]
+name = "sepolia"
+chain_id = 11155111
+rpc_url = "https://rpc.sepolia.org"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[assets]]
+symbol = "USDC"
+decimals = 6
+
+  [[assets.tokens]]
+  chain_id = 1234
+  address = "0x0000000000000000000000000000000000000001"
+  collateral_token = "0x0000000000000000000000000000000000000011"
+
+  [[assets.tokens]]
+  chain_id = 11155111
+  address = "0x0000000000000000000000000000000000000002"
+
+  [assets.weights]
+  "1234" = 0.50
+  "11155111" = 0.50
+
+  [assets.min_weights]
+  "1234" = 0.40
+  "11155111" = 0.40
+"#;
+
+        let raw: RawRebalancerConfig = toml::from_str(toml).expect("valid TOML");
+        let config = RebalancerConfig::from_raw(raw).expect("valid config");
+        let asset = &config.assets[0];
+        let chain_1234 = asset.tokens.get(&1234u64).expect("missing chain 1234");
+        let chain_11155111 = asset
+            .tokens
+            .get(&11155111u64)
+            .expect("missing chain 11155111");
+
+        assert_eq!(
+            chain_1234.collateral_token,
+            "0x0000000000000000000000000000000000000011"
+                .parse::<Address>()
+                .unwrap()
+        );
+        assert_eq!(chain_1234.asset_type, AssetType::Erc20);
+        assert_eq!(
+            chain_1234.address,
+            Some(
+                "0x0000000000000000000000000000000000000001"
+                    .parse::<Address>()
+                    .unwrap()
+            )
+        );
+        assert_eq!(
+            chain_11155111.collateral_token,
+            chain_11155111.address.expect("missing erc20 address")
+        );
+    }
+
+    #[test]
+    fn supports_chain_domain_id_override_with_chain_id_default() {
+        let toml = r#"
+dry_run = true
+
+[accounts]
+rebalancer = "0x000000000000000000000000000000000000dEaD"
+
+[[chains]]
+name = "sepolia"
+chain_id = 11155111
+rpc_url = "https://rpc.sepolia.org"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[chains]]
+name = "eden"
+chain_id = 3735928814
+domain_id = 2147483647
+rpc_url = "https://eden.invalid"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[assets]]
+symbol = "USDC"
+decimals = 6
+
+  [[assets.tokens]]
+  chain_id = 11155111
+  address = "0x0000000000000000000000000000000000000001"
+
+  [[assets.tokens]]
+  chain_id = 3735928814
+  address = "0x0000000000000000000000000000000000000002"
+
+  [assets.weights]
+  "11155111" = 0.50
+  "3735928814" = 0.50
+
+  [assets.min_weights]
+  "11155111" = 0.40
+  "3735928814" = 0.40
+"#;
+
+        let raw: RawRebalancerConfig = toml::from_str(toml).expect("valid TOML");
+        let config = RebalancerConfig::from_raw(raw).expect("valid config");
+
+        let sepolia = config
+            .chains
+            .iter()
+            .find(|c| c.chain_id == 11155111)
+            .expect("missing sepolia chain");
+        assert_eq!(sepolia.domain_id, 11155111u32);
+
+        let eden = config
+            .chains
+            .iter()
+            .find(|c| c.chain_id == 3735928814)
+            .expect("missing eden chain");
+        assert_eq!(eden.domain_id, 2147483647u32);
+    }
+
+    #[test]
+    fn accepts_native_token_type() {
+        let toml = r#"
+dry_run = true
+
+[accounts]
+rebalancer = "0x000000000000000000000000000000000000dEaD"
+
+[[chains]]
+name = "sepolia"
+chain_id = 11155111
+rpc_url = "https://rpc.sepolia.org"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[chains]]
+name = "eden"
+chain_id = 3735928814
+domain_id = 2147483647
+rpc_url = "https://eden.invalid"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[assets]]
+symbol = "ETH"
+decimals = 18
+
+  [[assets.tokens]]
+  chain_id = 11155111
+  type = "native"
+  collateral_token = "0x0000000000000000000000000000000000000011"
+
+  [[assets.tokens]]
+  chain_id = 3735928814
+  type = "native"
+  collateral_token = "0x0000000000000000000000000000000000000022"
+
+  [assets.weights]
+  "11155111" = 0.50
+  "3735928814" = 0.50
+
+  [assets.min_weights]
+  "11155111" = 0.40
+  "3735928814" = 0.40
+"#;
+
+        let raw: RawRebalancerConfig = toml::from_str(toml).expect("valid TOML");
+        let config = RebalancerConfig::from_raw(raw).expect("valid config");
+        let asset = &config.assets[0];
+        let chain = asset
+            .tokens
+            .get(&11155111u64)
+            .expect("missing sepolia token");
+
+        assert_eq!(chain.asset_type, AssetType::Native);
+        assert!(chain.address.is_none());
+        assert_eq!(
+            chain.collateral_token,
+            "0x0000000000000000000000000000000000000011"
+                .parse::<Address>()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn rejects_native_type_with_address() {
+        let toml = r#"
+dry_run = true
+
+[accounts]
+rebalancer = "0x000000000000000000000000000000000000dEaD"
+
+[[chains]]
+name = "sepolia"
+chain_id = 11155111
+rpc_url = "https://rpc.sepolia.org"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[chains]]
+name = "eden"
+chain_id = 3735928814
+rpc_url = "https://eden.invalid"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[assets]]
+symbol = "ETH"
+decimals = 18
+
+  [[assets.tokens]]
+  chain_id = 11155111
+  type = "native"
+  address = "0x0000000000000000000000000000000000000001"
+  collateral_token = "0x0000000000000000000000000000000000000011"
+
+  [[assets.tokens]]
+  chain_id = 3735928814
+  type = "native"
+  collateral_token = "0x0000000000000000000000000000000000000022"
+
+  [assets.weights]
+  "11155111" = 0.50
+  "3735928814" = 0.50
+
+  [assets.min_weights]
+  "11155111" = 0.40
+  "3735928814" = 0.40
+"#;
+
+        let raw: RawRebalancerConfig = toml::from_str(toml).expect("valid TOML");
+        let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
+        assert!(err.to_string().contains("type=native must omit address"));
+    }
+
+    #[test]
+    fn rejects_router_address_field() {
+        let toml = r#"
+dry_run = true
+
+[accounts]
+rebalancer = "0x000000000000000000000000000000000000dEaD"
+
+[[chains]]
+name = "evolve"
+chain_id = 1234
+rpc_url = "http://127.0.0.1:8545"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[chains]]
+name = "sepolia"
+chain_id = 11155111
+rpc_url = "https://rpc.sepolia.org"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[assets]]
+symbol = "USDC"
+decimals = 6
+
+  [[assets.tokens]]
+  chain_id = 1234
+  address = "0x0000000000000000000000000000000000000001"
+  router_address = "0x0000000000000000000000000000000000000011"
+
+  [[assets.tokens]]
+  chain_id = 11155111
+  address = "0x0000000000000000000000000000000000000002"
+
+  [assets.weights]
+  "1234" = 0.50
+  "11155111" = 0.50
+
+  [assets.min_weights]
+  "1234" = 0.40
+  "11155111" = 0.40
+"#;
+
+        let err = toml::from_str::<RawRebalancerConfig>(toml).expect_err("should fail");
+        assert!(err.to_string().contains("unknown field"));
+        assert!(err.to_string().contains("router_address"));
     }
 }

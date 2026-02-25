@@ -112,7 +112,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     if let Err(e) = result {
-        tracing::error!("Command failed: {}", e);
+        tracing::error!("Command failed:\n{:#}", e);
         std::process::exit(1);
     }
 

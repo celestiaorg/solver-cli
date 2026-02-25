@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Subcommand;
 use std::path::PathBuf;
 
-use crate::utils::{print_divider, print_info, print_kv, OutputFormatter};
+use crate::utils::{load_dotenv, print_divider, print_info, print_kv, OutputFormatter};
 use crate::OutputFormat;
 
 #[derive(Subcommand)]
@@ -32,6 +32,11 @@ impl RebalancerCommand {
         print_kv("Config", config.display());
         print_kv("Mode", if once { "single-cycle" } else { "continuous" });
         print_divider();
+
+        // Load .env from project root when running through solver-cli.
+        // This keeps behavior consistent with other CLI commands.
+        let project_dir = std::env::current_dir()?;
+        load_dotenv(&project_dir)?;
 
         if !config.exists() {
             anyhow::bail!(

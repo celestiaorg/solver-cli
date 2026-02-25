@@ -196,7 +196,7 @@ pub fn format_raw_u128(amount_raw: u128, decimals: u8) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::AssetConfig;
+    use crate::config::{AssetConfig, AssetTokenConfig, AssetType};
     use std::collections::{BTreeMap, HashMap};
 
     fn sample_asset() -> AssetConfig {
@@ -206,15 +206,31 @@ mod tests {
             tokens: HashMap::from([
                 (
                     1u64,
-                    "0x0000000000000000000000000000000000000001"
-                        .parse()
-                        .unwrap(),
+                    AssetTokenConfig {
+                        asset_type: AssetType::Erc20,
+                        address: Some(
+                            "0x0000000000000000000000000000000000000001"
+                                .parse()
+                                .unwrap(),
+                        ),
+                        collateral_token: "0x0000000000000000000000000000000000000011"
+                            .parse()
+                            .unwrap(),
+                    },
                 ),
                 (
                     2u64,
-                    "0x0000000000000000000000000000000000000002"
-                        .parse()
-                        .unwrap(),
+                    AssetTokenConfig {
+                        asset_type: AssetType::Erc20,
+                        address: Some(
+                            "0x0000000000000000000000000000000000000002"
+                                .parse()
+                                .unwrap(),
+                        ),
+                        collateral_token: "0x0000000000000000000000000000000000000022"
+                            .parse()
+                            .unwrap(),
+                    },
                 ),
             ]),
             weights: HashMap::from([(1u64, 0.5), (2u64, 0.5)]),
@@ -229,21 +245,45 @@ mod tests {
             tokens: HashMap::from([
                 (
                     1u64,
-                    "0x0000000000000000000000000000000000000001"
-                        .parse()
-                        .unwrap(),
+                    AssetTokenConfig {
+                        asset_type: AssetType::Erc20,
+                        address: Some(
+                            "0x0000000000000000000000000000000000000001"
+                                .parse()
+                                .unwrap(),
+                        ),
+                        collateral_token: "0x0000000000000000000000000000000000000011"
+                            .parse()
+                            .unwrap(),
+                    },
                 ),
                 (
                     2u64,
-                    "0x0000000000000000000000000000000000000002"
-                        .parse()
-                        .unwrap(),
+                    AssetTokenConfig {
+                        asset_type: AssetType::Erc20,
+                        address: Some(
+                            "0x0000000000000000000000000000000000000002"
+                                .parse()
+                                .unwrap(),
+                        ),
+                        collateral_token: "0x0000000000000000000000000000000000000022"
+                            .parse()
+                            .unwrap(),
+                    },
                 ),
                 (
                     3u64,
-                    "0x0000000000000000000000000000000000000003"
-                        .parse()
-                        .unwrap(),
+                    AssetTokenConfig {
+                        asset_type: AssetType::Erc20,
+                        address: Some(
+                            "0x0000000000000000000000000000000000000003"
+                                .parse()
+                                .unwrap(),
+                        ),
+                        collateral_token: "0x0000000000000000000000000000000000000033"
+                            .parse()
+                            .unwrap(),
+                    },
                 ),
             ]),
             weights: HashMap::from([(1u64, 1.0 / 3.0), (2u64, 1.0 / 3.0), (3u64, 1.0 / 3.0)]),
@@ -258,27 +298,59 @@ mod tests {
             tokens: HashMap::from([
                 (
                     1u64,
-                    "0x0000000000000000000000000000000000000001"
-                        .parse()
-                        .unwrap(),
+                    AssetTokenConfig {
+                        asset_type: AssetType::Erc20,
+                        address: Some(
+                            "0x0000000000000000000000000000000000000001"
+                                .parse()
+                                .unwrap(),
+                        ),
+                        collateral_token: "0x0000000000000000000000000000000000000011"
+                            .parse()
+                            .unwrap(),
+                    },
                 ),
                 (
                     2u64,
-                    "0x0000000000000000000000000000000000000002"
-                        .parse()
-                        .unwrap(),
+                    AssetTokenConfig {
+                        asset_type: AssetType::Erc20,
+                        address: Some(
+                            "0x0000000000000000000000000000000000000002"
+                                .parse()
+                                .unwrap(),
+                        ),
+                        collateral_token: "0x0000000000000000000000000000000000000022"
+                            .parse()
+                            .unwrap(),
+                    },
                 ),
                 (
                     3u64,
-                    "0x0000000000000000000000000000000000000003"
-                        .parse()
-                        .unwrap(),
+                    AssetTokenConfig {
+                        asset_type: AssetType::Erc20,
+                        address: Some(
+                            "0x0000000000000000000000000000000000000003"
+                                .parse()
+                                .unwrap(),
+                        ),
+                        collateral_token: "0x0000000000000000000000000000000000000033"
+                            .parse()
+                            .unwrap(),
+                    },
                 ),
                 (
                     4u64,
-                    "0x0000000000000000000000000000000000000004"
-                        .parse()
-                        .unwrap(),
+                    AssetTokenConfig {
+                        asset_type: AssetType::Erc20,
+                        address: Some(
+                            "0x0000000000000000000000000000000000000004"
+                                .parse()
+                                .unwrap(),
+                        ),
+                        collateral_token: "0x0000000000000000000000000000000000000044"
+                            .parse()
+                            .unwrap(),
+                    },
                 ),
             ]),
             weights: HashMap::from([(1u64, 0.25), (2u64, 0.25), (3u64, 0.25), (4u64, 0.25)]),

@@ -170,6 +170,7 @@ mod tests {
         ChainConfig {
             name: name.to_string(),
             chain_id: 1,
+            domain_id: 1,
             rpc_url: "http://127.0.0.1:8545".to_string(),
             account: "0x0000000000000000000000000000000000000001".to_string(),
             account_address: "0x0000000000000000000000000000000000000001"

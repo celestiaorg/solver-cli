@@ -3,7 +3,7 @@ use alloy::{
     network::TransactionBuilder,
     primitives::{Address, Bytes, FixedBytes, TxHash, U256},
     providers::{Provider, ProviderBuilder},
-    rpc::types::eth::BlockId,
+    rpc::types::{eth::BlockId, TransactionRequest},
     sol,
     sol_types::SolCall,
 };
@@ -33,17 +33,18 @@ type DefaultProvider = alloy::providers::fillers::FillProvider<
 >;
 
 sol! {
-    function balanceOf(address account) external view returns (uint256);
-
     struct Quote {
         address token;
         uint256 amount;
     }
 
     #[sol(rpc)]
-    interface ITokenRouter {
-        function token() external view returns (address);
+    interface IERC20 {
+        function balanceOf(address account) external view returns (uint256);
+    }
 
+    #[sol(rpc)]
+    interface ITokenRouter {
         function quoteTransferRemote(
             uint32 _destination,
             bytes32 _recipient,
@@ -66,7 +67,6 @@ pub struct HyperlaneQuoteItem {
 
 #[derive(Debug, Clone)]
 pub struct HyperlaneQuote {
-    pub router_token: Address,
     pub entries: Vec<HyperlaneQuoteItem>,
     pub native_fee: U256,
 }
@@ -112,7 +112,7 @@ impl ChainClient {
     }
 
     pub async fn token_balance(&self, token: Address, account: Address) -> Result<U256> {
-        let call = balanceOfCall { account };
+        let call = IERC20::balanceOfCall { account };
         let call_data: Bytes = call.abi_encode().into();
 
         let tx = alloy::rpc::types::TransactionRequest::default()
@@ -126,6 +126,13 @@ impl ChainClient {
             .context("Failed to call ERC20 balanceOf")?;
 
         Ok(U256::from_be_slice(&result))
+    }
+
+    pub async fn native_balance(&self, account: Address) -> Result<U256> {
+        self.provider
+            .get_balance(account)
+            .await
+            .context("Failed to get native balance")
     }
 
     pub async fn transaction_count_latest(&self, account: Address) -> Result<u64> {
@@ -147,34 +154,28 @@ impl ChainClient {
     pub async fn quote_transfer_remote(
         &self,
         source_router: Address,
-        destination_chain_id: u64,
+        destination_domain_id: u32,
         destination_recipient: Address,
         amount: U256,
     ) -> Result<HyperlaneQuote> {
-        let destination = u32::try_from(destination_chain_id).with_context(|| {
-            format!(
-                "destination chain_id {} does not fit uint32 Hyperlane domain",
-                destination_chain_id
-            )
-        })?;
         let recipient = address_to_bytes32(destination_recipient);
-
-        let router_token = self.token(source_router).await?;
-
         let call = ITokenRouter::quoteTransferRemoteCall {
-            _destination: destination,
+            _destination: destination_domain_id,
             _recipient: recipient,
             _amount: amount,
         };
-        let tx = alloy::rpc::types::TransactionRequest::default()
+
+        let tx = TransactionRequest::default()
             .to(source_router)
             .input(Bytes::from(call.abi_encode()).into());
+
         let raw = self.provider.call(tx).await.with_context(|| {
             format!(
-                "quoteTransferRemote call failed on router {}",
+                "quoteTransferRemote call failed on router {} (address may be plain ERC20, not a Hyperlane token router)",
                 source_router
             )
         })?;
+
         let decoded = ITokenRouter::quoteTransferRemoteCall::abi_decode_returns(&raw)
             .context("Failed to decode quoteTransferRemote return payload")?;
 
@@ -185,6 +186,7 @@ impl ChainClient {
                 amount: quote.amount,
             })
             .collect();
+
         let native_fee = entries
             .iter()
             .find(|entry| entry.token == Address::ZERO)
@@ -192,7 +194,6 @@ impl ChainClient {
             .unwrap_or(U256::ZERO);
 
         Ok(HyperlaneQuote {
-            router_token,
             entries,
             native_fee,
         })
@@ -201,49 +202,51 @@ impl ChainClient {
     pub async fn submit_transfer_remote(
         &self,
         source_router: Address,
-        destination_chain_id: u64,
+        destination_domain_id: u32,
         destination_recipient: Address,
         amount: U256,
         msg_value: U256,
     ) -> Result<SubmittedTransfer> {
-        let destination = u32::try_from(destination_chain_id).with_context(|| {
-            format!(
-                "destination chain_id {} does not fit uint32 Hyperlane domain",
-                destination_chain_id
-            )
-        })?;
         let recipient = address_to_bytes32(destination_recipient);
-
         let call = ITokenRouter::transferRemoteCall {
-            _destination: destination,
+            _destination: destination_domain_id,
             _recipient: recipient,
             _amount: amount,
         };
-        let call_data = Bytes::from(call.abi_encode());
+        let calldata = Bytes::from(call.abi_encode());
 
-        let preview_tx = alloy::rpc::types::TransactionRequest::default()
+        let tx = TransactionRequest::default()
             .to(source_router)
-            .input(call_data.clone().into())
+            .input(calldata.into())
             .value(msg_value);
-        let message_id = match self.provider.call(preview_tx).await {
+
+        let (message_id, preview_error) = match self.provider.call(tx.clone()).await {
             Ok(raw) => {
                 if raw.len() >= 32 {
-                    Some(FixedBytes::<32>::from_slice(&raw[raw.len() - 32..]))
+                    (
+                        Some(FixedBytes::<32>::from_slice(&raw[raw.len() - 32..])),
+                        None,
+                    )
                 } else {
-                    None
+                    (None, None)
                 }
             }
-            Err(_) => None,
+            Err(err) => (None, Some(err)),
         };
 
-        let tx = alloy::rpc::types::TransactionRequest::default()
-            .to(source_router)
-            .input(call_data.into())
-            .value(msg_value);
         let pending = self.provider.send_transaction(tx).await.with_context(|| {
+            let preview = preview_error
+                .as_ref()
+                .map(|err| format!("; preview_call_err={}", err))
+                .unwrap_or_default();
             format!(
-                "Failed to submit transferRemote tx on router {}",
-                source_router
+                "Failed to submit transferRemote tx on router {} destination_domain={} recipient={} amount={} msg_value={}{}",
+                source_router,
+                destination_domain_id,
+                destination_recipient,
+                amount,
+                msg_value,
+                preview
             )
         })?;
 
@@ -251,26 +254,6 @@ impl ChainClient {
             source_tx_hash: *pending.tx_hash(),
             message_id,
         })
-    }
-
-    async fn token(&self, router: Address) -> Result<Address> {
-        let call = ITokenRouter::tokenCall {};
-        let tx = alloy::rpc::types::TransactionRequest::default()
-            .to(router)
-            .input(Bytes::from(call.abi_encode()).into());
-        let raw = self
-            .provider
-            .call(tx)
-            .await
-            .with_context(|| format!("token() call failed on router {}", router))?;
-        if raw.len() < 32 {
-            bail!(
-                "token() return payload too short on router {}: {} bytes",
-                router,
-                raw.len()
-            );
-        }
-        Ok(Address::from_slice(&raw[raw.len() - 20..]))
     }
 }
 
