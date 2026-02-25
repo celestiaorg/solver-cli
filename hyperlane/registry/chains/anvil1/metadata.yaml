@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/hyperlane-xyz/hyperlane-registry/v15.2.0/chains/schema.json
+chainId: 31337
+displayName: Anvil1
+domainId: 131337
+isTestnet: true
+name: anvil1
+nativeToken:
+  decimals: 18
+  name: Ether
+  symbol: ETH
+protocol: ethereum
+rpcUrls:
+  - http: http://anvil1:8545
+technicalStack: other

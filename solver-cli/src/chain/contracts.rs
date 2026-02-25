@@ -16,15 +16,6 @@ sol! {
     }
 }
 
-// MockERC20 interface (mintable)
-sol! {
-    #[sol(rpc)]
-    interface IMockERC20 {
-        function mint(address to, uint256 amount) external;
-        function burn(address from, uint256 amount) external;
-    }
-}
-
 // Input Settler Escrow interface
 sol! {
     #[sol(rpc)]

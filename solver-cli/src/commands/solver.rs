@@ -72,7 +72,7 @@ impl SolverCommand {
     }
 
     /// Run the solver engine in-process (used by `solver start` foreground and `solver run`)
-    async fn run_engine(config_path: &PathBuf) -> Result<()> {
+    async fn run_engine(config_path: &std::path::Path) -> Result<()> {
         run_solver_from_config(config_path).await
     }
 

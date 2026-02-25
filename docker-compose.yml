@@ -1,0 +1,209 @@
+services:
+  # ============================================================================
+  # Celestia Chain
+  # ============================================================================
+  celestia-init:
+    image: ghcr.io/celestiaorg/celestia-app-standalone:v7.0.0-rc0
+    container_name: celestia-init
+    entrypoint: /scripts/init.sh
+    volumes:
+      - ./testnet/celestia-app/init.sh:/scripts/init.sh:ro
+      - celestia-app:/home/celestia/.celestia-app
+    restart: "no"
+
+  celestia-validator:
+    image: ghcr.io/celestiaorg/celestia-app-standalone:v7.0.0-rc0
+    container_name: celestia-validator
+    ports:
+      - "26656:26656"
+      - "26657:26657"
+      - "1317:1317"
+      - "9090:9090"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://localhost:26657/status | jq -e '.result.sync_info.latest_block_height | tonumber > 1'",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+    volumes:
+      - celestia-app:/home/celestia/.celestia-app
+    command: >
+      start --force-no-bbr --api.enable=true --api.address=tcp://0.0.0.0:1317 --home /home/celestia/.celestia-app
+    depends_on:
+      celestia-init:
+        condition: service_completed_successfully
+    networks:
+      - solver-net
+
+  celestia-bridge:
+    image: ghcr.io/celestiaorg/celestia-node:v0.26.0-arabica
+    container_name: celestia-bridge
+    volumes:
+      - ./testnet/celestia-node/init.sh:/scripts/init.sh:ro
+      - celestia-bridge:/home/celestia
+    entrypoint: /scripts/init.sh
+    command: celestia bridge start --log.level.module share/discovery:fatal --keyring.keyname node --rpc.skip-auth
+    ports:
+      - "26658:26658"
+      - "2121:2121"
+    healthcheck:
+      test: >
+        curl -sf -X POST http://localhost:26658
+        -H "Content-Type: application/json"
+        -d '{"id":1,"jsonrpc":"2.0","method":"node.Ready","params":[]}' | grep true
+      interval: 10s
+      start_period: 10s
+    depends_on:
+      celestia-validator:
+        condition: service_healthy
+    networks:
+      - solver-net
+
+  # ============================================================================
+  # EVM Chains (Anvil)
+  # ============================================================================
+  anvil1:
+    image: ghcr.io/foundry-rs/foundry:latest
+    container_name: anvil1
+    ports:
+      - "8545:8545"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "cast block-number --rpc-url http://localhost:8545 > /dev/null 2>&1",
+        ]
+      interval: 5s
+      timeout: 3s
+      start_period: 2s
+    networks:
+      - solver-net
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        anvil --host 0.0.0.0 --chain-id 31337 --block-time 1 --accounts 10 --balance 10000 --mnemonic "test test test test test test test test test test test junk"
+
+  anvil2:
+    image: ghcr.io/foundry-rs/foundry:latest
+    container_name: anvil2
+    ports:
+      - "8546:8546"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "cast block-number --rpc-url http://localhost:8546 > /dev/null 2>&1",
+        ]
+      interval: 5s
+      timeout: 3s
+      start_period: 2s
+    networks:
+      - solver-net
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        anvil --host 0.0.0.0 --chain-id 31338 --block-time 1 --port 8546 --accounts 10 --balance 10000 --mnemonic "test test test test test test test test test test test junk"
+
+  # ============================================================================
+  # Hyperlane Deployment (runs once)
+  # ============================================================================
+  hyperlane-init:
+    build:
+      context: .
+      dockerfile: hyperlane/Dockerfile
+    image: ghcr.io/celestiaorg/hyperlane-init:local
+    container_name: hyperlane-init
+    volumes:
+      - ./hyperlane:/home/hyperlane/
+    working_dir: /home/hyperlane
+    entrypoint: "scripts/docker-entrypoint.sh"
+    depends_on:
+      celestia-validator:
+        condition: service_healthy
+      anvil1:
+        condition: service_healthy
+      anvil2:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - solver-net
+
+  # ============================================================================
+  # Forwarding Relayer (Backend + Relayer)
+  # ============================================================================
+  forwarding-backend:
+    image: ghcr.io/celestiaorg/forwarding-relayer@sha256:0195cd4bd9665cc4105b42fb75a175f234626c678ac5e96ef47043fa96a20010
+    container_name: forwarding-backend
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - DB_PATH=/app/storage/backend.db
+    volumes:
+      - forwarding-backend-data:/app/storage
+    command: ["backend"]
+    depends_on:
+      celestia-validator:
+        condition: service_healthy
+    networks:
+      - solver-net
+    healthcheck:
+      test:
+        ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/localhost/8080' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      start_period: 5s
+
+  forwarding-relayer:
+    image: ghcr.io/celestiaorg/forwarding-relayer@sha256:0195cd4bd9665cc4105b42fb75a175f234626c678ac5e96ef47043fa96a20010
+    container_name: forwarding-relayer
+    environment:
+      - CELESTIA_RPC=http://celestia-validator:26657
+      - CELESTIA_GRPC=http://celestia-validator:9090
+      - BACKEND_URL=http://forwarding-backend:8080
+      - PRIVATE_KEY_HEX=6e30efb1d3ebd30d1ba08c8d5fc9b190e08394009dc1dd787a69e60c33288a8c
+      - CHAIN_ID=celestia-zkevm-testnet
+      - POLL_INTERVAL=6
+      - IGP_FEE_BUFFER=1.1
+      - BALANCE_CACHE_PATH=/app/storage/balance_cache.db
+    volumes:
+      - forwarding-relayer-data:/app/storage
+    command: ["relayer"]
+    depends_on:
+      forwarding-backend:
+        condition: service_healthy
+      hyperlane-init:
+        condition: service_completed_successfully
+    networks:
+      - solver-net
+
+  # ============================================================================
+  # Hyperlane Agent Relayer
+  # ============================================================================
+  relayer:
+    image: gcr.io/abacus-labs-dev/hyperlane-agent:agents-v1.7.0
+    platform: linux/amd64
+    container_name: relayer
+    environment:
+      - CONFIG_FILES=/app/config/config.json
+    volumes:
+      - ./hyperlane/relayer-config.json:/app/config/config.json
+    command: "/app/relayer"
+    depends_on:
+      hyperlane-init:
+        condition: service_completed_successfully
+    networks:
+      - solver-net
+
+volumes:
+  celestia-app:
+  celestia-bridge:
+  forwarding-backend-data:
+  forwarding-relayer-data:
+
+networks:
+  solver-net:
+    driver: bridge

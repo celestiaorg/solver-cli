@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use colored::*;
 use std::fmt::Display;
 
@@ -82,24 +80,10 @@ impl OutputFormatter {
         }
     }
 
-    pub fn success(&self, msg: &str) {
-        match self.format {
-            OutputFormat::Human => print_success(msg),
-            OutputFormat::Json => {} // Accumulated in final JSON
-        }
-    }
-
     pub fn error(&self, msg: &str) {
         match self.format {
             OutputFormat::Human => print_error(msg),
             OutputFormat::Json => eprintln!(r#"{{"error": "{}"}}"#, msg),
-        }
-    }
-
-    pub fn kv(&self, key: &str, value: impl Display) {
-        match self.format {
-            OutputFormat::Human => print_kv(key, value),
-            OutputFormat::Json => {} // Accumulated in final JSON
         }
     }
 

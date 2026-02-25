@@ -16,9 +16,9 @@ pub struct SolverRunner {
 impl SolverRunner {
     pub fn new(project_dir: &Path) -> Self {
         Self {
-            config_path: project_dir.join("config/solver.toml"),
-            pid_file: project_dir.join("logs/.solver.pid"),
-            log_file: project_dir.join("logs/solver.log"),
+            config_path: project_dir.join(".config/solver.toml"),
+            pid_file: project_dir.join(".config/solver.pid"),
+            log_file: project_dir.join(".config/solver.log"),
         }
     }
 
