@@ -93,7 +93,7 @@ decimals = {decimals}
 # DO NOT EDIT MANUALLY - regenerate with 'solver-cli configure'
 # Supports {chain_count} chain(s)
 
-poll_interval_seconds = 15
+poll_interval_seconds = 30
 max_parallel_transfers = 2
 dry_run = true
 

@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 const WEIGHT_TOLERANCE: f64 = 1e-6;
+const MIN_POLL_INTERVAL_SECONDS: u64 = 30;
 
 #[derive(Debug, Clone)]
 pub struct RebalancerConfig {
@@ -179,7 +180,7 @@ impl Default for RawHyperlaneConfig {
 }
 
 fn default_poll_interval_seconds() -> u64 {
-    15
+    MIN_POLL_INTERVAL_SECONDS
 }
 
 fn default_max_parallel_transfers() -> usize {
@@ -217,6 +218,13 @@ impl RebalancerConfig {
         }
         if raw.assets.is_empty() {
             bail!("Config must include at least one asset");
+        }
+        if raw.poll_interval_seconds < MIN_POLL_INTERVAL_SECONDS {
+            bail!(
+                "poll_interval_seconds must be >= {} (got {})",
+                MIN_POLL_INTERVAL_SECONDS,
+                raw.poll_interval_seconds
+            );
         }
 
         let mut seen_chain_ids = HashSet::new();
@@ -627,7 +635,7 @@ mod tests {
     #[test]
     fn accepts_valid_config() {
         let toml = r#"
-poll_interval_seconds = 10
+poll_interval_seconds = 30
 dry_run = true
 
 [accounts]
@@ -674,6 +682,57 @@ decimals = 6
         let config = RebalancerConfig::from_raw(raw).expect("valid config");
         assert_eq!(config.chains.len(), 2);
         assert_eq!(config.assets.len(), 1);
+    }
+
+    #[test]
+    fn rejects_poll_interval_below_minimum() {
+        let toml = r#"
+poll_interval_seconds = 29
+dry_run = true
+
+[accounts]
+rebalancer = "0x000000000000000000000000000000000000dEaD"
+
+[[chains]]
+name = "evolve"
+chain_id = 1234
+rpc_url = "http://127.0.0.1:8545"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[chains]]
+name = "sepolia"
+chain_id = 11155111
+rpc_url = "https://rpc.sepolia.org"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[assets]]
+symbol = "USDC"
+decimals = 6
+
+  [[assets.tokens]]
+  chain_id = 1234
+  address = "0x0000000000000000000000000000000000000001"
+
+  [[assets.tokens]]
+  chain_id = 11155111
+  address = "0x0000000000000000000000000000000000000002"
+
+  [assets.weights]
+  "1234" = 0.50
+  "11155111" = 0.50
+
+  [assets.min_weights]
+  "1234" = 0.40
+  "11155111" = 0.40
+"#;
+
+        let raw: RawRebalancerConfig = toml::from_str(toml).expect("valid TOML");
+        let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
+        assert!(err.to_string().contains("poll_interval_seconds must be >="));
     }
 
     #[test]

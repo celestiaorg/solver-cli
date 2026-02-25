@@ -66,7 +66,7 @@ File path: `config/rebalancer.toml`
 Example:
 
 ```toml
-poll_interval_seconds = 15
+poll_interval_seconds = 30
 max_parallel_transfers = 2
 dry_run = false
 
@@ -140,6 +140,7 @@ Validation rules:
 6. `0 <= min_transfer_bps <= max_transfer_bps <= 10000`.
 7. `domain_id` defaults to `chain_id`, must fit `uint32`, and must be unique across chains.
 8. `chains.signer` is required.
+9. `poll_interval_seconds >= 30`.
 
 Token rules:
 1. `type = "erc20"`:
