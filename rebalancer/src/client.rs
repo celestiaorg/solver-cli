@@ -213,11 +213,11 @@ impl ChainClient {
             _recipient: recipient,
             _amount: amount,
         };
-        let calldata = Bytes::from(call.abi_encode());
+        let call_data = Bytes::from(call.abi_encode());
 
         let tx = TransactionRequest::default()
             .to(source_router)
-            .input(calldata.into())
+            .input(call_data.into())
             .value(msg_value);
 
         let (message_id, preview_error) = match self.provider.call(tx.clone()).await {
