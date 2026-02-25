@@ -31,23 +31,39 @@ impl OfacCommand {
 
         out.header("Updating OFAC Sanctions List");
 
-        let url = "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.XML";
-        print_info(&format!("Source: {}", url));
+        let urls = [
+            "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.XML",
+            "https://www.treasury.gov/ofac/downloads/sdn.xml",
+        ];
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(120))
+            .user_agent("Mozilla/5.0 (compatible; solver-cli/1.0; +https://github.com/celestiaorg)")
             .build()?;
 
-        let response = client.get(url).send().await?;
+        let mut last_status = None;
+        let mut xml_opt: Option<String> = None;
 
-        if !response.status().is_success() {
-            anyhow::bail!(
-                "Failed to fetch OFAC SDN list: HTTP {}",
-                response.status()
-            );
+        for url in &urls {
+            print_info(&format!("Source: {}", url));
+            let response = client.get(*url).send().await?;
+            if response.status().is_success() {
+                xml_opt = Some(response.text().await?);
+                break;
+            }
+            print_info(&format!("  → HTTP {} — trying next URL", response.status()));
+            last_status = Some(response.status());
         }
 
-        let xml = response.text().await?;
+        let xml = xml_opt.ok_or_else(|| {
+            anyhow::anyhow!(
+                "Failed to fetch OFAC SDN list: HTTP {}",
+                last_status
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "unknown".into())
+            )
+        })?;
+
         print_info(&format!("Downloaded {} bytes", xml.len()));
 
         let addresses = parse_eth_addresses_from_sdn_xml(&xml);
