@@ -51,10 +51,6 @@ impl RebalancerService {
             self.config.execution.max_transfer_bps,
             self.config.max_parallel_transfers
         );
-        info!(
-            "Hyperlane config: timeout={}s",
-            self.config.hyperlane.default_timeout_seconds
-        );
         for asset in &self.config.assets {
             self.log_asset_chain_setup(asset);
             if let Some(total_balance) = self.asset_totals.get(&asset.symbol) {

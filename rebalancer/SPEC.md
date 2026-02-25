@@ -117,9 +117,6 @@ decimals = 6
   [assets.min_weights]
   "11155111" = 0.40
   "3735928814" = 0.40
-
-[hyperlane]
-default_timeout_seconds = 1800
 ```
 
 Native asset token entry:
@@ -281,7 +278,6 @@ Implemented:
 Current gaps:
 1. No retry/backoff strategy beyond next-cycle retry.
 2. No metrics export yet.
-3. `hyperlane.default_timeout_seconds` is parsed/logged but not yet enforced in transfer control logic.
 
 ## 16) Acceptance Criteria
 
@@ -293,6 +289,5 @@ Current gaps:
 
 ## 17) Open Decisions
 
-1. Whether to enforce per-transfer timeout semantics using `hyperlane.default_timeout_seconds`.
-2. Whether to add retry/backoff and/or circuit breaking around repeated route failures.
-3. Whether to introduce protocol abstraction once a second transport is added.
+1. Whether to add retry/backoff and/or circuit breaking around repeated route failures.
+2. Whether to introduce protocol abstraction once a second transport is added.

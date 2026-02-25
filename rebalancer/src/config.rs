@@ -15,7 +15,6 @@ pub struct RebalancerConfig {
     pub execution: ExecutionConfig,
     pub chains: Vec<ChainConfig>,
     pub assets: Vec<AssetConfig>,
-    pub hyperlane: HyperlaneConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -64,11 +63,6 @@ pub struct AssetTokenConfig {
     pub collateral_token: Address,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct HyperlaneConfig {
-    pub default_timeout_seconds: u64,
-}
-
 #[derive(Debug, Deserialize)]
 struct RawRebalancerConfig {
     #[serde(default = "default_poll_interval_seconds")]
@@ -83,8 +77,6 @@ struct RawRebalancerConfig {
     accounts: HashMap<String, String>,
     chains: Vec<RawChainConfig>,
     assets: Vec<RawAssetConfig>,
-    #[serde(default)]
-    hyperlane: RawHyperlaneConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -165,20 +157,6 @@ impl Default for RawExecutionConfig {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct RawHyperlaneConfig {
-    #[serde(default = "default_hyperlane_timeout_seconds")]
-    default_timeout_seconds: u64,
-}
-
-impl Default for RawHyperlaneConfig {
-    fn default() -> Self {
-        Self {
-            default_timeout_seconds: default_hyperlane_timeout_seconds(),
-        }
-    }
-}
-
 fn default_poll_interval_seconds() -> u64 {
     MIN_POLL_INTERVAL_SECONDS
 }
@@ -193,10 +171,6 @@ fn default_min_transfer_bps() -> u16 {
 
 fn default_max_transfer_bps() -> u16 {
     5_000
-}
-
-fn default_hyperlane_timeout_seconds() -> u64 {
-    1800
 }
 
 impl RebalancerConfig {
@@ -515,9 +489,6 @@ impl RebalancerConfig {
             },
             chains,
             assets,
-            hyperlane: HyperlaneConfig {
-                default_timeout_seconds: raw.hyperlane.default_timeout_seconds,
-            },
         })
     }
 }
@@ -783,59 +754,6 @@ decimals = 6
         let raw: RawRebalancerConfig = toml::from_str(toml).expect("valid TOML");
         let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
         assert!(err.to_string().contains("must sum to 1.0"));
-    }
-
-    #[test]
-    fn parses_hyperlane_timeout() {
-        let toml = r#"
-dry_run = true
-
-[accounts]
-rebalancer = "0x000000000000000000000000000000000000dEaD"
-
-[hyperlane]
-default_timeout_seconds = 999
-
-[[chains]]
-name = "evolve"
-chain_id = 1234
-rpc_url = "http://127.0.0.1:8545"
-account = "rebalancer"
-  [chains.signer]
-  type = "env"
-
-[[chains]]
-name = "sepolia"
-chain_id = 11155111
-rpc_url = "https://rpc.sepolia.org"
-account = "rebalancer"
-  [chains.signer]
-  type = "env"
-
-[[assets]]
-symbol = "USDC"
-decimals = 6
-
-  [[assets.tokens]]
-  chain_id = 1234
-  address = "0x0000000000000000000000000000000000000001"
-
-  [[assets.tokens]]
-  chain_id = 11155111
-  address = "0x0000000000000000000000000000000000000002"
-
-  [assets.weights]
-  "1234" = 0.50
-  "11155111" = 0.50
-
-  [assets.min_weights]
-  "1234" = 0.40
-  "11155111" = 0.40
-"#;
-
-        let raw: RawRebalancerConfig = toml::from_str(toml).expect("valid TOML");
-        let config = RebalancerConfig::from_raw(raw).expect("valid config");
-        assert_eq!(config.hyperlane.default_timeout_seconds, 999);
     }
 
     #[test]

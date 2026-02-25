@@ -104,9 +104,6 @@ max_transfer_bps = 5000
 {chains_section}
 
 {assets_section}
-
-[hyperlane]
-default_timeout_seconds = 1800
 "#,
             chain_count = chains.len(),
             chains_section = chains_section.trim(),
