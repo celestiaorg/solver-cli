@@ -325,7 +325,7 @@ The solver runs from `oif/oif-solver/` using generated config.
 2. Extracts fill details (solver, timestamp, orderId, output)
 3. Computes attestation payload hash
 4. Signs attestation: `sign(keccak256(chainId, oracle, application, payloadHash))`
-5. Submits to CentralizedOracle contract on destination chain
+5. Submits to CentralizedOracle contract on source chain
 6. Oracle stores attestation, making it available via `isProven()`
 
 ### Cost/Profit Analysis

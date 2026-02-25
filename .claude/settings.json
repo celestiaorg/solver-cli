@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(svm install:*)",
-      "Bash(svm use:*)"
-    ]
-  }
-}
