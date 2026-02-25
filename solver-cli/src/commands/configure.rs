@@ -88,7 +88,7 @@ impl ConfigureCommand {
         ));
 
         // Generate rebalancer config
-        let rebalancer_config_path = project_dir.join("config/rebalancer.toml");
+        let rebalancer_config_path = project_dir.join(".config/rebalancer.toml");
         RebalancerConfigGenerator::write_config(&state, &rebalancer_config_path).await?;
         print_success(&format!(
             "Rebalancer config written to {:?}",

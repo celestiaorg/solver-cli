@@ -61,7 +61,7 @@ Sizing target:
 
 ## 6) Configuration
 
-File path: `config/rebalancer.toml`
+File path: `.config/rebalancer.toml`
 
 Example:
 
@@ -261,9 +261,9 @@ rebalancer/
 1. Make target:
    - `make rebalancer-start` (alias `make rebalancer`)
 2. CLI:
-   - `solver-cli rebalancer start [--config config/rebalancer.toml] [--once]`
+   - `solver-cli rebalancer start [--config .config/rebalancer.toml] [--once]`
 3. Config generation:
-   - `solver-cli configure` generates `config/rebalancer.toml`.
+   - `solver-cli configure` generates `.config/rebalancer.toml`.
 
 ## 15) Implementation Status
 

@@ -10,7 +10,7 @@ pub enum RebalancerCommand {
     /// Start the rebalancer service
     Start {
         /// Path to rebalancer TOML config file
-        #[arg(long, default_value = "config/rebalancer.toml")]
+        #[arg(long, default_value = ".config/rebalancer.toml")]
         config: PathBuf,
 
         /// Run one cycle and exit
@@ -40,7 +40,7 @@ impl RebalancerCommand {
 
         if !config.exists() {
             anyhow::bail!(
-                "Rebalancer config not found at {}. Create config/rebalancer.toml first.",
+                "Rebalancer config not found at {}. Run 'solver-cli configure' to generate .config/rebalancer.toml.",
                 config.display()
             );
         }

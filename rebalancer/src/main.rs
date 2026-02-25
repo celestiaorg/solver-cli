@@ -13,7 +13,7 @@ struct Cli {
     /// Path to rebalancer config TOML
     #[arg(
         long,
-        default_value = "config/rebalancer.toml",
+        default_value = ".config/rebalancer.toml",
         env = "REBALANCER_CONFIG"
     )]
     config: PathBuf,
