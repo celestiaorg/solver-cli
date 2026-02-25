@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use anyhow::{Context, Result};
 use chrono::Utc;
 use std::path::{Path, PathBuf};
@@ -7,7 +5,7 @@ use tokio::fs;
 
 use super::types::SolverState;
 
-const STATE_DIR: &str = ".solver";
+const STATE_DIR: &str = ".config";
 const STATE_FILE: &str = "state.json";
 
 /// Manages the solver state file
@@ -90,24 +88,4 @@ impl StateManager {
         Ok(state)
     }
 
-    /// Update state with a closure
-    pub async fn update<F>(&self, f: F) -> Result<SolverState>
-    where
-        F: FnOnce(&mut SolverState),
-    {
-        let mut state = self.load_or_error().await?;
-        f(&mut state);
-        self.save(&state).await?;
-        Ok(state)
-    }
-
-    /// Delete state file
-    pub async fn delete(&self) -> Result<()> {
-        if self.state_path.exists() {
-            fs::remove_file(&self.state_path)
-                .await
-                .context("Failed to delete state file")?;
-        }
-        Ok(())
-    }
 }

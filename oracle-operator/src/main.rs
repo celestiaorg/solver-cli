@@ -57,7 +57,7 @@ async fn main() -> Result<()> {
 
     // Load config
     let config_path =
-        std::env::var("ORACLE_CONFIG").unwrap_or_else(|_| "config/oracle.toml".to_string());
+        std::env::var("ORACLE_CONFIG").unwrap_or_else(|_| ".config/oracle.toml".to_string());
     let config_path = PathBuf::from(&config_path);
 
     let config = OracleConfig::load(&config_path).context("Failed to load oracle config")?;

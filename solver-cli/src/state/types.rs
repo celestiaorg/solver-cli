@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -100,6 +98,31 @@ pub struct ContractAddresses {
 
     /// Permit2 contract
     pub permit2: Option<String>,
+
+    /// Hyperlane addresses (if deployed via Hyperlane warp route)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hyperlane: Option<HyperlaneAddresses>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct HyperlaneAddresses {
+    /// Hyperlane mailbox address
+    pub mailbox: Option<String>,
+
+    /// Merkle tree hook address
+    pub merkle_tree_hook: Option<String>,
+
+    /// Validator announce address
+    pub validator_announce: Option<String>,
+
+    /// Interchain gas paymaster address
+    pub igp: Option<String>,
+
+    /// Warp token address (HypCollateral or HypSynthetic)
+    pub warp_token: Option<String>,
+
+    /// Warp token type ("collateral" or "synthetic")
+    pub warp_token_type: Option<String>,
 }
 
 impl ContractAddresses {
@@ -215,23 +238,6 @@ impl std::fmt::Display for IntentStatus {
     }
 }
 
-/// Token registry entry (from tokens.json)
-/// Generic structure supporting any chain by name
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TokenRegistryEntry {
-    pub decimals: u8,
-    /// Chain-specific token info, keyed by chain name (e.g., "sepolia", "evolve")
-    #[serde(flatten)]
-    pub chains: HashMap<String, TokenChainInfo>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TokenChainInfo {
-    pub address: String,
-    #[serde(rename = "type")]
-    pub token_type: String,
-}
-
 /// Helper methods for working with chain configs
 impl SolverState {
     /// Get all chain IDs
@@ -256,17 +262,4 @@ impl SolverState {
         !self.chains.is_empty() && self.chains.values().all(|c| c.contracts.is_complete())
     }
 
-    /// Get routes between all chains (all-to-all)
-    pub fn get_all_routes(&self) -> Vec<(u64, u64)> {
-        let chain_ids: Vec<u64> = self.chain_ids();
-        let mut routes = Vec::new();
-        for &from in &chain_ids {
-            for &to in &chain_ids {
-                if from != to {
-                    routes.push((from, to));
-                }
-            }
-        }
-        routes
-    }
 }

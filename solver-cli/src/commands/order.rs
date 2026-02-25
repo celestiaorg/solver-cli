@@ -5,7 +5,7 @@ use std::env;
 use std::path::PathBuf;
 use tokio::time::{sleep, Duration};
 
-use crate::state::{StateManager};
+use crate::state::StateManager;
 use crate::utils::*;
 use crate::OutputFormat;
 
@@ -100,6 +100,17 @@ struct OrderSubmission {
     signature: String,
 }
 
+struct OrderSubmitParams {
+    dir: Option<PathBuf>,
+    amount: String,
+    asset: String,
+    from: Option<String>,
+    to: Option<String>,
+    aggregator_url: String,
+    wait: bool,
+    timeout: u64,
+}
+
 impl OrderCommand {
     pub async fn run(self, output: OutputFormat) -> Result<()> {
         match self {
@@ -113,23 +124,17 @@ impl OrderCommand {
                 wait,
                 timeout,
             } => {
-                Self::submit(dir, amount, asset, from, to, aggregator_url, wait, timeout, output)
-                    .await
+                Self::submit(
+                    OrderSubmitParams { dir, amount, asset, from, to, aggregator_url, wait, timeout },
+                    output,
+                )
+                .await
             }
         }
     }
 
-    async fn submit(
-        dir: Option<PathBuf>,
-        amount: String,
-        asset: String,
-        from: Option<String>,
-        to: Option<String>,
-        aggregator_url: String,
-        wait: bool,
-        timeout: u64,
-        output: OutputFormat,
-    ) -> Result<()> {
+    async fn submit(params: OrderSubmitParams, output: OutputFormat) -> Result<()> {
+        let OrderSubmitParams { dir, amount, asset, from, to, aggregator_url, wait, timeout } = params;
         let out = OutputFormatter::new(output);
         let project_dir = dir.unwrap_or_else(|| env::current_dir().unwrap());
         let state_mgr = StateManager::new(&project_dir);
@@ -140,8 +145,14 @@ impl OrderCommand {
         // Resolve chains
         let (source_chain, dest_chain) = Self::resolve_chains(&state, from, to)?;
 
-        print_kv("From", &format!("{} ({})", source_chain.name, source_chain.chain_id));
-        print_kv("To", &format!("{} ({})", dest_chain.name, dest_chain.chain_id));
+        print_kv(
+            "From",
+            format!("{} ({})", source_chain.name, source_chain.chain_id),
+        );
+        print_kv(
+            "To",
+            format!("{} ({})", dest_chain.name, dest_chain.chain_id),
+        );
         print_kv("Amount", &amount);
         print_kv("Asset", &asset);
 
@@ -189,12 +200,16 @@ impl OrderCommand {
         // Step 3: Submit to aggregator
         print_info("Submitting order to aggregator...");
         let full_quote = serde_json::to_value(&quote)?;
-        let order_id = Self::submit_order(&aggregator_url, &quote.quote_id, full_quote, &signature).await?;
+        let order_id =
+            Self::submit_order(&aggregator_url, &quote.quote_id, full_quote, &signature).await?;
         print_success(&format!("✓ Order submitted: {}", order_id));
 
         // Step 4: Monitor if requested
         if wait {
-            print_info(&format!("Monitoring order status (timeout: {}s)...", timeout));
+            print_info(&format!(
+                "Monitoring order status (timeout: {}s)...",
+                timeout
+            ));
             Self::monitor_order(&aggregator_url, &order_id, timeout).await?;
         }
 
@@ -321,16 +336,16 @@ impl OrderCommand {
         let chain_bytes = if chain_id == 0 {
             vec![0]
         } else {
-            let bytes_needed = (64 - chain_id.leading_zeros() + 7) / 8;
+            let bytes_needed = (64 - chain_id.leading_zeros()).div_ceil(8);
             chain_id.to_be_bytes()[8 - bytes_needed as usize..].to_vec()
         };
 
         let mut result = Vec::new();
         result.extend_from_slice(&[0x00, 0x01]); // version = 1
         result.extend_from_slice(&[0x00, 0x00]); // chain_type = EIP-155
-        result.push(chain_bytes.len() as u8);    // chain_ref length
-        result.extend_from_slice(&chain_bytes);  // chain reference
-        result.push(20);                          // address length
+        result.push(chain_bytes.len() as u8); // chain_ref length
+        result.extend_from_slice(&chain_bytes); // chain reference
+        result.push(20); // address length
         result.extend_from_slice(&hex::decode(addr).unwrap()); // address
 
         format!("0x{}", hex::encode(&result))
@@ -338,8 +353,8 @@ impl OrderCommand {
 
     fn sign_order(order: &serde_json::Value, user_pk: &str) -> Result<String> {
         use alloy::primitives::hex;
-        use alloy::signers::SignerSync;
         use alloy::signers::local::PrivateKeySigner;
+        use alloy::signers::SignerSync;
 
         // Parse private key
         let pk_bytes = hex::decode(user_pk.trim_start_matches("0x"))?;
@@ -385,10 +400,7 @@ impl OrderCommand {
 
         let result: serde_json::Value = response.json().await?;
 
-        Ok(result["orderId"]
-            .as_str()
-            .unwrap_or("unknown")
-            .to_string())
+        Ok(result["orderId"].as_str().unwrap_or("unknown").to_string())
     }
 
     async fn monitor_order(aggregator_url: &str, order_id: &str, timeout: u64) -> Result<()> {
@@ -410,8 +422,12 @@ impl OrderCommand {
 
             if response.status().is_success() {
                 let status: serde_json::Value = response.json().await?;
-                println!("[{}/{}] Order status: {}", iteration, timeout / 2,
-                    serde_json::to_string_pretty(&status)?);
+                println!(
+                    "[{}/{}] Order status: {}",
+                    iteration,
+                    timeout / 2,
+                    serde_json::to_string_pretty(&status)?
+                );
 
                 // Check if completed or failed
                 if let Some(status_str) = status.get("status").and_then(|s| s.as_str()) {

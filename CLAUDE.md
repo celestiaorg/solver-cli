@@ -56,7 +56,7 @@ Default setup: local Evolve ↔ Ethereum Sepolia, but easily extensible to N cha
 Notes:
 - `oif/oif-contracts/broadcast/` contains deployment receipts
 - `oif/oif-solver/config/demo/` has generated solver config (networks.toml, gas.toml)
-- `.solver/state.json` tracks CLI state
+- `.config/state.json` tracks CLI state
 
 ---
 
@@ -269,7 +269,7 @@ solver-cli/src/
 │   ├── deployer.rs          # Multi-chain deployment logic
 │   └── forge.rs             # Forge script runner
 ├── state/
-│   ├── state_file.rs        # State persistence (.solver/state.json)
+│   ├── state_file.rs        # State persistence (.config/state.json)
 │   └── types.rs             # State data structures
 └── utils/
     ├── env.rs               # Environment loading
@@ -278,11 +278,12 @@ solver-cli/src/
 
 ### State Management
 
-State stored in `.solver/state.json`:
-- Deployed contract addresses per chain (indexed by chain ID)
-- Token configurations per chain
-- Solver address and operator address
-- Intent history
+All state and generated configs live in `.config/`:
+- `.config/state.json` - Deployed contract addresses, tokens, solver address, intent history
+- `.config/solver.toml` - Solver configuration (all chains, all-to-all routes)
+- `.config/oracle.toml` - Oracle operator configuration
+- `.config/aggregator.json` - OIF Aggregator configuration
+- `.config/oracle-state.json` - Oracle operator runtime state (block tracking)
 
 Chain configs use `HashMap<u64, ChainConfig>` structure:
 ```rust
@@ -300,9 +301,10 @@ pub struct ChainConfig {
 
 ### Config Generation
 
-After deployment, generates configs for all chains:
-- `config/solver.toml` - Solver configuration with all chains and all-to-all routes
-- `config/oracle.toml` - Oracle operator configuration for all chains
+`solver-cli configure` generates all configs into `.config/`:
+- `.config/solver.toml` - Solver configuration with all chains and all-to-all routes
+- `.config/oracle.toml` - Oracle operator configuration for all chains
+- `.config/aggregator.json` - Aggregator configuration with supported asset routes
 
 ---
 
@@ -351,7 +353,7 @@ User/Client → Aggregator (port 4000) → Solver(s) (port 3000+)
 
 ### Aggregator Configuration
 
-Generated at `config/config.json`:
+Generated at `.config/aggregator.json`:
 - Server settings (host, port)
 - Registered solver endpoints
 - Aggregation settings (timeouts, retries)
@@ -409,7 +411,7 @@ make start
 make deploy
 
 # 3. Start solver (in separate terminal)
-make solver-start
+make solver
 
 # 4. Start oracle operator (in another terminal)
 make operator

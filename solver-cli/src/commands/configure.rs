@@ -67,26 +67,20 @@ impl ConfigureCommand {
         }
 
         // Generate solver configuration file
-        let config_path = project_dir.join("config/solver.toml");
+        let config_path = project_dir.join(".config/solver.toml");
         ConfigGenerator::write_config(&state, &config_path).await?;
-        print_success(&format!("Config written to {:?}", config_path));
-
-        // Also generate YAML for reference
-        let yaml_path = project_dir.join("config/solver.yaml");
-        let yaml_content = ConfigGenerator::generate_yaml(&state)?;
-        tokio::fs::write(&yaml_path, yaml_content).await?;
-        print_success(&format!("YAML config written to {:?}", yaml_path));
+        print_success(&format!("Solver config written to {:?}", config_path));
 
         // Generate oracle operator config
-        let oracle_config_path = project_dir.join("config/oracle.toml");
+        let oracle_config_path = project_dir.join(".config/oracle.toml");
         ConfigGenerator::write_oracle_config(&state, &oracle_config_path).await?;
         print_success(&format!(
             "Oracle config written to {:?}",
             oracle_config_path
         ));
 
-        // Generate aggregator config
-        let aggregator_config_path = project_dir.join("config/config.json");
+        // Generate aggregator config directly where the aggregator reads it
+        let aggregator_config_path = project_dir.join("oif/oif-aggregator/config/config.json");
         ConfigGenerator::write_aggregator_config(&state, &aggregator_config_path).await?;
         print_success(&format!(
             "Aggregator config written to {:?}",
@@ -101,14 +95,21 @@ impl ConfigureCommand {
             rebalancer_config_path
         ));
 
+        // Generate Hyperlane relayer config
+        let hyperlane_config_path = project_dir.join(".config/hyperlane-relayer.json");
+        ConfigGenerator::write_hyperlane_relayer_config(&state, &hyperlane_config_path).await?;
+        print_success(&format!(
+            "Hyperlane relayer config written to {:?}",
+            hyperlane_config_path
+        ));
+
         // Save state
         state_mgr.save(&state).await?;
 
         print_summary_start();
         print_kv("Solver ID", &self.solver_id);
         print_address("Solver address", &format!("{:?}", solver_address));
-        print_kv("Config file", config_path.display());
-        print_kv("Rebalancer config", rebalancer_config_path.display());
+        print_kv("Config dir", ".config/");
         print_kv("Status", "configured");
         print_summary_end();
 
