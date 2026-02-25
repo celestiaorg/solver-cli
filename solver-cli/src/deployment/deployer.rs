@@ -1,4 +1,3 @@
-#![allow(dead_code)]
 #![allow(clippy::too_many_arguments)]
 
 use anyhow::{Context, Result};
@@ -6,7 +5,7 @@ use std::path::Path;
 use tracing::info;
 
 use crate::chain::ChainClient;
-use crate::state::{ChainConfig, ContractAddresses, SolverState, TokenInfo};
+use crate::state::{ChainConfig, ContractAddresses, HyperlaneAddresses, SolverState, TokenInfo};
 use crate::utils::ChainEnvConfig;
 
 use super::forge::ForgeRunner;
@@ -23,17 +22,16 @@ impl Deployer {
         }
     }
 
-    /// Deploy contracts to a chain
+    /// Deploy OIF infrastructure contracts to a chain.
+    /// Token addresses are read from Hyperlane deployment artifacts separately.
     pub async fn deploy_to_chain(
         &self,
         chain_name: &str,
         rpc_url: &str,
         private_key: &str,
-        token_symbol: &str,
-        token_decimals: u8,
         operator_address: Option<&str>,
     ) -> Result<ChainConfig> {
-        info!("Deploying to {} at {}", chain_name, rpc_url);
+        info!("Deploying OIF infra to {} at {}", chain_name, rpc_url);
 
         // Get chain ID
         let client = ChainClient::new(chain_name, rpc_url).await?;
@@ -42,17 +40,10 @@ impl Deployer {
 
         info!("Chain ID: {}, Deployer: {}", chain_id, deployer);
 
-        // Deploy contracts
+        // Deploy OIF contracts (oracle, settlers) — no token
         let deployment = self
             .forge
-            .deploy(
-                rpc_url,
-                private_key,
-                &format!("Mock {}", token_symbol),
-                token_symbol,
-                token_decimals,
-                operator_address,
-            )
+            .deploy(rpc_url, private_key, operator_address)
             .await
             .context("Contract deployment failed")?;
 
@@ -62,39 +53,17 @@ impl Deployer {
             output_settler_simple: deployment.output_settler().cloned(),
             oracle: deployment.oracle().cloned(),
             permit2: deployment.permit2().cloned(),
+            hyperlane: None,
         };
-
-        let mut tokens = std::collections::HashMap::new();
-        if let Some(token_addr) = deployment.token() {
-            tokens.insert(
-                token_symbol.to_string(),
-                TokenInfo {
-                    address: token_addr.clone(),
-                    symbol: token_symbol.to_string(),
-                    decimals: token_decimals,
-                    token_type: "erc20".to_string(),
-                },
-            );
-        }
 
         Ok(ChainConfig {
             name: chain_name.to_string(),
             chain_id,
             rpc: rpc_url.to_string(),
             contracts,
-            tokens,
+            tokens: std::collections::HashMap::new(),
             deployer: Some(format!("{:?}", deployer)),
         })
-    }
-
-    /// Check if contracts are already deployed
-    pub async fn check_deployment(&self, config: &ChainConfig) -> Result<bool> {
-        if !config.contracts.is_complete() {
-            return Ok(false);
-        }
-
-        // TODO: Optionally verify bytecode matches
-        Ok(true)
     }
 
     /// Build contracts without deploying
@@ -102,7 +71,8 @@ impl Deployer {
         self.forge.build().await
     }
 
-    /// Deploy to all specified chains and update state
+    /// Deploy OIF contracts to all specified chains and update state.
+    /// After deploying infra, reads token addresses from Hyperlane artifacts.
     pub async fn deploy_to_chains(
         &self,
         state: &mut SolverState,
@@ -122,27 +92,44 @@ impl Deployer {
 
         // Derive operator address from ORACLE_OPERATOR_PK
         let operator_pk = std::env::var("ORACLE_OPERATOR_PK")
-            .or_else(|_| std::env::var("SEPOLIA_PK"))
-            .context("ORACLE_OPERATOR_PK or SEPOLIA_PK must be set")?;
+            .context("Missing required environment variable: ORACLE_OPERATOR_PK")?;
         let operator_address = format!("{:?}", ChainClient::address_from_pk(&operator_pk)?);
         info!(
             "Using operator address: {} (derived from ORACLE_OPERATOR_PK)",
             operator_address
         );
 
+        // Try to load Hyperlane deployment artifacts
+        let hyperlane_addresses = Self::load_hyperlane_addresses().ok();
+        if hyperlane_addresses.is_some() {
+            info!("Found Hyperlane deployment artifacts — will use warp route token addresses");
+        } else {
+            info!(
+                "No Hyperlane artifacts found — tokens must be added manually or via mock deploy"
+            );
+        }
+
         // Deploy to each chain
         for chain_env in chain_configs {
-            info!("Deploying to chain: {}", chain_env.name);
-            let chain_config = self
+            info!("Deploying OIF infra to chain: {}", chain_env.name);
+            let mut chain_config = self
                 .deploy_to_chain(
                     &chain_env.name,
                     &chain_env.rpc_url,
                     &chain_env.private_key,
-                    token_symbol,
-                    token_decimals,
                     Some(&operator_address),
                 )
                 .await?;
+
+            // Populate token addresses from Hyperlane artifacts if available
+            if let Some(ref hyp_addrs) = hyperlane_addresses {
+                Self::populate_tokens_from_hyperlane(
+                    &mut chain_config,
+                    hyp_addrs,
+                    token_symbol,
+                    token_decimals,
+                );
+            }
 
             // Insert into state by chain_id
             state.chains.insert(chain_config.chain_id, chain_config);
@@ -155,6 +142,87 @@ impl Deployer {
         state.deployment_version = Some(compute_deployment_hash(state));
 
         Ok(())
+    }
+
+    /// Load Hyperlane deployment addresses from .config/hyperlane-addresses.json
+    fn load_hyperlane_addresses() -> Result<serde_json::Value> {
+        let path = std::path::Path::new(".config/hyperlane-addresses.json");
+        let content = std::fs::read_to_string(path)
+            .context("Failed to read .config/hyperlane-addresses.json")?;
+        let value: serde_json::Value =
+            serde_json::from_str(&content).context("Failed to parse hyperlane-addresses.json")?;
+        Ok(value)
+    }
+
+    /// Populate token and Hyperlane addresses from the deployment artifacts
+    fn populate_tokens_from_hyperlane(
+        chain_config: &mut ChainConfig,
+        hyp_addrs: &serde_json::Value,
+        token_symbol: &str,
+        token_decimals: u8,
+    ) {
+        let chain_name = chain_config.name.to_lowercase();
+
+        // Look up this chain in the Hyperlane addresses
+        if let Some(chain_data) = hyp_addrs.get(&chain_name) {
+            // Determine which address to use as the solver's token:
+            // - On anvil1 (collateral chain): use the underlying MockERC20 address
+            // - On anvil2 (synthetic chain): use the HypSynthetic warp token address
+            let token_address = if let Some(mock_usdc) = chain_data.get("mock_usdc") {
+                // Collateral chain — solver interacts with the underlying ERC20
+                mock_usdc.as_str().map(|s| s.to_string())
+            } else {
+                // Synthetic chain — solver interacts with the HypSynthetic token
+                chain_data
+                    .get("warp_token")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+            };
+
+            if let Some(addr) = token_address {
+                chain_config.tokens.insert(
+                    token_symbol.to_string(),
+                    TokenInfo {
+                        address: addr,
+                        symbol: token_symbol.to_string(),
+                        decimals: token_decimals,
+                        token_type: "erc20".to_string(),
+                    },
+                );
+                info!(
+                    "  Token {} on {}: {}",
+                    token_symbol,
+                    chain_config.name,
+                    chain_config.tokens.get(token_symbol).unwrap().address
+                );
+            }
+
+            // Store Hyperlane contract addresses
+            let hyperlane = HyperlaneAddresses {
+                mailbox: chain_data
+                    .get("mailbox")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                merkle_tree_hook: chain_data
+                    .get("merkle_tree_hook")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                validator_announce: chain_data
+                    .get("validator_announce")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                igp: None,
+                warp_token: chain_data
+                    .get("warp_token")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+                warp_token_type: chain_data
+                    .get("warp_token_type")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string()),
+            };
+            chain_config.contracts.hyperlane = Some(hyperlane);
+        }
     }
 }
 

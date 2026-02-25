@@ -1,217 +1,177 @@
-# Deploy New Token Guide
+# Deploy a New Token
 
-This guide walks you through deploying fresh OIF contracts and a new token to test cross-chain transfers.
+Adding a new ERC20 token (e.g. USDT) alongside USDC. Tokens route through **Celestia** (anvil1 ↔ Celestia ↔ anvil2).
 
 ## Prerequisites
 
-- [Docker](https://docs.docker.com/get-docker/) - For local EVM chain
-- [Foundry](https://book.getfoundry.sh/getting-started/installation) - `forge` and `cast`
-- [Rust](https://rustup.rs/) - Build the CLI
-- **Testnet ETH** - Get from a [faucet](https://sepoliafaucet.com)
+- Local stack running (`./mvp.sh`)
+- Foundry installed (`forge`, `cast`)
+- Deployer key:
+  ```bash
+  PK=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+  ```
 
-## Quick Start
+---
 
-```bash
-# 1. Start local EVM chain
-make start
-
-# 2. Configure environment
-cp .env.example .env
-# Edit .env with your SEPOLIA_PK (must have Sepolia ETH!)
-
-# 3. Full setup (deploy contracts + mock USDC token)
-make setup
-
-# 4. Start solver (separate terminal)
-make solver
-
-# 5. Start oracle operator (another terminal)
-make operator
-
-# 6. Test it
-make intent
-make balances
-```
-
-## What Gets Deployed
-
-When you run `make deploy` (or `make setup`), these contracts are deployed to **each chain**:
-
-| Contract | Purpose |
-|----------|---------|
-| `CentralizedOracle` | Verifies cross-chain attestations |
-| `InputSettlerEscrow` | Escrows tokens on source chain |
-| `OutputSettlerSimple` | Delivers tokens on destination chain |
-| `MockERC20` | Test token (USDC by default) |
-
-## Environment Configuration
-
-Set up your `.env` file:
+## Step 1: Deploy MockERC20 on anvil1
 
 ```bash
-# Local chain (Anvil)
-EVOLVE_RPC=http://127.0.0.1:8545
-EVOLVE_CHAIN_ID=1234
-EVOLVE_PK=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
-
-# Testnet (Sepolia)
-SEPOLIA_RPC=https://ethereum-sepolia-rpc.publicnode.com
-SEPOLIA_CHAIN_ID=11155111
-SEPOLIA_PK=<your-private-key-with-sepolia-eth>
-
-# User account (submits intents)
-USER_PK=59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
+forge create hyperlane/contracts/MockERC20.sol:MockERC20 \
+  --private-key $PK \
+  --rpc-url http://127.0.0.1:8545 \
+  --broadcast \
+  --constructor-args "USDT" "USDT" 6
 ```
 
-## Deploying to Specific Chains
+> `--constructor-args` must come **last** — it's variadic and swallows any flags after it.
 
 ```bash
-# Deploy to all configured chains
-solver-cli deploy
-
-# Deploy to specific chains only
-solver-cli deploy --chains evolve,sepolia
-
-# Force redeploy (overwrites existing)
-solver-cli deploy --force
+export MOCK_USDT=0x...   # ← Deployed to: address
 ```
 
-## Custom Token Configuration
+## Step 2: Deploy EVM warp route
 
-Deploy a token with custom settings:
+Create `hyperlane/configs/warp-config-usdt.yaml`:
+
+```yaml
+anvil1:
+  type: collateral
+  token: "<MOCK_USDT>"
+  owner: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+  name: "USDT"
+  symbol: "USDT"
+  decimals: 6
+
+anvil2:
+  type: synthetic
+  owner: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+  name: "USDT"
+  symbol: "USDT"
+  decimals: 6
+```
 
 ```bash
-# Deploy with custom token
-solver-cli deploy --token USDT --decimals 6
-
-# Deploy with 18 decimals (like DAI)
-solver-cli deploy --token DAI --decimals 18
+docker run --rm \
+  --network solver-cli_solver-net \
+  --entrypoint bash \
+  -v "$(pwd)/hyperlane:/home/hyperlane" \
+  -w /home/hyperlane \
+  ghcr.io/celestiaorg/hyperlane-init:local \
+  -c "hyperlane warp deploy \
+    --config ./configs/warp-config-usdt.yaml \
+    --registry ./registry \
+    --key $PK \
+    --yes"
 ```
 
-## Adding More Chains
-
-To deploy to a third chain (e.g., Arbitrum Sepolia):
+Read the deployed addresses (match by `chainName`, not position — order is non-deterministic):
 
 ```bash
-# 1. Add to .env
-ARBITRUM_RPC=https://sepolia-rollup.arbitrum.io/rpc
-ARBITRUM_PK=<your-private-key>
-ARBITRUM_CHAIN_ID=421614
-
-# 2. Deploy to the new chain (merges with existing)
-solver-cli deploy --chains arbitrum
-
-# 3. Regenerate configs
-solver-cli configure
-
-# 4. Restart solver and oracle operator so they pick up the new chain
-# (Stop with Ctrl+C, then run make solver and make operator again.)
-
-# 5. Fund solver on new chain
-solver-cli fund --chain arbitrum
+cat hyperlane/registry/deployments/warp_routes/USDT/*-config.yaml
 ```
-
-## Adding More Tokens
-
-After initial deployment, add more tokens:
 
 ```bash
-# Deploy another token to all chains
-solver-cli deploy --token USDT --decimals 6
-
-# Or add tokens individually
-solver-cli token add --chain sepolia --symbol DAI --address 0x... --decimals 18
+export HYP_COLLATERAL=0x...   # ← addressOrDenom where chainName: anvil1
+export HYP_SYNTHETIC=0x...    # ← addressOrDenom where chainName: anvil2
 ```
 
-## Minting Test Tokens
-
-For testing, you need mock tokens. `make setup` automatically mints tokens to the user, but you can mint more:
+## Step 3: Create Celestia synthetic token
 
 ```bash
-# Mint 10 USDC to user on evolve
-make mint CHAIN=evolve SYMBOL=USDC TO=user AMOUNT=10000000
-
-# Mint to a specific address
-make mint CHAIN=evolve SYMBOL=USDC TO=0x1234... AMOUNT=10000000
-
-# Mint to solver (for filling orders)
-make mint CHAIN=sepolia SYMBOL=USDC TO=solver AMOUNT=10000000
+MAILBOX_ID=$(node -e "console.log(JSON.parse(require('fs').readFileSync('hyperlane/hyperlane-cosmosnative.json','utf8')).mailbox_id)")
+ISM_ID=$(node -e "console.log(JSON.parse(require('fs').readFileSync('hyperlane/hyperlane-cosmosnative.json','utf8')).ism_id)")
 ```
-
-**Note**: This only works with MockERC20 contracts deployed by `make deploy`. Real tokens cannot be minted.
-
-## Testing Cross-Chain Transfers
 
 ```bash
-# Submit intent (evolve -> sepolia, 1 USDC by default)
-make intent
-
-# Specify direction and amount
-make intent FROM=sepolia TO=evolve AMOUNT=5000000
-
-# Use a different token
-make intent ASSET=USDT AMOUNT=1000000
-
-# Or use the CLI directly
-solver-cli intent submit --amount 1000000 --asset USDC --from evolve --to sepolia
-
-# Check balances
-make balances
+docker run --rm \
+  --network solver-cli_solver-net \
+  --entrypoint bash \
+  -v "$(pwd)/hyperlane:/home/hyperlane" \
+  -w /home/hyperlane \
+  ghcr.io/celestiaorg/hyperlane-init:local \
+  -c "hyp create-synthetic-token http://celestia-validator:26657 $MAILBOX_ID $ISM_ID"
 ```
 
-### Available Options
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `FROM` | Source chain (name or ID) | First configured chain |
-| `TO` | Destination chain (name or ID) | Second configured chain |
-| `AMOUNT` | Amount in raw units | `1000000` (1 token with 6 decimals) |
-| `ASSET` | Token symbol | `USDC` |
-
-## Troubleshooting
-
-### "Insufficient balance"
-The user needs tokens to create intents:
 ```bash
-# Mint test tokens to user
-make mint CHAIN=evolve SYMBOL=USDC TO=user AMOUNT=10000000
+export CEL_USDT_TOKEN=0x...   # ← printed by the command
 ```
 
-### "Insufficient gas"
-Your solver address needs native tokens on all chains:
+## Step 4: Enroll routers
+
+### anvil1 ↔ Celestia
+
 ```bash
-# Check solver address
-cast wallet address --private-key 0x$SEPOLIA_PK
+cast send $HYP_COLLATERAL \
+  "enrollRemoteRouter(uint32,bytes32)" \
+  69420 0x726f757465725f61707000000000000000000000000000020000000000000001 \
+  --private-key $PK \
+  --rpc-url http://127.0.0.1:8545
 
-# Fund on local chain (automatic)
-solver-cli fund --chain evolve
-
-# For testnets, use faucets
+HYP_COLLATERAL_LOWER=$(echo $HYP_COLLATERAL | tr '[:upper:]' '[:lower:]' | cut -c 3-)
+docker run --rm \
+  --network solver-cli_solver-net \
+  --entrypoint bash \
+  -v "$(pwd)/hyperlane:/home/hyperlane" \
+  -w /home/hyperlane \
+  ghcr.io/celestiaorg/hyperlane-init:local \
+  -c "hyp enroll-remote-router http://celestia-validator:26657 $CEL_USDT_TOKEN 131337 0x000000000000000000000000$HYP_COLLATERAL_LOWER"
 ```
 
-### "Oracle operator not running"
-The full flow requires the oracle operator:
+### anvil2 ↔ Celestia
+
 ```bash
-make operator
+cast send $HYP_SYNTHETIC \
+  "enrollRemoteRouter(uint32,bytes32)" \
+  69420 $CEL_USDT_TOKEN \
+  --private-key $PK \
+  --rpc-url http://127.0.0.1:8546
+
+HYP_SYNTHETIC_LOWER=$(echo $HYP_SYNTHETIC | tr '[:upper:]' '[:lower:]' | cut -c 3-)
+docker run --rm \
+  --network solver-cli_solver-net \
+  --entrypoint bash \
+  -v "$(pwd)/hyperlane:/home/hyperlane" \
+  -w /home/hyperlane \
+  ghcr.io/celestiaorg/hyperlane-init:local \
+  -c "hyp enroll-remote-router http://celestia-validator:26657 $CEL_USDT_TOKEN 31338 0x000000000000000000000000$HYP_SYNTHETIC_LOWER"
 ```
 
-### "Contracts already deployed"
-Use `--force` to redeploy:
+> Domain IDs: `131337` = anvil1, `31338` = anvil2, `69420` = Celestia.
+
+## Step 5: Register tokens in state
+
 ```bash
-solver-cli deploy --force
+make token-add CHAIN=anvil1 SYMBOL=USDT ADDRESS=$MOCK_USDT DECIMALS=6
+make token-add CHAIN=anvil2 SYMBOL=USDT ADDRESS=$HYP_SYNTHETIC DECIMALS=6
 ```
 
-### Intent expired / Funds stuck
-If an intent expires before being filled, you can reclaim your tokens:
+## Step 6: Configure and fund
+
 ```bash
-# Check intent status
-solver-cli intent list
-
-# Get refund instructions
-solver-cli intent refund --tx-hash 0x...
+make configure
+make mint SYMBOL=USDT TO=solver
+make mint SYMBOL=USDT TO=0x02120571E5804E46592f29B64fD01b1013f8fC18
 ```
 
-The default expiry is 30 minutes. For testing, you can use a shorter expiry:
+## Step 7: Restart services (not the chains)
+
+Kill only the solver, operator, and aggregator — **not** the Docker stack:
+
 ```bash
-solver-cli intent submit --amount 1000000 --expiry 300  # 5 minute expiry
+pkill -f "solver-cli solver start" || true
+pkill -f oracle-operator || true
+pkill -f oif-aggregator || true
+pkill -f "node server.js" || true
+pkill -f vite || true
 ```
+
+Then restart them:
+
+```bash
+./scripts/start-services.sh
+./scripts/start-frontend.sh
+```
+
+> Do **not** run `make stop` — that tears down the Anvil chains and destroys all deployed contracts.
+
+Use the **Bridge** panel in the UI to move USDT to anvil2 for the solver.

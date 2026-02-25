@@ -14,11 +14,11 @@ pub struct DeployCommand {
     #[arg(long)]
     pub dir: Option<PathBuf>,
 
-    /// Token symbol to deploy
+    /// Token symbol (used to read from Hyperlane artifacts, not deployed by forge)
     #[arg(long, default_value = "USDC")]
     pub token: String,
 
-    /// Token decimals
+    /// Token decimals (for Hyperlane artifact token)
     #[arg(long, default_value = "6")]
     pub decimals: u8,
 
@@ -30,7 +30,7 @@ pub struct DeployCommand {
     #[arg(long)]
     pub skip_build: bool,
 
-    /// Chains to deploy to (comma-separated, e.g., "evolve,sepolia")
+    /// Chains to deploy to (comma-separated, e.g., "anvil1,sepolia")
     /// If not specified, uses all chains from CHAINS env var
     #[arg(long)]
     pub chains: Option<String>,
@@ -66,8 +66,8 @@ impl DeployCommand {
         if chain_names.is_empty() {
             anyhow::bail!(
                 "No chains configured. Use --chains flag or set chain env vars.\n\
-                Example: --chains evolve,sepolia\n\
-                Required env vars: EVOLVE_RPC, EVOLVE_PK, SEPOLIA_RPC, SEPOLIA_PK"
+                Example: --chains anvil1,sepolia\n\
+                Required env vars: ANVIL1_RPC, ANVIL1_PK, SEPOLIA_RPC, SEPOLIA_PK"
             );
         }
 

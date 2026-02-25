@@ -2,16 +2,21 @@
 **/out/
 **/cache/
 **/broadcast/
+logs/
 **/logs/
-.anvil1.log
 .anvil1.pid
-.anvil2.log
 .anvil2.pid
 .env
-config/
-.solver
-.claude
+.config/
 
 # Nested dependency lockfiles (e.g. oif-contracts libs) — reduces PR diff
 **/lib/**/package-lock.json
 **/lib/**/package.json
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# Hyperlane CLI binary
+hyperlane/hyp
