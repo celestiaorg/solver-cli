@@ -38,8 +38,11 @@ impl RebalancerConfigGenerator {
 [[chains]]
 name = "{name}"
 chain_id = {chain_id}
+domain_id = {chain_id}
 rpc_url = "{rpc_url}"
 account = "{account}"
+  [chains.signer]
+  type = "env"
 "#,
                 name = chain.name,
                 chain_id = chain.chain_id,
@@ -65,7 +68,9 @@ decimals = {decimals}
                     r#"
   [[assets.tokens]]
   chain_id = {chain_id}
+  type = "erc20"
   address = "{address}"
+  collateral_token = "{address}"
 "#,
                     chain_id = token.chain_id,
                     address = token.address

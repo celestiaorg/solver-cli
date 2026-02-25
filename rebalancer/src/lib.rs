@@ -2,6 +2,7 @@ pub mod client;
 pub mod config;
 pub mod planner;
 pub mod service;
+pub mod signer;
 
 use anyhow::Result;
 use std::path::Path;

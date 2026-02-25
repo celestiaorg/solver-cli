@@ -12,28 +12,46 @@ build:
 	@cd solver-cli && cargo build --release --features solver-runtime
 .PHONY: build
 
-## start: Start local Evolve chain (Anvil)
+## start: Start local EVM chains (Anvil)
 start:
-	@if [ -f .anvil.pid ] && kill -0 $$(cat .anvil.pid) 2>/dev/null; then \
-		echo "Anvil already running (PID: $$(cat .anvil.pid))"; \
+	@mkdir -p logs
+	@if [ -f logs/.anvil1.pid ] && kill -0 $$(cat logs/.anvil1.pid) 2>/dev/null; then \
+		echo "Anvil 1 (evolve) already running (PID: $$(cat logs/.anvil1.pid))"; \
 	else \
-		echo "Starting Anvil..."; \
-		anvil --chain-id 1234 --block-time 1 > .anvil.log 2>&1 & \
-		echo $$! > .anvil.pid; \
+		echo "Starting Anvil 1 (evolve) on port 8545, chain-id 31337..."; \
+		anvil --chain-id 31337 --block-time 1 --port 8545 > logs/anvil1.log 2>&1 & \
+		echo $$! > logs/.anvil1.pid; \
 		sleep 2; \
-		echo "Anvil started (PID: $$(cat .anvil.pid))"; \
+		echo "Anvil 1 started (PID: $$(cat logs/.anvil1.pid))"; \
 	fi
+	@if [ -f logs/.anvil2.pid ] && kill -0 $$(cat logs/.anvil2.pid) 2>/dev/null; then \
+		echo "Anvil 2 (evolve2) already running (PID: $$(cat logs/.anvil2.pid))"; \
+	else \
+		echo "Starting Anvil 2 (evolve2) on port 8546, chain-id 31338..."; \
+		anvil --chain-id 31338 --block-time 1 --port 8546 > logs/anvil2.log 2>&1 & \
+		echo $$! > logs/.anvil2.pid; \
+		sleep 2; \
+		echo "Anvil 2 started (PID: $$(cat logs/.anvil2.pid))"; \
+	fi
+	@echo "Local chains ready!"
 .PHONY: start
 
-## stop: Stop local Evolve chain, solver, and oracle operator
+## stop: Stop local chains, solver, oracle operator, and aggregator
 stop:
-	@if [ -f .anvil.pid ]; then \
-		kill $$(cat .anvil.pid) 2>/dev/null || true; \
-		rm .anvil.pid; \
-		echo "Anvil stopped"; \
+	@if [ -f logs/.anvil1.pid ]; then \
+		kill $$(cat logs/.anvil1.pid) 2>/dev/null || true; \
+		rm logs/.anvil1.pid; \
+		echo "Anvil 1 (evolve) stopped"; \
+	fi
+	@if [ -f logs/.anvil2.pid ]; then \
+		kill $$(cat logs/.anvil2.pid) 2>/dev/null || true; \
+		rm logs/.anvil2.pid; \
+		echo "Anvil 2 (evolve2) stopped"; \
 	fi
 	@$(SOLVER_CLI) solver stop 2>/dev/null || true
-	@pkill -f oracle-operator 2>/dev/null || true
+	@pkill -9 -f "solver-cli solver start" 2>/dev/null || true
+	@pkill -9 -f oracle-operator 2>/dev/null || true
+	@pkill -9 -f oif-aggregator 2>/dev/null || true
 	@echo "All services stopped"
 .PHONY: stop
 
@@ -94,7 +112,7 @@ token-remove: build
 	@$(SOLVER_CLI) token remove --chain $(CHAIN) --symbol $(SYMBOL)
 .PHONY: token-remove
 
-## fund-operator: Fund oracle operator with ETH on evolve
+## fund-operator: Fund oracle operator with ETH on all chains
 fund-operator:
 	@echo "Funding oracle operator on all chains..."
 	@. ./.env && \
@@ -102,11 +120,33 @@ fund-operator:
 		echo "  Operator address: $$OPERATOR_ADDR" && \
 		echo "  Funding on Evolve (10 ETH)..." && \
 		cast send --rpc-url $$EVOLVE_RPC --private-key $$EVOLVE_PK --value 10ether $$OPERATOR_ADDR 2>/dev/null && \
+		if [ ! -z "$$EVOLVE2_RPC" ]; then \
+			echo "  Funding on Evolve2 (10 ETH)..." && \
+			cast send --rpc-url $$EVOLVE2_RPC --private-key $$EVOLVE2_PK --value 10ether $$OPERATOR_ADDR 2>/dev/null; \
+		fi && \
 		echo "  Funding on Sepolia (0.01 ETH)..." && \
 		cast send --rpc-url $$SEPOLIA_RPC --private-key $$SEPOLIA_PK --value 0.01ether $$OPERATOR_ADDR 2>/dev/null || \
 		echo "  Warning: Could not fund on Sepolia (may need testnet ETH)" && \
 		echo "Oracle operator funded"
 .PHONY: fund-operator
+
+## fund-user: Fund user with ETH on all chains for gas
+fund-user:
+	@echo "Funding user with ETH on all chains..."
+	@. ./.env && \
+		USER_ADDR=$$(cast wallet address --private-key $$USER_PK) && \
+		echo "  User address: $$USER_ADDR" && \
+		echo "  Funding on Evolve (10 ETH)..." && \
+		cast send --rpc-url $$EVOLVE_RPC --private-key $$EVOLVE_PK --value 10ether $$USER_ADDR 2>/dev/null && \
+		if [ ! -z "$$EVOLVE2_RPC" ]; then \
+			echo "  Funding on Evolve2 (10 ETH)..." && \
+			cast send --rpc-url $$EVOLVE2_RPC --private-key $$EVOLVE2_PK --value 10ether $$USER_ADDR 2>/dev/null; \
+		fi && \
+		echo "  Funding on Sepolia (0.01 ETH)..." && \
+		cast send --rpc-url $$SEPOLIA_RPC --private-key $$SEPOLIA_PK --value 0.01ether $$USER_ADDR 2>/dev/null || \
+		echo "  Warning: Could not fund on Sepolia (may need testnet ETH)" && \
+		echo "User funded"
+.PHONY: fund-user
 
 ## solver-start: Start the solver service (with retry for nonce issues)
 solver-start: build
@@ -137,6 +177,16 @@ rebalancer-start: build
 # Alias for convenience
 rebalancer: rebalancer-start
 .PHONY: rebalancer
+
+## aggregator-start: Start the OIF aggregator service
+aggregator-start:
+	@echo "Starting OIF aggregator on port 4000..."
+	@cd oif-aggregator && cp ../config/config.json config/ && RUST_LOG=info cargo run --release
+.PHONY: aggregator-start
+
+# Alias for convenience
+aggregator: aggregator-start
+.PHONY: aggregator
 
 ## intent: Submit a test intent. Use FROM=, TO=, AMOUNT=, ASSET= to customize
 intent: build
@@ -183,19 +233,24 @@ reset: clean
 .PHONY: reset
 
 ## setup: Full setup (init + deploy + configure + fund + mint tokens to user)
-setup: init deploy configure fund fund-operator mint-user
+setup: init deploy configure fund fund-operator fund-user mint-user
+	@echo ""
+	@echo "IMPORTANT: Stop all running services before setup!"
+	@echo "    Run 'make stop' first if services are running"
 	@echo ""
 	@echo "Setup complete! Next steps:"
-	@echo "  1. make solver - Start solver service (in separate terminal)"
-	@echo "  2. make operator - Start oracle operator service (in another terminal)"
-	@echo "  3. make rebalancer - Start rebalancer service (in another terminal)"
-	@echo "  4. make intent - Submit a test intent"
-	@echo "  5. make balances - Check balances"
+	@echo "  1. make aggregator - Start OIF aggregator (in separate terminal)"
+	@echo "  2. make solver - Start solver service (in another terminal)"
+	@echo "  3. make operator - Start oracle operator service (in another terminal)"
+	@echo "  4. make rebalancer - Start rebalancer service (in another terminal)"
+	@echo "  5. make intent - Submit a test intent"
+	@echo "  6. make balances - Check balances"
 .PHONY: setup
 
 ## clean: Remove generated files
 clean:
-	@rm -rf .solver config/*.toml config/*.yaml
-	@rm -f .anvil.pid .anvil.log
+	@rm -rf .solver config/*.toml config/*.yaml config/config.json
+	@rm -rf logs/
+	@rm -f config/oracle-state.json
 	@echo "Cleaned!"
 .PHONY: clean

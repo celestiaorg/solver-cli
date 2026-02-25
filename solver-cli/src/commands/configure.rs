@@ -85,6 +85,14 @@ impl ConfigureCommand {
             oracle_config_path
         ));
 
+        // Generate aggregator config
+        let aggregator_config_path = project_dir.join("config/config.json");
+        ConfigGenerator::write_aggregator_config(&state, &aggregator_config_path).await?;
+        print_success(&format!(
+            "Aggregator config written to {:?}",
+            aggregator_config_path
+        ));
+
         // Generate rebalancer config
         let rebalancer_config_path = project_dir.join("config/rebalancer.toml");
         RebalancerConfigGenerator::write_config(&state, &rebalancer_config_path).await?;

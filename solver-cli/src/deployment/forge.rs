@@ -269,4 +269,8 @@ impl DeploymentOutput {
     pub fn operator(&self) -> Option<&String> {
         self.addresses.get("Operator")
     }
+
+    pub fn permit2(&self) -> Option<&String> {
+        self.addresses.get("Permit2")
+    }
 }

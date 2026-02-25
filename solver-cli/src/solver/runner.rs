@@ -17,8 +17,8 @@ impl SolverRunner {
     pub fn new(project_dir: &Path) -> Self {
         Self {
             config_path: project_dir.join("config/solver.toml"),
-            pid_file: project_dir.join(".solver.pid"),
-            log_file: project_dir.join("solver.log"),
+            pid_file: project_dir.join("logs/.solver.pid"),
+            log_file: project_dir.join("logs/solver.log"),
         }
     }
 
@@ -35,6 +35,7 @@ impl SolverRunner {
 
         info!("Starting solver in background mode...");
 
+        fs::create_dir_all(self.log_file.parent().unwrap()).await.context("Failed to create logs directory")?;
         let log_file = fs::File::create(&self.log_file)
             .await
             .context("Failed to create log file")?;

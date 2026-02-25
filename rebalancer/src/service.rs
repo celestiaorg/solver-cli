@@ -1,11 +1,11 @@
-use alloy::primitives::U256;
+use alloy::primitives::{Address, U256};
 use anyhow::{bail, Context, Result};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::time::{sleep, Duration};
 use tracing::{debug, info, warn};
 
 use crate::client::ChainClient;
-use crate::config::{AssetConfig, RebalancerConfig};
+use crate::config::{AssetConfig, AssetTokenConfig, AssetType, RebalancerConfig};
 use crate::planner::{format_raw_u128, format_token_amount, AssetPlan, TransferPlan};
 
 pub struct RebalancerService {
@@ -19,7 +19,8 @@ impl RebalancerService {
     pub async fn new(config: RebalancerConfig) -> Result<Self> {
         let mut clients = HashMap::new();
         for chain in &config.chains {
-            let client = ChainClient::new(chain, !config.dry_run)
+            let client = ChainClient::new(chain)
+                .await
                 .with_context(|| format!("Failed to create client for chain {}", chain.name))?;
             clients.insert(chain.chain_id, client);
         }
@@ -55,6 +56,7 @@ impl RebalancerService {
             self.config.hyperlane.default_timeout_seconds
         );
         for asset in &self.config.assets {
+            self.log_asset_chain_setup(asset);
             if let Some(total_balance) = self.asset_totals.get(&asset.symbol) {
                 info!(
                     "Asset {} startup total_balance={} {}",
@@ -240,7 +242,8 @@ impl RebalancerService {
                         asset.symbol
                     )
                 })?;
-            self.asset_totals.insert(asset.symbol.clone(), total_balance);
+            self.asset_totals
+                .insert(asset.symbol.clone(), total_balance);
         }
         Ok(())
     }
@@ -275,45 +278,91 @@ impl RebalancerService {
             let chain = self.config.chain_by_id(chain_id).with_context(|| {
                 format!("Unknown chain {} for asset {}", chain_id, asset.symbol)
             })?;
-
-            let token_address = *asset.tokens.get(&chain_id).with_context(|| {
-                format!(
-                    "Missing token address for asset {} on chain {}",
-                    asset.symbol, chain_id
-                )
-            })?;
-
             let client = self.clients.get(&chain_id).with_context(|| {
                 format!(
                     "Missing RPC client for chain {} ({})",
                     chain.name, chain.chain_id
                 )
             })?;
-
-            match client
-                .token_balance(token_address, chain.account_address)
-                .await
-            {
-                Ok(balance) => {
-                    debug!(
-                        "Asset {} observed balance: chain={} ({}) account={} token={} balance={} {} (raw={})",
-                        asset.symbol,
-                        chain.name,
-                        chain.chain_id,
-                        chain.account_address,
-                        token_address,
-                        format_token_amount(balance, asset.decimals),
-                        asset.symbol,
-                        balance
-                    );
-                    observed_balances.insert(chain_id, balance);
-                }
+            let token_config = match token_config_for_chain(asset, chain_id) {
+                Ok(config) => config,
                 Err(err) => {
                     errors.push(format!(
-                        "chain={} ({}) token={} account={} err={}",
-                        chain.name, chain.chain_id, token_address, chain.account_address, err
+                        "chain={} ({}) err={}",
+                        chain.name, chain.chain_id, err
                     ));
+                    continue;
                 }
+            };
+            let balance_query = match balance_query_for_chain(asset, chain_id) {
+                Ok(query) => query,
+                Err(err) => {
+                    errors.push(format!(
+                        "chain={} ({}) err={}",
+                        chain.name, chain.chain_id, err
+                    ));
+                    continue;
+                }
+            };
+
+            match balance_query {
+                BalanceQuery::Erc20(token_address) => match client
+                    .token_balance(token_address, chain.account_address)
+                    .await
+                {
+                    Ok(balance) => {
+                        debug!(
+                            "Asset {} observed balance: chain={} ({}) type=erc20 account={} token={} collateral_token={} balance={} {} (raw={})",
+                            asset.symbol,
+                            chain.name,
+                            chain.chain_id,
+                            chain.account_address,
+                            token_address,
+                            token_config.collateral_token,
+                            format_token_amount(balance, asset.decimals),
+                            asset.symbol,
+                            balance
+                        );
+                        observed_balances.insert(chain_id, balance);
+                    }
+                    Err(err) => {
+                        errors.push(format!(
+                            "chain={} ({}) type=erc20 token={} collateral_token={} account={} err={}",
+                            chain.name,
+                            chain.chain_id,
+                            token_address,
+                            token_config.collateral_token,
+                            chain.account_address,
+                            err
+                        ));
+                    }
+                },
+                BalanceQuery::Native => match client.native_balance(chain.account_address).await {
+                    Ok(balance) => {
+                        debug!(
+                            "Asset {} observed balance: chain={} ({}) type=native account={} collateral_token={} balance={} {} (raw={})",
+                            asset.symbol,
+                            chain.name,
+                            chain.chain_id,
+                            chain.account_address,
+                            token_config.collateral_token,
+                            format_token_amount(balance, asset.decimals),
+                            asset.symbol,
+                            balance
+                        );
+                        observed_balances.insert(chain_id, balance);
+                    }
+                    Err(err) => {
+                        errors.push(format!(
+                            "chain={} ({}) type=native collateral_token={} account={} err={}",
+                            chain.name,
+                            chain.chain_id,
+                            token_config.collateral_token,
+                            chain.account_address,
+                            err
+                        ));
+                    }
+                },
             }
         }
 
@@ -345,16 +394,20 @@ impl RebalancerService {
                         transfer.destination_chain_id
                     )
                 })?;
-            let source_router =
-                *asset
-                    .tokens
-                    .get(&transfer.source_chain_id)
-                    .with_context(|| {
-                        format!(
-                            "Missing source router/token for asset {} chain {}",
-                            asset.symbol, transfer.source_chain_id
-                        )
-                    })?;
+            let source_token_config = token_config_for_chain(asset, transfer.source_chain_id)
+                .with_context(|| {
+                    format!(
+                        "Missing source token config for asset {} chain {}",
+                        asset.symbol, transfer.source_chain_id
+                    )
+                })?;
+            let source_collateral_token =
+                collateral_token_for_chain(asset, transfer.source_chain_id).with_context(|| {
+                    format!(
+                        "Missing source collateral_token for asset {} chain {}",
+                        asset.symbol, transfer.source_chain_id
+                    )
+                })?;
             let source_client = self
                 .clients
                 .get(&transfer.source_chain_id)
@@ -368,8 +421,8 @@ impl RebalancerService {
 
             let quote = match source_client
                 .quote_transfer_remote(
-                    source_router,
-                    transfer.destination_chain_id,
+                    source_collateral_token,
+                    destination_chain.domain_id,
                     destination_chain.account_address,
                     transfer_amount,
                 )
@@ -378,7 +431,7 @@ impl RebalancerService {
                 Ok(quote) => quote,
                 Err(err) => {
                     warn!(
-                        "Asset {} route {} -> {} quote failed: {}",
+                        "Asset {} route {} -> {} quote failed:\n{:#}",
                         asset.symbol, source_chain.name, destination_chain.name, err
                     );
                     continue;
@@ -386,22 +439,25 @@ impl RebalancerService {
             };
 
             info!(
-                "Asset {} quote: {} -> {} amount={} {} native_fee={} router_token={}",
+                "Asset {} quote: {} -> {} domain={} source_type={} amount={} {} native_fee={} collateral_token={}",
                 asset.symbol,
                 source_chain.name,
                 destination_chain.name,
+                destination_chain.domain_id,
+                asset_type_label(source_token_config.asset_type),
                 format_raw_u128(transfer.amount_raw, asset.decimals),
                 asset.symbol,
                 quote.native_fee,
-                quote.router_token
+                source_collateral_token
             );
             for (idx, entry) in quote.entries.iter().enumerate() {
                 debug!(
-                    "Asset {} quote {} -> {}[{}] token={} amount={}",
+                    "Asset {} quote {} -> {}[{}] domain={} token={} amount={}",
                     asset.symbol,
                     source_chain.name,
                     destination_chain.name,
                     idx,
+                    destination_chain.domain_id,
                     entry.token,
                     entry.amount
                 );
@@ -409,8 +465,8 @@ impl RebalancerService {
 
             match source_client
                 .submit_transfer_remote(
-                    source_router,
-                    transfer.destination_chain_id,
+                    source_collateral_token,
+                    destination_chain.domain_id,
                     destination_chain.account_address,
                     transfer_amount,
                     quote.native_fee,
@@ -434,7 +490,7 @@ impl RebalancerService {
                 }
                 Err(err) => {
                     warn!(
-                        "Asset {} route {} -> {} transfer submission failed: {}",
+                        "Asset {} route {} -> {} transfer submission failed:\n{:#}",
                         asset.symbol, source_chain.name, destination_chain.name, err
                     );
                 }
@@ -451,7 +507,10 @@ impl RebalancerService {
 
         let mut blocked = HashSet::new();
         for source_chain_id in source_chain_ids {
-            if !self.source_chain_ready_for_submission(source_chain_id).await {
+            if !self
+                .source_chain_ready_for_submission(source_chain_id)
+                .await
+            {
                 blocked.insert(source_chain_id);
             }
         }
@@ -510,6 +569,37 @@ impl RebalancerService {
         }
 
         true
+    }
+
+    fn log_asset_chain_setup(&self, asset: &AssetConfig) {
+        let mut chain_ids: Vec<u64> = asset.tokens.keys().copied().collect();
+        chain_ids.sort_unstable();
+
+        for chain_id in chain_ids {
+            let Some(chain) = self.config.chain_by_id(chain_id) else {
+                continue;
+            };
+            let Some(token_config) = asset.tokens.get(&chain_id) else {
+                continue;
+            };
+
+            match token_config.asset_type {
+                AssetType::Erc20 => info!(
+                    "Asset {} config: chain={} ({}) type=erc20 address={} collateral_token={}",
+                    asset.symbol,
+                    chain.name,
+                    chain.chain_id,
+                    token_config
+                        .address
+                        .expect("erc20 token config must include address"),
+                    token_config.collateral_token
+                ),
+                AssetType::Native => info!(
+                    "Asset {} config: chain={} ({}) type=native collateral_token={}",
+                    asset.symbol, chain.name, chain.chain_id, token_config.collateral_token
+                ),
+            }
+        }
     }
 
     fn log_plan(
@@ -607,7 +697,10 @@ impl RebalancerService {
     }
 }
 
-fn startup_total_from_snapshot(asset: &AssetConfig, observed_balances: &BTreeMap<u64, U256>) -> Result<U256> {
+fn startup_total_from_snapshot(
+    asset: &AssetConfig,
+    observed_balances: &BTreeMap<u64, U256>,
+) -> Result<U256> {
     for chain_id in asset.weights.keys() {
         if !observed_balances.contains_key(chain_id) {
             bail!(
@@ -632,6 +725,12 @@ enum InventoryDrift {
     InFlight(U256),
     ObservedExceedsStartup(U256),
     Balanced,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BalanceQuery {
+    Erc20(Address),
+    Native,
 }
 
 fn classify_inventory_drift(total_balance: U256, observed_total: U256) -> InventoryDrift {
@@ -684,6 +783,44 @@ fn source_nonce_guard_allows_submission(latest_nonce: u64, pending_nonce: u64) -
     pending_nonce <= latest_nonce
 }
 
+fn asset_type_label(asset_type: AssetType) -> &'static str {
+    match asset_type {
+        AssetType::Erc20 => "erc20",
+        AssetType::Native => "native",
+    }
+}
+
+fn token_config_for_chain(asset: &AssetConfig, chain_id: u64) -> Result<&AssetTokenConfig> {
+    asset.tokens.get(&chain_id).ok_or_else(|| {
+        anyhow::anyhow!(
+            "Missing token config for asset {} on chain {}",
+            asset.symbol,
+            chain_id
+        )
+    })
+}
+
+fn collateral_token_for_chain(asset: &AssetConfig, chain_id: u64) -> Result<Address> {
+    Ok(token_config_for_chain(asset, chain_id)?.collateral_token)
+}
+
+fn balance_query_for_chain(asset: &AssetConfig, chain_id: u64) -> Result<BalanceQuery> {
+    let token_config = token_config_for_chain(asset, chain_id)?;
+    match token_config.asset_type {
+        AssetType::Erc20 => {
+            let address = token_config.address.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Missing ERC20 address for asset {} on chain {}",
+                    asset.symbol,
+                    chain_id
+                )
+            })?;
+            Ok(BalanceQuery::Erc20(address))
+        }
+        AssetType::Native => Ok(BalanceQuery::Native),
+    }
+}
+
 fn split_by_parallel_limit(
     mut transfers: Vec<TransferPlan>,
     available_slots: usize,
@@ -699,7 +836,7 @@ fn split_by_parallel_limit(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::AssetConfig;
+    use crate::config::{AssetConfig, AssetTokenConfig, AssetType};
     use std::collections::HashMap;
 
     fn sample_asset() -> AssetConfig {
@@ -709,15 +846,62 @@ mod tests {
             tokens: HashMap::from([
                 (
                     1u64,
-                    "0x0000000000000000000000000000000000000001"
-                        .parse()
-                        .unwrap(),
+                    AssetTokenConfig {
+                        asset_type: AssetType::Erc20,
+                        address: Some(
+                            "0x0000000000000000000000000000000000000001"
+                                .parse()
+                                .unwrap(),
+                        ),
+                        collateral_token: "0x0000000000000000000000000000000000000011"
+                            .parse()
+                            .unwrap(),
+                    },
                 ),
                 (
                     2u64,
-                    "0x0000000000000000000000000000000000000002"
-                        .parse()
-                        .unwrap(),
+                    AssetTokenConfig {
+                        asset_type: AssetType::Erc20,
+                        address: Some(
+                            "0x0000000000000000000000000000000000000002"
+                                .parse()
+                                .unwrap(),
+                        ),
+                        collateral_token: "0x0000000000000000000000000000000000000022"
+                            .parse()
+                            .unwrap(),
+                    },
+                ),
+            ]),
+            weights: HashMap::from([(1u64, 0.5), (2u64, 0.5)]),
+            min_weights: HashMap::from([(1u64, 0.4), (2u64, 0.4)]),
+        }
+    }
+
+    fn sample_native_asset() -> AssetConfig {
+        AssetConfig {
+            symbol: "ETH".to_string(),
+            decimals: 18,
+            tokens: HashMap::from([
+                (
+                    1u64,
+                    AssetTokenConfig {
+                        asset_type: AssetType::Native,
+                        address: None,
+                        collateral_token: "0x0000000000000000000000000000000000000011"
+                            .parse()
+                            .unwrap(),
+                    },
+                ),
+                (
+                    2u64,
+                    AssetTokenConfig {
+                        asset_type: AssetType::Native,
+                        address: None,
+                        collateral_token: "0x0000000000000000000000000000000000000022"
+                            .parse()
+                            .unwrap(),
+                    },
                 ),
             ]),
             weights: HashMap::from([(1u64, 0.5), (2u64, 0.5)]),
@@ -733,6 +917,39 @@ mod tests {
     #[test]
     fn nonce_guard_allows_when_nonces_match() {
         assert!(source_nonce_guard_allows_submission(10, 10));
+    }
+
+    #[test]
+    fn balance_query_selects_erc20_for_erc20_assets() {
+        let asset = sample_asset();
+        let query = balance_query_for_chain(&asset, 1u64).unwrap();
+        assert_eq!(
+            query,
+            BalanceQuery::Erc20(
+                "0x0000000000000000000000000000000000000001"
+                    .parse()
+                    .unwrap()
+            )
+        );
+    }
+
+    #[test]
+    fn balance_query_selects_native_for_native_assets() {
+        let asset = sample_native_asset();
+        let query = balance_query_for_chain(&asset, 1u64).unwrap();
+        assert_eq!(query, BalanceQuery::Native);
+    }
+
+    #[test]
+    fn collateral_token_lookup_uses_collateral_token_field() {
+        let asset = sample_asset();
+        let collateral = collateral_token_for_chain(&asset, 1u64).unwrap();
+        assert_eq!(
+            collateral,
+            "0x0000000000000000000000000000000000000011"
+                .parse::<Address>()
+                .unwrap()
+        );
     }
 
     #[test]

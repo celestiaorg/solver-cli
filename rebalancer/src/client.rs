@@ -1,35 +1,18 @@
 use alloy::{
     eips::BlockNumberOrTag,
-    network::{EthereumWallet, TransactionBuilder},
+    network::TransactionBuilder,
     primitives::{Address, Bytes, FixedBytes, TxHash, U256},
     providers::{Provider, ProviderBuilder},
-    rpc::types::eth::BlockId,
-    signers::local::PrivateKeySigner,
+    rpc::types::{eth::BlockId, TransactionRequest},
     sol,
     sol_types::SolCall,
 };
 use anyhow::{bail, Context, Result};
 
 use crate::config::ChainConfig;
+use crate::signer::TxSigner;
 
-type HttpProvider = alloy::providers::fillers::FillProvider<
-    alloy::providers::fillers::JoinFill<
-        alloy::providers::Identity,
-        alloy::providers::fillers::JoinFill<
-            alloy::providers::fillers::GasFiller,
-            alloy::providers::fillers::JoinFill<
-                alloy::providers::fillers::BlobGasFiller,
-                alloy::providers::fillers::JoinFill<
-                    alloy::providers::fillers::NonceFiller,
-                    alloy::providers::fillers::ChainIdFiller,
-                >,
-            >,
-        >,
-    >,
-    alloy::providers::RootProvider,
->;
-
-type WalletHttpProvider = alloy::providers::fillers::FillProvider<
+type DefaultProvider = alloy::providers::fillers::FillProvider<
     alloy::providers::fillers::JoinFill<
         alloy::providers::fillers::JoinFill<
             alloy::providers::Identity,
@@ -50,17 +33,18 @@ type WalletHttpProvider = alloy::providers::fillers::FillProvider<
 >;
 
 sol! {
-    function balanceOf(address account) external view returns (uint256);
-
     struct Quote {
         address token;
         uint256 amount;
     }
 
     #[sol(rpc)]
-    interface ITokenRouter {
-        function token() external view returns (address);
+    interface IERC20 {
+        function balanceOf(address account) external view returns (uint256);
+    }
 
+    #[sol(rpc)]
+    interface ITokenRouter {
         function quoteTransferRemote(
             uint32 _destination,
             bytes32 _recipient,
@@ -83,7 +67,6 @@ pub struct HyperlaneQuoteItem {
 
 #[derive(Debug, Clone)]
 pub struct HyperlaneQuote {
-    pub router_token: Address,
     pub entries: Vec<HyperlaneQuoteItem>,
     pub native_fee: U256,
 }
@@ -95,12 +78,11 @@ pub struct SubmittedTransfer {
 }
 
 pub struct ChainClient {
-    read_provider: HttpProvider,
-    wallet_provider: Option<WalletHttpProvider>,
+    provider: DefaultProvider,
 }
 
 impl ChainClient {
-    pub fn new(chain: &ChainConfig, enable_writes: bool) -> Result<Self> {
+    pub async fn new(chain: &ChainConfig) -> Result<Self> {
         let rpc_url: reqwest::Url = chain.rpc_url.parse().with_context(|| {
             format!(
                 "Invalid RPC URL for chain {}: {}",
@@ -108,35 +90,29 @@ impl ChainClient {
             )
         })?;
 
-        let read_provider = ProviderBuilder::new().connect_http(rpc_url.clone());
-        let wallet_provider = if enable_writes {
-            let signer = signer_for_chain(chain)
-                .with_context(|| format!("Failed to load signer for chain {}", chain.name))?;
-            let signer_address = signer.address();
-            if signer_address != chain.account_address {
-                bail!(
-                    "Signer/account mismatch for chain {} ({}): signer={} config_account={}",
-                    chain.name,
-                    chain.chain_id,
-                    signer_address,
-                    chain.account_address
-                );
-            }
+        let signer = TxSigner::new(chain)
+            .await
+            .with_context(|| format!("Failed to load signer for chain {}", chain.name))?;
 
-            let wallet = EthereumWallet::from(signer);
-            Some(ProviderBuilder::new().wallet(wallet).connect_http(rpc_url))
-        } else {
-            None
-        };
+        if signer.address != chain.account_address {
+            bail!(
+                "Signer/account mismatch for chain {} ({}): signer={} config_account={}",
+                chain.name,
+                chain.chain_id,
+                signer.address,
+                chain.account_address
+            );
+        }
 
-        Ok(Self {
-            read_provider,
-            wallet_provider,
-        })
+        let provider = ProviderBuilder::new()
+            .wallet(signer.wallet)
+            .connect_http(rpc_url);
+
+        Ok(Self { provider })
     }
 
     pub async fn token_balance(&self, token: Address, account: Address) -> Result<U256> {
-        let call = balanceOfCall { account };
+        let call = IERC20::balanceOfCall { account };
         let call_data: Bytes = call.abi_encode().into();
 
         let tx = alloy::rpc::types::TransactionRequest::default()
@@ -144,7 +120,7 @@ impl ChainClient {
             .with_input(call_data);
 
         let result = self
-            .read_provider
+            .provider
             .call(tx)
             .await
             .context("Failed to call ERC20 balanceOf")?;
@@ -152,8 +128,15 @@ impl ChainClient {
         Ok(U256::from_be_slice(&result))
     }
 
+    pub async fn native_balance(&self, account: Address) -> Result<U256> {
+        self.provider
+            .get_balance(account)
+            .await
+            .context("Failed to get native balance")
+    }
+
     pub async fn transaction_count_latest(&self, account: Address) -> Result<u64> {
-        self.read_provider
+        self.provider
             .get_transaction_count(account)
             .block_id(BlockId::latest())
             .await
@@ -161,7 +144,7 @@ impl ChainClient {
     }
 
     pub async fn transaction_count_pending(&self, account: Address) -> Result<u64> {
-        self.read_provider
+        self.provider
             .get_transaction_count(account)
             .block_id(BlockId::Number(BlockNumberOrTag::Pending))
             .await
@@ -171,31 +154,28 @@ impl ChainClient {
     pub async fn quote_transfer_remote(
         &self,
         source_router: Address,
-        destination_chain_id: u64,
+        destination_domain_id: u32,
         destination_recipient: Address,
         amount: U256,
     ) -> Result<HyperlaneQuote> {
-        let destination = u32::try_from(destination_chain_id).with_context(|| {
-            format!(
-                "destination chain_id {} does not fit uint32 Hyperlane domain",
-                destination_chain_id
-            )
-        })?;
         let recipient = address_to_bytes32(destination_recipient);
-
-        let router_token = self.token(source_router).await?;
-
         let call = ITokenRouter::quoteTransferRemoteCall {
-            _destination: destination,
+            _destination: destination_domain_id,
             _recipient: recipient,
             _amount: amount,
         };
-        let tx = alloy::rpc::types::TransactionRequest::default()
+
+        let tx = TransactionRequest::default()
             .to(source_router)
             .input(Bytes::from(call.abi_encode()).into());
-        let raw = self.read_provider.call(tx).await.with_context(|| {
-            format!("quoteTransferRemote call failed on router {}", source_router)
+
+        let raw = self.provider.call(tx).await.with_context(|| {
+            format!(
+                "quoteTransferRemote call failed on router {} (address may be plain ERC20, not a Hyperlane token router)",
+                source_router
+            )
         })?;
+
         let decoded = ITokenRouter::quoteTransferRemoteCall::abi_decode_returns(&raw)
             .context("Failed to decode quoteTransferRemote return payload")?;
 
@@ -206,6 +186,7 @@ impl ChainClient {
                 amount: quote.amount,
             })
             .collect();
+
         let native_fee = entries
             .iter()
             .find(|entry| entry.token == Address::ZERO)
@@ -213,7 +194,6 @@ impl ChainClient {
             .unwrap_or(U256::ZERO);
 
         Ok(HyperlaneQuote {
-            router_token,
             entries,
             native_fee,
         })
@@ -222,50 +202,51 @@ impl ChainClient {
     pub async fn submit_transfer_remote(
         &self,
         source_router: Address,
-        destination_chain_id: u64,
+        destination_domain_id: u32,
         destination_recipient: Address,
         amount: U256,
         msg_value: U256,
     ) -> Result<SubmittedTransfer> {
-        let wallet_provider = self.wallet_provider()?;
-        let destination = u32::try_from(destination_chain_id).with_context(|| {
-            format!(
-                "destination chain_id {} does not fit uint32 Hyperlane domain",
-                destination_chain_id
-            )
-        })?;
         let recipient = address_to_bytes32(destination_recipient);
-
         let call = ITokenRouter::transferRemoteCall {
-            _destination: destination,
+            _destination: destination_domain_id,
             _recipient: recipient,
             _amount: amount,
         };
-        let call_data = Bytes::from(call.abi_encode());
+        let calldata = Bytes::from(call.abi_encode());
 
-        let preview_tx = alloy::rpc::types::TransactionRequest::default()
+        let tx = TransactionRequest::default()
             .to(source_router)
-            .input(call_data.clone().into())
+            .input(calldata.into())
             .value(msg_value);
-        let message_id = match wallet_provider.call(preview_tx).await {
+
+        let (message_id, preview_error) = match self.provider.call(tx.clone()).await {
             Ok(raw) => {
                 if raw.len() >= 32 {
-                    Some(FixedBytes::<32>::from_slice(&raw[raw.len() - 32..]))
+                    (
+                        Some(FixedBytes::<32>::from_slice(&raw[raw.len() - 32..])),
+                        None,
+                    )
                 } else {
-                    None
+                    (None, None)
                 }
             }
-            Err(_) => None,
+            Err(err) => (None, Some(err)),
         };
 
-        let tx = alloy::rpc::types::TransactionRequest::default()
-            .to(source_router)
-            .input(call_data.into())
-            .value(msg_value);
-        let pending = wallet_provider.send_transaction(tx).await.with_context(|| {
+        let pending = self.provider.send_transaction(tx).await.with_context(|| {
+            let preview = preview_error
+                .as_ref()
+                .map(|err| format!("; preview_call_err={}", err))
+                .unwrap_or_default();
             format!(
-                "Failed to submit transferRemote tx on router {}",
-                source_router
+                "Failed to submit transferRemote tx on router {} destination_domain={} recipient={} amount={} msg_value={}{}",
+                source_router,
+                destination_domain_id,
+                destination_recipient,
+                amount,
+                msg_value,
+                preview
             )
         })?;
 
@@ -274,80 +255,10 @@ impl ChainClient {
             message_id,
         })
     }
-
-    async fn token(&self, router: Address) -> Result<Address> {
-        let call = ITokenRouter::tokenCall {};
-        let tx = alloy::rpc::types::TransactionRequest::default()
-            .to(router)
-            .input(Bytes::from(call.abi_encode()).into());
-        let raw = self
-            .read_provider
-            .call(tx)
-            .await
-            .with_context(|| format!("token() call failed on router {}", router))?;
-        if raw.len() < 32 {
-            bail!(
-                "token() return payload too short on router {}: {} bytes",
-                router,
-                raw.len()
-            );
-        }
-        Ok(Address::from_slice(&raw[raw.len() - 20..]))
-    }
-
-    fn wallet_provider(&self) -> Result<&WalletHttpProvider> {
-        self.wallet_provider
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Missing wallet provider for writable operation"))
-    }
 }
 
 fn address_to_bytes32(address: Address) -> FixedBytes<32> {
     let mut out = [0u8; 32];
     out[12..].copy_from_slice(address.as_slice());
     FixedBytes::from(out)
-}
-
-fn signer_for_chain(chain: &ChainConfig) -> Result<PrivateKeySigner> {
-    let chain_env = normalize_env_key(&chain.name);
-    let key_names = [
-        format!("REBALANCER_{}_PK", chain_env),
-        format!("{}_PK", chain_env),
-        "REBALANCER_PRIVATE_KEY".to_string(),
-        "SOLVER_PRIVATE_KEY".to_string(),
-        "SEPOLIA_PK".to_string(),
-    ];
-
-    for key_name in key_names {
-        if let Ok(raw) = std::env::var(&key_name) {
-            let trimmed = raw.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-            let pk = trimmed.strip_prefix("0x").unwrap_or(trimmed);
-            let signer = pk.parse().with_context(|| {
-                format!("Invalid private key in environment variable {}", key_name)
-            })?;
-            return Ok(signer);
-        }
-    }
-
-    bail!(
-        "No private key found for chain {}. Tried: REBALANCER_{}_PK, {}_PK, REBALANCER_PRIVATE_KEY, SOLVER_PRIVATE_KEY, SEPOLIA_PK",
-        chain.name,
-        chain_env,
-        chain_env
-    )
-}
-
-fn normalize_env_key(name: &str) -> String {
-    name.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() {
-                c.to_ascii_uppercase()
-            } else {
-                '_'
-            }
-        })
-        .collect()
 }
