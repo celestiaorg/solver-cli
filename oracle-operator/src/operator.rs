@@ -15,6 +15,8 @@ use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, warn};
 
+const LOG_QUERY_BLOCK_WINDOW: u64 = 10_000;
+
 /// Concrete HTTP provider type from ProviderBuilder::new().with_recommended_fillers().wallet(...).on_http(...).
 /// Stored so we can hold multiple providers in a HashMap without dyn Provider (which
 /// would require BoxTransport; our provider uses Http<Client>).
@@ -278,43 +280,63 @@ impl OracleOperator {
             return Ok(());
         }
 
-        debug!(
-            "Polling chain {} blocks {} to {}",
-            chain_id, start_block, current_block
-        );
-
-        // Get logs for OutputFilled events
         let output_settler: AlloyAddress = chain_config.output_settler_address.parse()?;
+        let mut next_start = start_block;
+        let mut highest_fully_processed = start_block.saturating_sub(1);
 
-        let filter = alloy::rpc::types::Filter::new()
-            .address(output_settler)
-            .from_block(start_block)
-            .to_block(current_block)
-            .event_signature(FixedBytes::from(keccak256_bytes(
-                b"OutputFilled(bytes32,bytes32,uint32,(bytes32,bytes32,uint256,bytes32,uint256,bytes32,bytes,bytes),uint256)"
-            )));
+        while next_start <= current_block {
+            let chunk_end = next_start
+                .saturating_add(LOG_QUERY_BLOCK_WINDOW.saturating_sub(1))
+                .min(current_block);
 
-        let logs = provider.get_logs(&filter).await?;
+            debug!(
+                "Polling chain {} blocks {} to {}",
+                chain_id, next_start, chunk_end
+            );
 
-        debug!(
-            "Found {} OutputFilled events on chain {}",
-            logs.len(),
-            chain_id
-        );
+            let filter = alloy::rpc::types::Filter::new()
+                .address(output_settler)
+                .from_block(next_start)
+                .to_block(chunk_end)
+                .event_signature(FixedBytes::from(keccak256_bytes(
+                    b"OutputFilled(bytes32,bytes32,uint32,(bytes32,bytes32,uint256,bytes32,uint256,bytes32,bytes,bytes),uint256)"
+                )));
 
-        let mut all_succeeded = true;
-        for log in logs {
-            if let Err(e) = self.process_fill_event(chain_id, &log).await {
-                warn!("Error processing fill event: {}", e);
-                all_succeeded = false;
+            let logs = provider.get_logs(&filter).await?;
+
+            debug!(
+                "Found {} OutputFilled events on chain {} for blocks {} to {}",
+                logs.len(),
+                chain_id,
+                next_start,
+                chunk_end
+            );
+
+            let mut chunk_succeeded = true;
+            for log in logs {
+                if let Err(e) = self.process_fill_event(chain_id, &log).await {
+                    warn!("Error processing fill event: {}", e);
+                    chunk_succeeded = false;
+                }
             }
+
+            // Stop on first failed chunk so it can be retried next poll.
+            if !chunk_succeeded {
+                warn!(
+                    "Halting chain {} processing at failed chunk {} to {}; cursor remains at {}",
+                    chain_id, next_start, chunk_end, highest_fully_processed
+                );
+                break;
+            }
+
+            highest_fully_processed = chunk_end;
+            next_start = chunk_end.saturating_add(1);
         }
 
-        // Only advance block cursor if all events were processed successfully.
-        // Otherwise we retry the same range next poll (failed attestations can be retried).
-        if all_succeeded {
+        // Advance cursor only through fully processed chunks.
+        if highest_fully_processed >= start_block {
             let mut state = self.state.lock().await;
-            state.set_last_block(chain_id, current_block);
+            state.set_last_block(chain_id, highest_fully_processed);
         }
 
         Ok(())
