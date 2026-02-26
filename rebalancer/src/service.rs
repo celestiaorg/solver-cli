@@ -1,18 +1,33 @@
-use alloy::primitives::{Address, U256};
+use alloy::primitives::{Address, FixedBytes, U256};
 use anyhow::{bail, Context, Result};
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::time::{sleep, Duration};
 use tracing::{debug, info, warn};
 
 use crate::client::ChainClient;
 use crate::config::{AssetConfig, AssetTokenConfig, AssetType, RebalancerConfig};
+use crate::forwarding::ForwardAddress;
 use crate::planner::{format_raw_u128, format_token_amount, AssetPlan, TransferPlan};
 
 pub struct RebalancerService {
     config: RebalancerConfig,
     clients: HashMap<u64, ChainClient>,
+    forwarding_http: reqwest::Client,
     asset_totals: HashMap<String, U256>,
     cycle: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct CreateForwardingRequest {
+    forward_addr: String,
+    dest_domain: u32,
+    dest_recipient: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ForwardingRequest {
+    id: String,
 }
 
 impl RebalancerService {
@@ -28,6 +43,7 @@ impl RebalancerService {
         let mut service = Self {
             config,
             clients,
+            forwarding_http: reqwest::Client::new(),
             asset_totals: HashMap::new(),
             cycle: 0,
         };
@@ -414,12 +430,58 @@ impl RebalancerService {
                     )
                 })?;
             let transfer_amount = U256::from(transfer.amount_raw);
+            let original_dest_domain = destination_chain.domain_id;
+            let original_dest_recipient = evm_address_to_bytes32(destination_chain.account_address);
+            let forward_address = match ForwardAddress::derive(
+                original_dest_domain,
+                original_dest_recipient,
+            ) {
+                Ok(value) => value,
+                Err(err) => {
+                    warn!(
+                            "Asset {} route {} -> {} forwarding derivation failed (domain={} recipient={}):\n{:#}",
+                            asset.symbol,
+                            source_chain.name,
+                            destination_chain.name,
+                            original_dest_domain,
+                            bytes32_to_hex(original_dest_recipient),
+                            err
+                        );
+                    continue;
+                }
+            };
+            let forward_addr_bech32 = match forward_address.to_bech32() {
+                Ok(value) => value,
+                Err(err) => {
+                    warn!(
+                        "Asset {} route {} -> {} forwarding bech32 encoding failed:\n{:#}",
+                        asset.symbol, source_chain.name, destination_chain.name, err
+                    );
+                    continue;
+                }
+            };
+            let forwarding_recipient = forward_address.to_address();
+
+            if let Err(err) = self
+                .register_forwarding_request(
+                    &forward_addr_bech32,
+                    original_dest_domain,
+                    original_dest_recipient,
+                )
+                .await
+            {
+                warn!(
+                    "Asset {} route {} -> {} forwarding registration failed; skipping transfer (fail-closed):\n{:#}",
+                    asset.symbol, source_chain.name, destination_chain.name, err
+                );
+                continue;
+            }
 
             let quote = match source_client
                 .quote_transfer_remote(
                     source_collateral_token,
-                    destination_chain.domain_id,
-                    destination_chain.account_address,
+                    self.config.forwarding.domain_id,
+                    forwarding_recipient,
                     transfer_amount,
                 )
                 .await
@@ -435,25 +497,28 @@ impl RebalancerService {
             };
 
             info!(
-                "Asset {} quote: {} -> {} domain={} source_type={} amount={} {} native_fee={} collateral_token={}",
+                "Asset {} quote: {} -> {} via_forwarding_domain={} final_domain={} source_type={} amount={} {} native_fee={} collateral_token={} forward_addr={}",
                 asset.symbol,
                 source_chain.name,
                 destination_chain.name,
-                destination_chain.domain_id,
+                self.config.forwarding.domain_id,
+                original_dest_domain,
                 asset_type_label(source_token_config.asset_type),
                 format_raw_u128(transfer.amount_raw, asset.decimals),
                 asset.symbol,
                 quote.native_fee,
-                source_collateral_token
+                source_collateral_token,
+                forward_addr_bech32
             );
             for (idx, entry) in quote.entries.iter().enumerate() {
                 debug!(
-                    "Asset {} quote {} -> {}[{}] domain={} token={} amount={}",
+                    "Asset {} quote {} -> {}[{}] forwarding_domain={} final_domain={} token={} amount={}",
                     asset.symbol,
                     source_chain.name,
                     destination_chain.name,
                     idx,
-                    destination_chain.domain_id,
+                    self.config.forwarding.domain_id,
+                    original_dest_domain,
                     entry.token,
                     entry.amount
                 );
@@ -462,8 +527,8 @@ impl RebalancerService {
             match source_client
                 .submit_transfer_remote(
                     source_collateral_token,
-                    destination_chain.domain_id,
-                    destination_chain.account_address,
+                    self.config.forwarding.domain_id,
+                    forwarding_recipient,
                     transfer_amount,
                     quote.native_fee,
                 )
@@ -491,6 +556,38 @@ impl RebalancerService {
                     );
                 }
             }
+        }
+
+        Ok(())
+    }
+
+    async fn register_forwarding_request(
+        &self,
+        forward_addr: &str,
+        dest_domain: u32,
+        dest_recipient: FixedBytes<32>,
+    ) -> Result<()> {
+        let create_req = build_forwarding_request(forward_addr, dest_domain, dest_recipient);
+        let created_id = send_forwarding_request(
+            &self.forwarding_http,
+            &self.config.forwarding.service_url,
+            &create_req,
+        )
+        .await?;
+
+        if let Some(id) = created_id {
+            info!(
+                "Registered forwarding request id={} forward_addr={} dest_domain={} dest_recipient={}",
+                id,
+                create_req.forward_addr,
+                create_req.dest_domain,
+                create_req.dest_recipient
+            );
+        } else {
+            info!(
+                "Registered forwarding request forward_addr={} dest_domain={} dest_recipient={}",
+                create_req.forward_addr, create_req.dest_domain, create_req.dest_recipient
+            );
         }
 
         Ok(())
@@ -691,6 +788,60 @@ impl RebalancerService {
             transfer.amount_raw
         );
     }
+}
+
+fn build_forwarding_request(
+    forward_addr: &str,
+    dest_domain: u32,
+    dest_recipient: FixedBytes<32>,
+) -> CreateForwardingRequest {
+    CreateForwardingRequest {
+        forward_addr: forward_addr.to_string(),
+        dest_domain,
+        dest_recipient: bytes32_to_hex(dest_recipient),
+    }
+}
+
+async fn send_forwarding_request(
+    http_client: &reqwest::Client,
+    service_url: &str,
+    create_req: &CreateForwardingRequest,
+) -> Result<Option<String>> {
+    let endpoint = format!("{}/forwarding-requests", service_url.trim_end_matches('/'));
+
+    let resp = http_client
+        .post(&endpoint)
+        .json(create_req)
+        .send()
+        .await
+        .with_context(|| format!("Failed to create forwarding request at {}", endpoint))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "<failed to read response body>".to_string());
+        bail!(
+            "Failed to create forwarding request: status={} endpoint={} body={}",
+            status,
+            endpoint,
+            body
+        );
+    }
+
+    let created = resp.json::<ForwardingRequest>().await.ok();
+    Ok(created.map(|value| value.id))
+}
+
+fn evm_address_to_bytes32(address: Address) -> FixedBytes<32> {
+    let mut out = [0u8; 32];
+    out[12..].copy_from_slice(address.as_slice());
+    FixedBytes::from(out)
+}
+
+fn bytes32_to_hex(value: FixedBytes<32>) -> String {
+    format!("0x{}", hex::encode(value.as_slice()))
 }
 
 fn startup_total_from_snapshot(
@@ -1015,5 +1166,46 @@ mod tests {
     fn classify_inventory_drift_balanced_when_totals_match() {
         let drift = classify_inventory_drift(U256::from(20u64), U256::from(20u64));
         assert_eq!(drift, InventoryDrift::Balanced);
+    }
+
+    #[test]
+    fn build_forwarding_request_uses_original_destination_fields() {
+        let dest_recipient: FixedBytes<32> =
+            "0x000000000000000000000000d5e85e86fc692cedad6d6992f1f0ccf273e39913"
+                .parse()
+                .unwrap();
+        let req = build_forwarding_request(
+            "celestia1mt08w7xjtr26426wx5xvfa33ctnmt4gyxfqytj",
+            31338,
+            dest_recipient,
+        );
+
+        assert_eq!(
+            req.forward_addr,
+            "celestia1mt08w7xjtr26426wx5xvfa33ctnmt4gyxfqytj"
+        );
+        assert_eq!(req.dest_domain, 31338);
+        assert_eq!(
+            req.dest_recipient,
+            "0x000000000000000000000000d5e85e86fc692cedad6d6992f1f0ccf273e39913"
+        );
+    }
+
+    #[tokio::test]
+    async fn send_forwarding_request_returns_error_on_transport_failure() {
+        let req = build_forwarding_request(
+            "celestia1test",
+            31338,
+            "0x0000000000000000000000000000000000000000000000000000000000000001"
+                .parse()
+                .unwrap(),
+        );
+        let client = reqwest::Client::new();
+        let err = send_forwarding_request(&client, "http://127.0.0.1:1", &req)
+            .await
+            .expect_err("expected error");
+        assert!(err
+            .to_string()
+            .contains("Failed to create forwarding request"));
     }
 }

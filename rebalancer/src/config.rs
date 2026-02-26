@@ -13,6 +13,7 @@ pub struct RebalancerConfig {
     pub max_parallel_transfers: usize,
     pub dry_run: bool,
     pub execution: ExecutionConfig,
+    pub forwarding: ForwardingConfig,
     pub chains: Vec<ChainConfig>,
     pub assets: Vec<AssetConfig>,
 }
@@ -21,6 +22,12 @@ pub struct RebalancerConfig {
 pub struct ExecutionConfig {
     pub min_transfer_bps: u16,
     pub max_transfer_bps: u16,
+}
+
+#[derive(Debug, Clone)]
+pub struct ForwardingConfig {
+    pub domain_id: u32,
+    pub service_url: String,
 }
 
 #[derive(Debug, Clone)]
@@ -73,10 +80,18 @@ struct RawRebalancerConfig {
     dry_run: bool,
     #[serde(default)]
     execution: RawExecutionConfig,
+    forwarding: RawForwardingConfig,
     #[serde(default)]
     accounts: HashMap<String, String>,
     chains: Vec<RawChainConfig>,
     assets: Vec<RawAssetConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawForwardingConfig {
+    domain_id: u64,
+    service_url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -198,6 +213,23 @@ impl RebalancerConfig {
                 raw.poll_interval_seconds
             );
         }
+        let forwarding_domain_id = u32::try_from(raw.forwarding.domain_id).with_context(|| {
+            format!(
+                "Invalid forwarding.domain_id: {} (must fit uint32)",
+                raw.forwarding.domain_id
+            )
+        })?;
+        let _forwarding_url: reqwest::Url =
+            raw.forwarding.service_url.parse().with_context(|| {
+                format!(
+                    "Invalid forwarding.service_url: {}",
+                    raw.forwarding.service_url
+                )
+            })?;
+        let forwarding = ForwardingConfig {
+            domain_id: forwarding_domain_id,
+            service_url: raw.forwarding.service_url.clone(),
+        };
 
         let mut seen_chain_ids = HashSet::new();
         let mut seen_domain_ids = HashSet::new();
@@ -484,6 +516,7 @@ impl RebalancerConfig {
                 min_transfer_bps: raw.execution.min_transfer_bps,
                 max_transfer_bps: raw.execution.max_transfer_bps,
             },
+            forwarding,
             chains,
             assets,
         })
@@ -606,6 +639,10 @@ mod tests {
 poll_interval_seconds = 30
 dry_run = true
 
+[forwarding]
+domain_id = 69420
+service_url = "http://127.0.0.1:8080"
+
 [accounts]
 rebalancer = "0x000000000000000000000000000000000000dEaD"
 
@@ -650,6 +687,8 @@ decimals = 6
         let config = RebalancerConfig::from_raw(raw).expect("valid config");
         assert_eq!(config.chains.len(), 2);
         assert_eq!(config.assets.len(), 1);
+        assert_eq!(config.forwarding.domain_id, 69420);
+        assert_eq!(config.forwarding.service_url, "http://127.0.0.1:8080");
     }
 
     #[test]
@@ -657,6 +696,10 @@ decimals = 6
         let toml = r#"
 poll_interval_seconds = 29
 dry_run = true
+
+[forwarding]
+domain_id = 69420
+service_url = "http://127.0.0.1:8080"
 
 [accounts]
 rebalancer = "0x000000000000000000000000000000000000dEaD"
@@ -708,6 +751,10 @@ decimals = 6
         let toml = r#"
 dry_run = true
 
+[forwarding]
+domain_id = 69420
+service_url = "http://127.0.0.1:8080"
+
 [accounts]
 rebalancer = "0x000000000000000000000000000000000000dEaD"
 
@@ -757,6 +804,10 @@ decimals = 6
     fn rejects_invalid_transfer_bps_bounds() {
         let toml = r#"
 dry_run = true
+
+[forwarding]
+domain_id = 69420
+service_url = "http://127.0.0.1:8080"
 
 [execution]
 min_transfer_bps = 6000
@@ -814,6 +865,10 @@ decimals = 6
         let toml = r#"
 dry_run = true
 
+[forwarding]
+domain_id = 69420
+service_url = "http://127.0.0.1:8080"
+
 [accounts]
 rebalancer = "0x000000000000000000000000000000000000dEaD"
 
@@ -859,6 +914,10 @@ decimals = 6
     fn rejects_env_var_field_for_env_signer_type() {
         let toml = r#"
 dry_run = false
+
+[forwarding]
+domain_id = 69420
+service_url = "http://127.0.0.1:8080"
 
 [accounts]
 rebalancer = "0x000000000000000000000000000000000000dEaD"
@@ -910,6 +969,10 @@ decimals = 6
     fn supports_optional_collateral_token_with_fallback_to_address() {
         let toml = r#"
 dry_run = true
+
+[forwarding]
+domain_id = 69420
+service_url = "http://127.0.0.1:8080"
 
 [accounts]
 rebalancer = "0x000000000000000000000000000000000000dEaD"
@@ -987,6 +1050,10 @@ decimals = 6
         let toml = r#"
 dry_run = true
 
+[forwarding]
+domain_id = 69420
+service_url = "http://127.0.0.1:8080"
+
 [accounts]
 rebalancer = "0x000000000000000000000000000000000000dEaD"
 
@@ -1050,6 +1117,10 @@ decimals = 6
     fn accepts_native_token_type() {
         let toml = r#"
 dry_run = true
+
+[forwarding]
+domain_id = 69420
+service_url = "http://127.0.0.1:8080"
 
 [accounts]
 rebalancer = "0x000000000000000000000000000000000000dEaD"
@@ -1117,6 +1188,10 @@ decimals = 18
         let toml = r#"
 dry_run = true
 
+[forwarding]
+domain_id = 69420
+service_url = "http://127.0.0.1:8080"
+
 [accounts]
 rebalancer = "0x000000000000000000000000000000000000dEaD"
 
@@ -1166,9 +1241,170 @@ decimals = 18
     }
 
     #[test]
+    fn rejects_missing_forwarding_block() {
+        let toml = r#"
+dry_run = true
+
+[accounts]
+rebalancer = "0x000000000000000000000000000000000000dEaD"
+
+[[chains]]
+name = "evolve"
+chain_id = 1234
+rpc_url = "http://127.0.0.1:8545"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[chains]]
+name = "sepolia"
+chain_id = 11155111
+rpc_url = "https://rpc.sepolia.org"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[assets]]
+symbol = "USDC"
+decimals = 6
+
+  [[assets.tokens]]
+  chain_id = 1234
+  address = "0x0000000000000000000000000000000000000001"
+
+  [[assets.tokens]]
+  chain_id = 11155111
+  address = "0x0000000000000000000000000000000000000002"
+
+  [assets.weights]
+  "1234" = 0.50
+  "11155111" = 0.50
+
+  [assets.min_weights]
+  "1234" = 0.40
+  "11155111" = 0.40
+"#;
+
+        let err = toml::from_str::<RawRebalancerConfig>(toml).expect_err("should fail");
+        assert!(err.to_string().contains("missing field `forwarding`"));
+    }
+
+    #[test]
+    fn rejects_invalid_forwarding_service_url() {
+        let toml = r#"
+dry_run = true
+
+[forwarding]
+domain_id = 69420
+service_url = "not a url"
+
+[accounts]
+rebalancer = "0x000000000000000000000000000000000000dEaD"
+
+[[chains]]
+name = "evolve"
+chain_id = 1234
+rpc_url = "http://127.0.0.1:8545"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[chains]]
+name = "sepolia"
+chain_id = 11155111
+rpc_url = "https://rpc.sepolia.org"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[assets]]
+symbol = "USDC"
+decimals = 6
+
+  [[assets.tokens]]
+  chain_id = 1234
+  address = "0x0000000000000000000000000000000000000001"
+
+  [[assets.tokens]]
+  chain_id = 11155111
+  address = "0x0000000000000000000000000000000000000002"
+
+  [assets.weights]
+  "1234" = 0.50
+  "11155111" = 0.50
+
+  [assets.min_weights]
+  "1234" = 0.40
+  "11155111" = 0.40
+"#;
+
+        let raw: RawRebalancerConfig = toml::from_str(toml).expect("valid TOML");
+        let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
+        assert!(err.to_string().contains("Invalid forwarding.service_url"));
+    }
+
+    #[test]
+    fn rejects_forwarding_domain_id_out_of_range() {
+        let toml = r#"
+dry_run = true
+
+[forwarding]
+domain_id = 4294967296
+service_url = "http://127.0.0.1:8080"
+
+[accounts]
+rebalancer = "0x000000000000000000000000000000000000dEaD"
+
+[[chains]]
+name = "evolve"
+chain_id = 1234
+rpc_url = "http://127.0.0.1:8545"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[chains]]
+name = "sepolia"
+chain_id = 11155111
+rpc_url = "https://rpc.sepolia.org"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[assets]]
+symbol = "USDC"
+decimals = 6
+
+  [[assets.tokens]]
+  chain_id = 1234
+  address = "0x0000000000000000000000000000000000000001"
+
+  [[assets.tokens]]
+  chain_id = 11155111
+  address = "0x0000000000000000000000000000000000000002"
+
+  [assets.weights]
+  "1234" = 0.50
+  "11155111" = 0.50
+
+  [assets.min_weights]
+  "1234" = 0.40
+  "11155111" = 0.40
+"#;
+
+        let raw: RawRebalancerConfig = toml::from_str(toml).expect("valid TOML");
+        let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
+        assert!(err.to_string().contains("Invalid forwarding.domain_id"));
+    }
+
+    #[test]
     fn rejects_router_address_field() {
         let toml = r#"
 dry_run = true
+
+[forwarding]
+domain_id = 69420
+service_url = "http://127.0.0.1:8080"
 
 [accounts]
 rebalancer = "0x000000000000000000000000000000000000dEaD"
