@@ -1,9 +1,22 @@
 use alloy::primitives::{Address, FixedBytes};
 use anyhow::{Context, Result};
 use bech32::{Bech32, Hrp};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 const FORWARD_VERSION: u8 = 1;
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct CreateForwardingRequest {
+    pub(crate) forward_addr: String,
+    pub(crate) dest_domain: u32,
+    pub(crate) dest_recipient: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct ForwardingRequest {
+    pub(crate) id: String,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ForwardAddress {

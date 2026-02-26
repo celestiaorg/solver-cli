@@ -1,13 +1,12 @@
 use alloy::primitives::{Address, FixedBytes, U256};
 use anyhow::{bail, Context, Result};
-use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::time::{sleep, Duration};
 use tracing::{debug, info, warn};
 
 use crate::client::ChainClient;
 use crate::config::{AssetConfig, AssetTokenConfig, AssetType, RebalancerConfig};
-use crate::forwarding::ForwardAddress;
+use crate::forwarding::{CreateForwardingRequest, ForwardAddress, ForwardingRequest};
 use crate::planner::{format_raw_u128, format_token_amount, AssetPlan, TransferPlan};
 
 pub struct RebalancerService {
@@ -16,18 +15,6 @@ pub struct RebalancerService {
     forwarding_http: reqwest::Client,
     asset_totals: HashMap<String, U256>,
     cycle: u64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-struct CreateForwardingRequest {
-    forward_addr: String,
-    dest_domain: u32,
-    dest_recipient: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct ForwardingRequest {
-    id: String,
 }
 
 impl RebalancerService {

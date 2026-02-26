@@ -283,6 +283,7 @@ mod tests {
         let address: Address = "0xd5e85e86fc692cedad6d6992f1f0ccf273e39913"
             .parse()
             .unwrap();
-        assert!(format!("{}", address).eq_ignore_ascii_case("0xd5e85e86fc692cedad6d6992f1f0ccf273e39913"));
+        assert!(format!("{}", address)
+            .eq_ignore_ascii_case("0xd5e85e86fc692cedad6d6992f1f0ccf273e39913"));
     }
 }
