@@ -222,7 +222,7 @@ operator-start:
 operator: operator-start
 .PHONY: operator
 
-## rebalancer-start: Start the rebalancer service (phase 1 dry-run planner)
+## rebalancer-start: Start the rebalancer service
 rebalancer-start: build
 	@$(SOLVER_CLI) rebalancer start
 .PHONY: rebalancer-start
