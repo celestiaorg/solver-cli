@@ -40,10 +40,10 @@ cleanup() {
   echo ""
   step "Shutting down services..."
   # Kill all tracked PIDs
-  for pidfile in logs/*.pid; do
+  for pidfile in .logs/*.pid; do
     [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null || true
   done
-  rm -f logs/*.pid
+  rm -f .logs/*.pid
   make stop 2>/dev/null || true
   success "All services stopped"
   exit 0

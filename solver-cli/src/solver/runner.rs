@@ -18,7 +18,7 @@ impl SolverRunner {
         Self {
             config_path: project_dir.join(".config/solver.toml"),
             pid_file: project_dir.join(".config/solver.pid"),
-            log_file: project_dir.join(".config/solver.log"),
+            log_file: project_dir.join(".logs/solver.log"),
         }
     }
 

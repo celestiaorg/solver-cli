@@ -75,13 +75,15 @@ impl IntentHandler {
 		config: Config,
 	) -> Self {
 		let ofac_addresses = Self::load_ofac_list(config.solver.ofac_list.as_deref());
-		if config.solver.ofac_list.as_deref().is_some_and(|p| !p.is_empty())
+		if config
+			.solver
+			.ofac_list
+			.as_deref()
+			.is_some_and(|p| !p.is_empty())
 			&& ofac_addresses.is_empty()
+			|| config.solver.ofac_list.is_none()
 		{
-			tracing::warn!(
-				"OFAC sanctions list is configured but could not be loaded — \
-				 enforcement is DISABLED. Run `solver-cli ofac update` to fetch the list."
-			);
+			tracing::warn!("OFAC sanctions list could not be loaded. Enforcement is DISABLED!");
 		}
 		Self {
 			order_service,

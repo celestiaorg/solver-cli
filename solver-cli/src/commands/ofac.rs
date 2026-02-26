@@ -91,8 +91,9 @@ impl OfacCommand {
 
 /// Parse Ethereum addresses from an OFAC SDN XML document.
 ///
-/// Scans for `<id>` blocks that contain `Digital Currency Address - ETH`
-/// and extracts the corresponding `<idNumber>` value.
+/// Scans for `<id>` blocks that contain any `Digital Currency Address` entry
+/// (ETH, ERC-20 tokens like USDC/USDT, etc.) and extracts any `<idNumber>`
+/// that matches Ethereum address format (0x + 40 hex digits).
 pub fn parse_eth_addresses_from_sdn_xml(xml: &str) -> Vec<String> {
     let mut addresses: HashSet<String> = HashSet::new();
 
@@ -103,7 +104,7 @@ pub fn parse_eth_addresses_from_sdn_xml(xml: &str) -> Vec<String> {
             None => continue,
         };
 
-        if !block.contains("Digital Currency Address - ETH") {
+        if !block.contains("Digital Currency Address") {
             continue;
         }
 
@@ -159,13 +160,23 @@ mod tests {
       <idType>Digital Currency Address - ETH</idType>
       <idNumber>0x0000000000000000000000000000000000000001</idNumber>
     </id>
+    <id>
+      <idType>Digital Currency Address - USDC</idType>
+      <idNumber>0xDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF</idNumber>
+    </id>
+    <id>
+      <idType>Digital Currency Address - USDT</idType>
+      <idNumber>0x1111111111111111111111111111111111111111</idNumber>
+    </id>
   </idList>
 </sdnEntry>"#;
 
         let addrs = parse_eth_addresses_from_sdn_xml(xml);
-        assert_eq!(addrs.len(), 2);
+        assert_eq!(addrs.len(), 4);
         assert!(addrs.contains(&"0xabcdef1234567890abcdef1234567890abcdef12".to_string()));
         assert!(addrs.contains(&"0x0000000000000000000000000000000000000001".to_string()));
+        assert!(addrs.contains(&"0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef".to_string()));
+        assert!(addrs.contains(&"0x1111111111111111111111111111111111111111".to_string()));
         // Bitcoin address must not be included
         assert!(!addrs.iter().any(|a| a.contains("1A1z")));
     }

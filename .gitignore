@@ -2,12 +2,12 @@
 **/out/
 **/cache/
 **/broadcast/
-logs/
-**/logs/
 .anvil1.pid
 .anvil2.pid
 .env
 .config/
+.logs/
+**/logs/
 
 # Nested dependency lockfiles (e.g. oif-contracts libs) — reduces PR diff
 **/lib/**/package-lock.json

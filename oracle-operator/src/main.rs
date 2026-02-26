@@ -48,12 +48,12 @@ fn setup_logging(log_dir: &PathBuf) -> Result<tracing_appender::non_blocking::Wo
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Setup logging to ./logs/oracle
-    let log_dir = PathBuf::from("./logs/oracle");
+    // Setup logging to ./.logs/oracle
+    let log_dir = PathBuf::from("./.logs/oracle");
     let _guard = setup_logging(&log_dir)?;
 
     info!("Starting Oracle Operator Service");
-    info!("Logs written to {:?}", log_dir);
+    info!("Logs written to {:?}", log_dir.canonicalize().unwrap_or(log_dir.clone()));
 
     // Load config
     let config_path =

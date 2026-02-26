@@ -459,7 +459,7 @@ mvp:
 ## clean: Remove generated files and Docker volumes
 clean:
 	@rm -rf .config
-	@rm -rf logs
+	@rm -rf .logs
 	@rm -f .anvil1.pid .anvil2.pid
 	@docker compose down -v 2>/dev/null || true
 	@# Clean Hyperlane deployment artifacts so hyperlane-init redeploys on next start
