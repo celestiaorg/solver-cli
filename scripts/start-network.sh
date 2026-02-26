@@ -22,12 +22,6 @@ step "Stopping any running services..."
 make stop 2>/dev/null || true
 success "Services stopped"
 
-# ── Clean previous state ─────────────────────────────────────────────────────
-
-step "Cleaning previous state..."
-make clean 2>/dev/null || true
-success "Cleaned"
-
 # ── Build Docker images ──────────────────────────────────────────────────────
 
 if [ "$SKIP_DOCKER" = false ]; then
