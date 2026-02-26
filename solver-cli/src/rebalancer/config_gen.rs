@@ -93,7 +93,7 @@ decimals = {decimals}
 
 poll_interval_seconds = 30
 max_parallel_transfers = 2
-dry_run = true
+dry_run = false
 
 [execution]
 min_transfer_bps = 50
