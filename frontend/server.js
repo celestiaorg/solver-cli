@@ -467,15 +467,16 @@ app.post('/api/rebalance', async (req, res) => {
     console.log(`[rebalance] Initial dst balance: ${initialDstBal}`);
 
     // 4. Derive Celestia forwarding address
-    const { execSync } = await import('child_process');
-    const forwardAddr = execSync(
-      `docker exec forwarding-relayer forwarding-relayer derive-address --dest-domain ${dst.domainId} --dest-recipient ${solverPadded}`,
-      { encoding: 'utf8', timeout: 10000 }
-    ).trim();
+    const forwardingBackend = process.env.FORWARDING_BACKEND || 'http://127.0.0.1:8080';
+    const addrResp = await fetch(`${forwardingBackend}/forwarding-address?dest_domain=${dst.domainId}&dest_recipient=${solverPadded}`);
+    if (!addrResp.ok) {
+      const body = await addrResp.text();
+      throw new Error(`Failed to derive forwarding address: ${body}`);
+    }
+    const { address: forwardAddr } = await addrResp.json();
     console.log(`[rebalance] Forwarding address: ${forwardAddr}`);
 
     // 5. Register forwarding request with backend
-    const forwardingBackend = process.env.FORWARDING_BACKEND || 'http://127.0.0.1:8080';
     const registerResp = await fetch(`${forwardingBackend}/forwarding-requests`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
