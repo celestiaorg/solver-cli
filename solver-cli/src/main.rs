@@ -1,6 +1,7 @@
 mod chain;
 mod commands;
 mod deployment;
+mod rebalancer;
 mod solver;
 mod state;
 mod utils;
@@ -12,7 +13,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use commands::{
     balances::BalancesCommand, chain::ChainCommand, configure::ConfigureCommand,
     deploy::DeployCommand, fund::FundCommand, init::InitCommand, intent::IntentCommand,
-    order::OrderCommand, solver::SolverCommand, token::TokenCommand,
+    order::OrderCommand, rebalancer::RebalancerCommand, solver::SolverCommand, token::TokenCommand,
 };
 
 #[derive(Parser)]
@@ -74,6 +75,10 @@ enum Commands {
 
     /// Check token balances on all chains
     Balances(BalancesCommand),
+
+    /// Rebalancer service management
+    #[command(subcommand)]
+    Rebalancer(RebalancerCommand),
 }
 
 fn setup_logging(level: &str) -> anyhow::Result<()> {
@@ -108,10 +113,11 @@ async fn main() -> anyhow::Result<()> {
         Commands::Intent(cmd) => cmd.run(cli.output).await,
         Commands::Order(cmd) => cmd.run(cli.output).await,
         Commands::Balances(cmd) => cmd.run(cli.output).await,
+        Commands::Rebalancer(cmd) => cmd.run(cli.output).await,
     };
 
     if let Err(e) = result {
-        tracing::error!("Command failed: {}", e);
+        tracing::error!("Command failed:\n{:#}", e);
         std::process::exit(1);
     }
 

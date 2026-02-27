@@ -222,6 +222,15 @@ operator-start:
 operator: operator-start
 .PHONY: operator
 
+## rebalancer-start: Start the rebalancer service
+rebalancer-start: build
+	@$(SOLVER_CLI) rebalancer start
+.PHONY: rebalancer-start
+
+# Alias for convenience
+rebalancer: rebalancer-start
+.PHONY: rebalancer
+
 ## aggregator-start: Start the OIF aggregator service
 aggregator-start:
 	@echo "Starting OIF aggregator on port 4000..."
@@ -429,10 +438,9 @@ setup: init deploy-permit2 deploy configure fund fund-operator fund-user
 	@echo "  1. make aggregator - Start OIF aggregator (in separate terminal)"
 	@echo "  2. make solver - Start solver service (in another terminal)"
 	@echo "  3. make operator - Start oracle operator service (in another terminal)"
-	@echo "  4. make intent - Submit a test intent"
-	@echo "  5. make balances - Check balances"
-	@echo "  6. make rebalance - Bridge USDC anvil1 -> Celestia -> anvil2"
-	@echo "     make rebalance-back - Bridge USDC anvil2 -> Celestia -> anvil1"
+	@echo "  4. make rebalancer - Start rebalancer service (in another terminal)"
+	@echo "  5. make intent - Submit a test intent"
+	@echo "  6. make balances - Check balances"
 .PHONY: setup
 
 ## reset: Clean and reinitialize everything

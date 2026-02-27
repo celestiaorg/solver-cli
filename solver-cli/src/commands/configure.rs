@@ -4,6 +4,7 @@ use std::env;
 use std::path::PathBuf;
 
 use crate::chain::ChainClient;
+use crate::rebalancer::RebalancerConfigGenerator;
 use crate::solver::ConfigGenerator;
 use crate::state::StateManager;
 use crate::utils::*;
@@ -86,6 +87,14 @@ impl ConfigureCommand {
             aggregator_config_path
         ));
 
+        // Generate rebalancer config
+        let rebalancer_config_path = project_dir.join(".config/rebalancer.toml");
+        RebalancerConfigGenerator::write_config(&state, &rebalancer_config_path).await?;
+        print_success(&format!(
+            "Rebalancer config written to {:?}",
+            rebalancer_config_path
+        ));
+
         // Generate Hyperlane relayer config
         let hyperlane_config_path = project_dir.join(".config/hyperlane-relayer.json");
         ConfigGenerator::write_hyperlane_relayer_config(&state, &hyperlane_config_path).await?;
@@ -113,6 +122,7 @@ impl ConfigureCommand {
                 "solver_id": self.solver_id,
                 "solver_address": format!("{:?}", solver_address),
                 "config_path": config_path.to_string_lossy(),
+                "rebalancer_config_path": rebalancer_config_path.to_string_lossy(),
             }))?;
         }
 

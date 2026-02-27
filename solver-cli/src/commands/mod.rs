@@ -6,5 +6,6 @@ pub mod fund;
 pub mod init;
 pub mod intent;
 pub mod order;
+pub mod rebalancer;
 pub mod solver;
 pub mod token;
