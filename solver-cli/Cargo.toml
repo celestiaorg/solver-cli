@@ -67,6 +67,7 @@ solver-config = { path = "../oif/oif-solver/crates/solver-config", optional = tr
 
 # OIF solver components (optional, for solver runtime)
 solver-service = { path = "../oif/oif-solver/crates/solver-service", optional = true }
+rebalancer = { path = "../rebalancer" }
 
 [dev-dependencies]
 assert_cmd = "2.0"

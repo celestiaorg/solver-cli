@@ -40,6 +40,15 @@ Default setup: local Evolve ↔ Ethereum Sepolia, but easily extensible to N cha
 │       ├── main.rs
 │       ├── config.rs
 │       └── operator.rs
+├── rebalancer/              # Independent inventory rebalancer service
+│   ├── Cargo.toml
+│   └── src/
+│       ├── main.rs
+│       ├── config.rs
+│       ├── service.rs
+│       ├── planner.rs
+│       ├── client.rs
+│       └── signer.rs
 ├── oif/
 │   ├── oif-contracts/       # Solidity contracts (foundry)
 │   │   ├── src/
@@ -48,8 +57,9 @@ Default setup: local Evolve ↔ Ethereum Sepolia, but easily extensible to N cha
 │   └── oif-solver/          # Core solver engine
 │       ├── config/demo/     # Generated solver config
 │       └── crates/
-└── config/                  # Generated configs (gitignored)
+└── .config/                 # Generated configs/state (gitignored)
     ├── solver.toml          # Solver configuration
+    ├── rebalancer.toml      # Rebalancer configuration
     └── oracle.toml          # Oracle operator configuration
 ```
 
@@ -57,6 +67,7 @@ Notes:
 - `oif/oif-contracts/broadcast/` contains deployment receipts
 - `oif/oif-solver/config/demo/` has generated solver config (networks.toml, gas.toml)
 - `.config/state.json` tracks CLI state
+- `.config/rebalancer.toml` stores rebalancer configuration
 
 ---
 
@@ -187,6 +198,7 @@ For local E2E testing, you CAN use the same key for both (simpler setup), but un
 - **Foundry**: Contract compilation and deployment via forge scripts
 - **OIF Solver**: Core solver engine from `oif/oif-solver/`
 - **Oracle Operator**: Independent service that signs attestations
+- **Rebalancer**: Independent inventory balancing service for cross-chain token distribution
 
 Hard requirements:
 - Everything runnable via Make targets
@@ -216,6 +228,11 @@ make operator-start (or just: make operator)
 - watches ALL chains for OutputFilled events
 - signs attestations with operator key
 - submits to CentralizedOracle contracts on source chains
+
+make rebalancer-start (or just: make rebalancer)
+- starts rebalancer service using `.config/rebalancer.toml`
+- monitors per-chain inventory balances
+- plans and submits Hyperlane `transferRemote` rebalancing transfers (unless `dry_run = true`)
 
 make intent
 - runs `solver-cli intent submit` (defaults to first two chains)
@@ -250,6 +267,10 @@ solver-cli intent status --id <id>
 
 solver-cli balances            # Check balances on all chains
 solver-cli balances --chain sepolia  # Check balances on specific chain
+
+solver-cli rebalancer start                    # Start rebalancer (continuous)
+solver-cli rebalancer start --once             # Run one rebalance cycle
+solver-cli rebalancer start --config .config/rebalancer.toml
 ```
 
 ### Architecture
@@ -282,6 +303,7 @@ All state and generated configs live in `.config/`:
 - `.config/state.json` - Deployed contract addresses, tokens, solver address, intent history
 - `.config/solver.toml` - Solver configuration (all chains, all-to-all routes)
 - `.config/oracle.toml` - Oracle operator configuration
+- `.config/rebalancer.toml` - Rebalancer configuration
 - `.config/aggregator.json` - OIF Aggregator configuration
 - `.config/oracle-state.json` - Oracle operator runtime state (block tracking)
 
@@ -304,6 +326,7 @@ pub struct ChainConfig {
 `solver-cli configure` generates all configs into `.config/`:
 - `.config/solver.toml` - Solver configuration with all chains and all-to-all routes
 - `.config/oracle.toml` - Oracle operator configuration for all chains
+- `.config/rebalancer.toml` - Rebalancer configuration for inventory balancing
 - `.config/aggregator.json` - Aggregator configuration with supported asset routes
 
 ---
@@ -380,7 +403,42 @@ See [AGGREGATOR_INTEGRATION.md](AGGREGATOR_INTEGRATION.md) for detailed integrat
 
 ---
 
-## 9) Output Formatting
+## 9) Rebalancer Service
+
+The system includes an independent **Rebalancer** service that keeps solver inventory distributed across chains according to configured weights.
+
+### Rebalancer Configuration
+
+Generated at `.config/rebalancer.toml`:
+- Poll interval and execution limits (`poll_interval_seconds`, transfer bps bounds)
+- Per-chain signer/account settings
+- Per-asset token settings (`type`, `address`, `collateral_token`)
+- Weight and min-weight thresholds for rebalance triggers
+
+Signer behavior:
+- `type = "env"` loads `REBALANCER_<CHAIN_NAME>_PK` first, then `REBALANCER_PRIVATE_KEY`
+- `type = "file"` uses explicit private key string
+- `type = "aws_kms"` uses KMS key id + region
+
+### Running Rebalancer
+
+```bash
+# Continuous mode
+make rebalancer
+
+# Single cycle
+solver-cli rebalancer start --once
+```
+
+Rebalancer behavior:
+- Polls balances and detects deficit chains (below `min_weight`)
+- Plans surplus -> deficit transfers
+- Uses Hyperlane `quoteTransferRemote` + `transferRemote` on `collateral_token`
+- Skips on-chain submission when `dry_run = true`
+
+---
+
+## 10) Output Formatting
 
 CLI outputs formatted summaries (for any number of chains):
 
@@ -399,7 +457,7 @@ CLI outputs formatted summaries (for any number of chains):
 
 ---
 
-## 10) Quick Start
+## 11) Quick Start
 
 ### Standard Setup (Direct to Chain)
 
@@ -416,10 +474,13 @@ make solver
 # 4. Start oracle operator (in another terminal)
 make operator
 
-# 5. Submit intent
+# 5. Start rebalancer (optional, for inventory balancing)
+make rebalancer
+
+# 6. Submit intent
 make intent
 
-# 6. Verify balances
+# 7. Verify balances
 make balances
 ```
 
@@ -441,10 +502,13 @@ make solver
 # 5. Start oracle operator (Terminal 3)
 make operator
 
-# 6. Submit intent
+# 6. Start rebalancer (Terminal 4, optional)
+make rebalancer
+
+# 7. Submit intent
 make intent
 
-# 7. Verify balances
+# 8. Verify balances
 make balances
 ```
 
@@ -452,15 +516,17 @@ make balances
 - **Solver**: Fills orders on destination chain
 - **Oracle Operator**: Signs attestations
 - **Aggregator** (optional): Aggregates quotes from multiple solvers
+- **Rebalancer** (optional): Maintains cross-chain inventory distribution
 
 ---
 
-## 11) Acceptance Checklist
+## 12) Acceptance Checklist
 
 - [x] `make deploy`: deploys fresh contracts (including CentralizedOracle), prints addresses
 - [x] `make aggregator`: starts OIF aggregator on port 4000
 - [x] `make solver`: starts solver watching all chains (with HTTP API on port 3000)
 - [x] `make operator`: starts oracle operator (separate service)
+- [x] `make rebalancer`: starts inventory rebalancer service
 - [x] `make intent`: submits intent
   - Solver fills on destination
   - Oracle operator signs attestation

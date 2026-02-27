@@ -5,6 +5,12 @@
 .anvil1.pid
 .anvil2.pid
 .env
+config/
+.solver
+.rebalancer
+.docs/
+.DS_Store
+.claude
 .config/
 .logs/
 **/logs/
