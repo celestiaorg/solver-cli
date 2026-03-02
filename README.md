@@ -10,6 +10,7 @@ This CLI deploys OIF contracts, runs a solver, and executes cross-chain token tr
 | -------------------------------------------------- | --------------------------------------------------- |
 | [Deploy New Token](docs/deploy-new-token.md)       | Deploy a new token alongside USDC with Hyperlane     |
 | [Add Chain: Sepolia](docs/add-chain-sepolia.md)    | Add Sepolia testnet to a running anvil1 + anvil2 setup |
+| [Import Key to AWS KMS](docs/aws-kms-key-import.md) | Import an existing EVM key into AWS KMS for signer use |
 
 
 ## Prerequisites
@@ -285,4 +286,3 @@ cd solver-cli && cargo test
 # Build contracts
 cd oif/oif-contracts && forge build
 ```
-

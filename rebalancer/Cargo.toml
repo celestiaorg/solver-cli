@@ -20,6 +20,7 @@ alloy = { version = "1.0", features = [
     "signer-aws",
 ] }
 anyhow = "1.0"
+aws-config = { version = "=1.8.13", features = ["rt-tokio", "credentials-login"] }
 bech32 = "0.11"
 clap = { version = "4.4", features = ["derive", "env"] }
 hex = "0.4"
