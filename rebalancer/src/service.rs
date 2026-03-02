@@ -12,7 +12,7 @@ use crate::planner::{format_raw_u128, format_token_amount, AssetPlan, TransferPl
 pub struct RebalancerService {
     config: RebalancerConfig,
     clients: HashMap<u64, ChainClient>,
-    forwarding_http: reqwest::Client,
+    forwarding_client: reqwest::Client,
     asset_totals: HashMap<String, U256>,
     cycle: u64,
 }
@@ -30,7 +30,7 @@ impl RebalancerService {
         let mut service = Self {
             config,
             clients,
-            forwarding_http: reqwest::Client::new(),
+            forwarding_client: reqwest::Client::new(),
             asset_totals: HashMap::new(),
             cycle: 0,
         };
@@ -96,7 +96,7 @@ impl RebalancerService {
     }
 
     async fn process_asset(&mut self, asset: &AssetConfig) -> Result<()> {
-        let (observed_balances, errors) = self.poll_balances(asset).await?;
+        let (balances, errors) = self.poll_balances(asset).await?;
 
         if !errors.is_empty() {
             warn!(
@@ -109,14 +109,14 @@ impl RebalancerService {
             return Ok(());
         }
 
-        let observed_total = sum_balances(&observed_balances);
+        let observed_total = sum_balances(&balances);
         let total_balance = *self.asset_totals.get(&asset.symbol).with_context(|| {
             format!(
                 "Missing startup total_balance for asset {}. Restart service to recompute totals",
                 asset.symbol
             )
         })?;
-        let plan = AssetPlan::new(asset, &observed_balances, total_balance)?;
+        let plan = AssetPlan::new(asset, &balances, total_balance)?;
 
         let (min_transfer_raw, max_transfer_raw) = transfer_size_bounds_raw(
             total_balance,
@@ -248,7 +248,7 @@ impl RebalancerService {
     }
 
     async fn bootstrap_total_balance_for_asset(&self, asset: &AssetConfig) -> Result<U256> {
-        let (observed_balances, errors) = self.poll_balances(asset).await?;
+        let (balances, errors) = self.poll_balances(asset).await?;
         if !errors.is_empty() {
             let mut details = errors.join("; ");
             if details.is_empty() {
@@ -260,7 +260,7 @@ impl RebalancerService {
                 details
             );
         }
-        startup_total_from_snapshot(asset, &observed_balances)
+        startup_total_from_snapshot(asset, &balances)
     }
 
     async fn poll_balances(
@@ -549,7 +549,7 @@ impl RebalancerService {
         };
 
         let created_id = send_forwarding_request(
-            &self.forwarding_http,
+            &self.forwarding_client,
             &self.config.forwarding.service_url,
             &create_req,
         )
