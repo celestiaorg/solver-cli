@@ -96,7 +96,7 @@ impl RebalancerService {
     }
 
     async fn process_asset(&mut self, asset: &AssetConfig) -> Result<()> {
-        let (observed_balances, errors) = self.poll_observed_balances(asset).await?;
+        let (observed_balances, errors) = self.poll_balances(asset).await?;
 
         if !errors.is_empty() {
             warn!(
@@ -248,7 +248,7 @@ impl RebalancerService {
     }
 
     async fn bootstrap_total_balance_for_asset(&self, asset: &AssetConfig) -> Result<U256> {
-        let (observed_balances, errors) = self.poll_observed_balances(asset).await?;
+        let (observed_balances, errors) = self.poll_balances(asset).await?;
         if !errors.is_empty() {
             let mut details = errors.join("; ");
             if details.is_empty() {
@@ -263,7 +263,7 @@ impl RebalancerService {
         startup_total_from_snapshot(asset, &observed_balances)
     }
 
-    async fn poll_observed_balances(
+    async fn poll_balances(
         &self,
         asset: &AssetConfig,
     ) -> Result<(BTreeMap<u64, U256>, Vec<String>)> {
@@ -384,6 +384,7 @@ impl RebalancerService {
                 .config
                 .chain_by_id(transfer.source_chain_id)
                 .with_context(|| format!("Unknown source chain {}", transfer.source_chain_id))?;
+
             let destination_chain = self
                 .config
                 .chain_by_id(transfer.destination_chain_id)
@@ -393,6 +394,7 @@ impl RebalancerService {
                         transfer.destination_chain_id
                     )
                 })?;
+
             let source_token_config = token_config_for_chain(asset, transfer.source_chain_id)
                 .with_context(|| {
                     format!(
@@ -400,6 +402,7 @@ impl RebalancerService {
                         asset.symbol, transfer.source_chain_id
                     )
                 })?;
+
             let source_collateral_token =
                 collateral_token_for_chain(asset, transfer.source_chain_id).with_context(|| {
                     format!(
@@ -407,6 +410,7 @@ impl RebalancerService {
                         asset.symbol, transfer.source_chain_id
                     )
                 })?;
+
             let source_client = self
                 .clients
                 .get(&transfer.source_chain_id)
@@ -416,13 +420,12 @@ impl RebalancerService {
                         source_chain.name, source_chain.chain_id
                     )
                 })?;
+
             let transfer_amount = U256::from(transfer.amount_raw);
-            let original_dest_domain = destination_chain.domain_id;
-            let original_dest_recipient = evm_address_to_bytes32(destination_chain.account_address);
-            let forward_address = match ForwardAddress::derive(
-                original_dest_domain,
-                original_dest_recipient,
-            ) {
+
+            let domain = destination_chain.domain_id;
+            let recipient = evm_address_to_bytes32(destination_chain.account_address);
+            let forward_addr = match ForwardAddress::derive(domain, recipient) {
                 Ok(value) => value,
                 Err(err) => {
                     warn!(
@@ -430,31 +433,16 @@ impl RebalancerService {
                             asset.symbol,
                             source_chain.name,
                             destination_chain.name,
-                            original_dest_domain,
-                            bytes32_to_hex(original_dest_recipient),
+                            domain,
+                            bytes32_to_hex(recipient),
                             err
                         );
                     continue;
                 }
             };
-            let forward_addr_bech32 = match forward_address.to_bech32() {
-                Ok(value) => value,
-                Err(err) => {
-                    warn!(
-                        "Asset {} route {} -> {} forwarding bech32 encoding failed:\n{:#}",
-                        asset.symbol, source_chain.name, destination_chain.name, err
-                    );
-                    continue;
-                }
-            };
-            let forwarding_recipient = forward_address.to_address();
 
             if let Err(err) = self
-                .register_forwarding_request(
-                    &forward_addr_bech32,
-                    original_dest_domain,
-                    original_dest_recipient,
-                )
+                .register_forwarding_request(&forward_addr, domain, recipient)
                 .await
             {
                 warn!(
@@ -468,7 +456,7 @@ impl RebalancerService {
                 .quote_transfer_remote(
                     source_collateral_token,
                     self.config.forwarding.domain_id,
-                    forwarding_recipient,
+                    forward_addr.to_address(),
                     transfer_amount,
                 )
                 .await
@@ -489,13 +477,13 @@ impl RebalancerService {
                 source_chain.name,
                 destination_chain.name,
                 self.config.forwarding.domain_id,
-                original_dest_domain,
+                domain,
                 asset_type_label(source_token_config.asset_type),
                 format_raw_u128(transfer.amount_raw, asset.decimals),
                 asset.symbol,
                 quote.native_fee,
                 source_collateral_token,
-                forward_addr_bech32
+                forward_addr.to_bech32()?,
             );
             for (idx, entry) in quote.entries.iter().enumerate() {
                 debug!(
@@ -505,7 +493,7 @@ impl RebalancerService {
                     destination_chain.name,
                     idx,
                     self.config.forwarding.domain_id,
-                    original_dest_domain,
+                    domain,
                     entry.token,
                     entry.amount
                 );
@@ -515,7 +503,7 @@ impl RebalancerService {
                 .submit_transfer_remote(
                     source_collateral_token,
                     self.config.forwarding.domain_id,
-                    forwarding_recipient,
+                    forward_addr.to_address(),
                     transfer_amount,
                     quote.native_fee,
                 )
@@ -550,11 +538,16 @@ impl RebalancerService {
 
     async fn register_forwarding_request(
         &self,
-        forward_addr: &str,
+        forward_addr: &ForwardAddress,
         dest_domain: u32,
         dest_recipient: FixedBytes<32>,
     ) -> Result<()> {
-        let create_req = build_forwarding_request(forward_addr, dest_domain, dest_recipient);
+        let create_req = CreateForwardingRequest {
+            forward_addr: forward_addr.to_bech32()?,
+            dest_domain,
+            dest_recipient: bytes32_to_hex(dest_recipient),
+        };
+
         let created_id = send_forwarding_request(
             &self.forwarding_http,
             &self.config.forwarding.service_url,
@@ -774,18 +767,6 @@ impl RebalancerService {
             plan.symbol,
             transfer.amount_raw
         );
-    }
-}
-
-fn build_forwarding_request(
-    forward_addr: &str,
-    dest_domain: u32,
-    dest_recipient: FixedBytes<32>,
-) -> CreateForwardingRequest {
-    CreateForwardingRequest {
-        forward_addr: forward_addr.to_string(),
-        dest_domain,
-        dest_recipient: bytes32_to_hex(dest_recipient),
     }
 }
 
@@ -1157,15 +1138,12 @@ mod tests {
 
     #[test]
     fn build_forwarding_request_uses_original_destination_fields() {
-        let dest_recipient: FixedBytes<32> =
-            "0x000000000000000000000000d5e85e86fc692cedad6d6992f1f0ccf273e39913"
-                .parse()
-                .unwrap();
-        let req = build_forwarding_request(
-            "celestia1mt08w7xjtr26426wx5xvfa33ctnmt4gyxfqytj",
-            31338,
-            dest_recipient,
-        );
+        let req = CreateForwardingRequest {
+            forward_addr: "celestia1mt08w7xjtr26426wx5xvfa33ctnmt4gyxfqytj".to_string(),
+            dest_domain: 31338,
+            dest_recipient: "0x000000000000000000000000d5e85e86fc692cedad6d6992f1f0ccf273e39913"
+                .to_string(),
+        };
 
         assert_eq!(
             req.forward_addr,
@@ -1180,13 +1158,13 @@ mod tests {
 
     #[tokio::test]
     async fn send_forwarding_request_returns_error_on_transport_failure() {
-        let req = build_forwarding_request(
-            "celestia1test",
-            31338,
-            "0x0000000000000000000000000000000000000000000000000000000000000001"
-                .parse()
-                .unwrap(),
-        );
+        let req = CreateForwardingRequest {
+            forward_addr: "celestia1test".to_string(),
+            dest_domain: 31338,
+            dest_recipient: "0x0000000000000000000000000000000000000000000000000000000000000001"
+                .to_string(),
+        };
+
         let client = reqwest::Client::new();
         let err = send_forwarding_request(&client, "http://127.0.0.1:1", &req)
             .await
