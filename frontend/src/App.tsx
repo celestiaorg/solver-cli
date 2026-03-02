@@ -4,7 +4,7 @@ import { useAccount, useDisconnect, useWriteContract, useSignTypedData, useSwitc
 import { parseAbi } from 'viem'
 import { api, Config, AllBalances, Quote, OrderStatus } from './api'
 
-// ── Utility ──────────────────────────────────────────────────────────────────
+// ── Utilities ─────────────────────────────────────────────────────────────────
 
 function truncAddr(addr: string) {
   return addr ? `${addr.slice(0, 6)}...${addr.slice(-4)}` : '—'
@@ -24,7 +24,6 @@ function formatETH(val: string) {
 
 type Step = 'idle' | 'quoting' | 'quoted' | 'signing' | 'submitted' | 'polling' | 'done' | 'error'
 
-/** Normalize status that may be a string or an object like {"failed": "reason"} */
 function normalizeStatus(status: unknown): string {
   if (typeof status === 'string') return status
   if (status && typeof status === 'object') {
@@ -34,48 +33,36 @@ function normalizeStatus(status: unknown): string {
   return 'unknown'
 }
 
-// ── Status Dot ───────────────────────────────────────────────────────────────
-
-function StatusDot({ ok }: { ok: boolean }) {
-  return (
-    <span className={`inline-block w-2 h-2 rounded-full ${ok ? 'bg-emerald-400' : 'bg-red-400'}`} />
-  )
-}
-
-// ── Spinner ──────────────────────────────────────────────────────────────────
+// ── Primitives ────────────────────────────────────────────────────────────────
 
 function Spinner({ size = 16 }: { size?: number }) {
   return (
-    <svg className="animate-spin-slow" width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round"
-        strokeDasharray="32" strokeDashoffset="12" opacity="0.6" />
+    <svg className="animate-spin-slow shrink-0" width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+        strokeDasharray="40" strokeDashoffset="14" opacity="0.5" />
     </svg>
   )
 }
 
-// ── Chain Badge ──────────────────────────────────────────────────────────────
-
-const CHAIN_COLORS: Record<string, string> = {
-  anvil1: 'from-violet-500 to-purple-600',
-  anvil2: 'from-cyan-500 to-blue-600',
-  sepolia: 'from-amber-500 to-orange-600',
+const CHAIN_GRADIENTS: Record<string, string> = {
+  anvil1:   'from-violet-500 to-purple-600',
+  anvil2:   'from-cyan-400 to-blue-500',
+  sepolia:  'from-amber-400 to-orange-500',
   arbitrum: 'from-sky-400 to-blue-500',
 }
 
 function ChainBadge({ name }: { name: string }) {
-  const gradient = CHAIN_COLORS[name] || 'from-gray-500 to-gray-600'
+  const g = CHAIN_GRADIENTS[name] || 'from-slate-500 to-slate-600'
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-semibold
-      bg-gradient-to-r ${gradient} text-white`}>
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold bg-gradient-to-r ${g} text-white tracking-wide uppercase`}>
       {name}
     </span>
   )
 }
 
-// ── App ──────────────────────────────────────────────────────────────────────
+// ── App ───────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  // Wallet
   const { open, close } = useAppKit()
   const { address: connectedAddress, isConnected } = useAccount()
   const { disconnect } = useDisconnect()
@@ -83,376 +70,419 @@ export default function App() {
   const { signTypedDataAsync } = useSignTypedData()
   const { switchChainAsync } = useSwitchChain()
 
-  // State
-  const [config, setConfig] = useState<Config | null>(null)
+  const [config, setConfig]     = useState<Config | null>(null)
   const [balances, setBalances] = useState<AllBalances | null>(null)
-  const [health, setHealth] = useState({ backend: 'down', aggregator: 'down' })
-  const [loading, setLoading] = useState(true)
+  const [health, setHealth]     = useState({ backend: 'down', aggregator: 'down' })
+  const [loading, setLoading]   = useState(true)
 
-  // Swap state
   const [fromChain, setFromChain] = useState('')
-  const [toChain, setToChain] = useState('')
-  const [amount, setAmount] = useState('1')
-  const [asset, setAsset] = useState('')
+  const [toChain, setToChain]     = useState('')
+  const [amount, setAmount]       = useState('1')
+  const [asset, setAsset]         = useState('')
 
-  // Flow state
-  const [step, setStep] = useState<Step>('idle')
-  const [quote, setQuote] = useState<Quote | null>(null)
-  const [orderId, setOrderId] = useState('')
+  const [routeType, setRouteType]     = useState<'fast' | 'slow'>('fast')
+
+  const [step, setStep]               = useState<Step>('idle')
+  const [quote, setQuote]             = useState<Quote | null>(null)
+  const [orderId, setOrderId]         = useState('')
   const [orderStatus, setOrderStatus] = useState<OrderStatus | null>(null)
-  const [error, setError] = useState('')
+  const [error, setError]             = useState('')
 
-  // Faucet state
+  const [slowLoading, setSlowLoading] = useState(false)
+  const [slowMsg, setSlowMsg]         = useState('')
+
   const [faucetLoading, setFaucetLoading] = useState<string | null>(null)
-  const [faucetMsg, setFaucetMsg] = useState('')
-
-  // Rebalance state
+  const [faucetMsg, setFaucetMsg]         = useState('')
   const [rebalanceLoading, setRebalanceLoading] = useState<string | null>(null)
-  const [rebalanceMsg, setRebalanceMsg] = useState('')
-  const [rebalanceToken, setRebalanceToken] = useState('USDC')
-  const [rebalanceFrom, setRebalanceFrom] = useState('anvil1')
-  const [rebalanceTo, setRebalanceTo] = useState('anvil2')
+  const [rebalanceMsg, setRebalanceMsg]         = useState('')
+  const [rebalanceToken, setRebalanceToken]     = useState('USDC')
+  const [rebalanceFrom, setRebalanceFrom]       = useState('anvil1')
+  const [rebalanceTo, setRebalanceTo]           = useState('anvil2')
+  const [rightTab, setRightTab]                 = useState<'balances' | 'tools'>('balances')
 
-  // Polling ref
   const pollRef = useRef<ReturnType<typeof setInterval>>()
 
-  // Compute tokens available on both selected chains
   const availableTokens = (() => {
     if (!config || !fromChain || !toChain) return [] as string[]
-    const fromTokens = Object.keys(config.chains[fromChain]?.tokens ?? {})
-    const toTokens = new Set(Object.keys(config.chains[toChain]?.tokens ?? {}))
-    return fromTokens.filter(s => toTokens.has(s))
+    const from = Object.keys(config.chains[fromChain]?.tokens ?? {})
+    const to   = new Set(Object.keys(config.chains[toChain]?.tokens ?? {}))
+    return from.filter(s => to.has(s))
   })()
 
-  // Auto-select first available token when chains change
   useEffect(() => {
-    if (availableTokens.length > 0 && !availableTokens.includes(asset)) {
+    if (availableTokens.length > 0 && !availableTokens.includes(asset))
       setAsset(availableTokens[0])
-    }
   }, [fromChain, toChain, availableTokens, asset])
 
-  // Get decimals for the currently selected token
   const selectedTokenDecimals = config && fromChain && asset
-    ? config.chains[fromChain]?.tokens?.[asset]?.decimals ?? 6
-    : 6
+    ? config.chains[fromChain]?.tokens?.[asset]?.decimals ?? 6 : 6
 
-  // ── Load config + health on mount ────────────────────────────────────────
+  // ── Data ──────────────────────────────────────────────────────────────────
 
   const loadConfig = useCallback(async () => {
     try {
       const cfg = await api.config()
       setConfig(cfg)
-      // Default chain selection: prefer anvil1 => anvil2
-      const chainIds = Object.keys(cfg.chains)
-      const anvil1Id = chainIds.find(id => cfg.chains[id].name === 'anvil1')
-      const anvil2Id = chainIds.find(id => cfg.chains[id].name === 'anvil2')
-      if (anvil1Id && anvil2Id) {
-        setFromChain(anvil1Id)
-        setToChain(anvil2Id)
-      } else if (chainIds.length >= 2) {
-        setFromChain(chainIds[0])
-        setToChain(chainIds[1])
-      }
-    } catch (err) {
-      console.error('Failed to load config:', err)
-    }
+      const ids    = Object.keys(cfg.chains)
+      const a1     = ids.find(id => cfg.chains[id].name === 'anvil1')
+      const a2     = ids.find(id => cfg.chains[id].name === 'anvil2')
+      if (a1 && a2) { setFromChain(a1); setToChain(a2) }
+      else if (ids.length >= 2) { setFromChain(ids[0]); setToChain(ids[1]) }
+    } catch {}
   }, [])
 
   const loadBalances = useCallback(async () => {
     try {
       const addr = isConnected && connectedAddress ? connectedAddress : undefined
-      const bal = await api.balances(addr)
-      setBalances(bal)
-    } catch (err) {
-      console.error('Failed to load balances:', err)
-    }
+      setBalances(await api.balances(addr))
+    } catch {}
   }, [isConnected, connectedAddress])
 
   const checkHealth = useCallback(async () => {
-    try {
-      const h = await api.health()
-      setHealth(h)
-    } catch {
-      setHealth({ backend: 'down', aggregator: 'down' })
-    }
+    try { setHealth(await api.health()) }
+    catch { setHealth({ backend: 'down', aggregator: 'down' }) }
   }, [])
 
-  // Close AppKit modal when wallet connects
-  useEffect(() => {
-    if (isConnected) close()
-  }, [isConnected, close])
+  useEffect(() => { if (isConnected) close() }, [isConnected, close])
 
   useEffect(() => {
     Promise.all([loadConfig(), loadBalances(), checkHealth()]).finally(() => setLoading(false))
-    const interval = setInterval(() => {
-      loadBalances()
-      checkHealth()
-    }, 8000)
-    return () => clearInterval(interval)
+    const iv = setInterval(() => { loadBalances(); checkHealth() }, 8000)
+    return () => clearInterval(iv)
   }, [loadConfig, loadBalances, checkHealth])
 
-  // ── Quote flow ───────────────────────────────────────────────────────────
+  // ── Quote ─────────────────────────────────────────────────────────────────
 
   const handleGetQuote = async () => {
     if (!fromChain || !toChain || !amount) return
-    setStep('quoting')
-    setError('')
-    setQuote(null)
-    setOrderId('')
-    setOrderStatus(null)
-
+    setStep('quoting'); setError(''); setQuote(null); setOrderId(''); setOrderStatus(null)
     try {
       const fromId = config!.chains[fromChain].chainId
-      const toId = config!.chains[toChain].chainId
-      const rawAmount = Math.round(parseFloat(amount) * (10 ** selectedTokenDecimals)).toString()
-      const resp = await api.quote(fromId, toId, rawAmount, asset, isConnected && connectedAddress ? connectedAddress : undefined)
+      const toId   = config!.chains[toChain].chainId
+      const raw    = Math.round(parseFloat(amount) * 10 ** selectedTokenDecimals).toString()
+      const resp   = await api.quote(fromId, toId, raw, asset,
+        isConnected && connectedAddress ? connectedAddress : undefined)
       if (!resp.quotes?.length) throw new Error('No quotes returned. Is the solver running?')
-      setQuote(resp.quotes[0])
-      setStep('quoted')
-    } catch (err: any) {
-      setError(err.message)
-      setStep('error')
-    }
+      setQuote(resp.quotes[0]); setStep('quoted')
+    } catch (err: any) { setError(err.message); setStep('error') }
   }
 
   const handleAcceptQuote = async () => {
     if (!quote) return
-    setStep('signing')
-    setError('')
-
+    setStep('signing'); setError('')
     try {
-      const fromId = config!.chains[fromChain].chainId
-
+      const fromId    = config!.chains[fromChain].chainId
       if (isConnected && connectedAddress) {
-        // MetaMask flow: approve + sign client-side
         const chainInfo = config!.chains[fromChain]
-        const token = chainInfo.tokens[asset]
-
-        // Step 0: Switch MetaMask to source chain if needed
+        const token     = chainInfo.tokens[asset]
         await switchChainAsync({ chainId: fromId })
-
-        // Step 1: Approve token spending
-        // For Permit2: approve the Permit2 contract; for direct: approve the escrow
-        const payload = quote.order.payload as any
+        const payload   = quote.order.payload as any
         const isPermit2 = payload.primaryType?.includes('Permit')
-        const spender = isPermit2
-          ? (payload.domain?.verifyingContract as `0x${string}`)  // Permit2 contract
+        const spender   = isPermit2
+          ? (payload.domain?.verifyingContract as `0x${string}`)
           : (chainInfo.contracts?.input_settler_escrow as `0x${string}`)
         if (token && spender) {
           await writeContractAsync({
             address: token.address as `0x${string}`,
             abi: parseAbi(['function approve(address, uint256) returns (bool)']),
-            functionName: 'approve',
-            args: [spender, 100000000n],
-            chainId: fromId,
+            functionName: 'approve', args: [spender, 100000000n], chainId: fromId,
           })
         }
-
-        // Step 2: Sign EIP-712 typed data via MetaMask
         const types = { ...payload.types }
         delete types.EIP712Domain
-
         const domain = { ...payload.domain }
-        if (typeof domain.chainId === 'string') {
-          domain.chainId = Number(domain.chainId)
-        }
-        const rawSignature = await signTypedDataAsync({
-          domain,
-          types,
-          primaryType: payload.primaryType,
-          message: payload.message,
-        })
-
-        // Prepend signature type byte: 0x00=Permit2, 0x01=EIP-3009
-        const prefix = isPermit2 ? '0x00' : '0x01'
-        const signature = prefix + rawSignature.slice(2)
-
-        // Step 4: Submit pre-signed order to backend → aggregator
-        const resp = await api.submitSignedOrder(quote, signature)
-        setOrderId(resp.orderId)
-        setStep('polling')
-        startPolling(resp.orderId)
+        if (typeof domain.chainId === 'string') domain.chainId = Number(domain.chainId)
+        const rawSig = await signTypedDataAsync({ domain, types, primaryType: payload.primaryType, message: payload.message })
+        const sig    = (isPermit2 ? '0x00' : '0x01') + rawSig.slice(2)
+        const resp   = await api.submitSignedOrder(quote, sig)
+        setOrderId(resp.orderId); setStep('polling'); startPolling(resp.orderId)
       } else {
-        // Backend signing flow (no MetaMask)
-        const resp = await api.submitOrder(quote, fromId, asset)
-        setOrderId(resp.orderId)
-        setStep('polling')
-        startPolling(resp.orderId)
+        const resp = await api.submitOrder(quote, config!.chains[fromChain].chainId, asset)
+        setOrderId(resp.orderId); setStep('polling'); startPolling(resp.orderId)
       }
-    } catch (err: any) {
-      setError(err.message)
-      setStep('error')
-    }
+    } catch (err: any) { setError(err.message); setStep('error') }
   }
 
   const startPolling = (id: string) => {
     if (pollRef.current) clearInterval(pollRef.current)
     pollRef.current = setInterval(async () => {
       try {
-        const status = await api.orderStatus(id)
-        setOrderStatus(status)
-        const normalized = normalizeStatus(status.status)
-        if (normalized === 'finalized' || normalized === 'failed') {
-          clearInterval(pollRef.current)
-          setStep('done')
-          loadBalances() // Refresh balances after completion
+        const s = await api.orderStatus(id)
+        setOrderStatus(s)
+        const n = normalizeStatus(s.status)
+        if (n === 'finalized' || n === 'failed') {
+          clearInterval(pollRef.current); setStep('done'); loadBalances()
         }
-      } catch {
-        // Keep polling
-      }
+      } catch {}
     }, 3000)
   }
 
-  useEffect(() => {
-    return () => { if (pollRef.current) clearInterval(pollRef.current) }
-  }, [])
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
 
-  // ── Faucet ───────────────────────────────────────────────────────────────
+  // ── Faucet ────────────────────────────────────────────────────────────────
 
   const handleFaucet = async (chainName: string, type: 'gas' | 'token', symbol?: string) => {
     const key = `${chainName}-${type}${symbol ? `-${symbol}` : ''}`
-    setFaucetLoading(key)
-    setFaucetMsg('')
+    setFaucetLoading(key); setFaucetMsg('')
     try {
-      const resp = await api.faucet(chainName, type, isConnected && connectedAddress ? connectedAddress : undefined, symbol)
-      setFaucetMsg(`Sent ${resp.amount} on ${chainName}`)
-      loadBalances()
-    } catch (err: any) {
-      setFaucetMsg(`Error: ${err.message}`)
-    } finally {
-      setFaucetLoading(null)
-    }
+      const r = await api.faucet(chainName, type,
+        isConnected && connectedAddress ? connectedAddress : undefined, symbol)
+      setFaucetMsg(`Sent ${r.amount} on ${chainName}`); loadBalances()
+    } catch (err: any) { setFaucetMsg(`Error: ${err.message}`) }
+    finally { setFaucetLoading(null) }
   }
 
-  // ── Rebalance ─────────────────────────────────────────────────────────
+  // ── Rebalance ─────────────────────────────────────────────────────────────
 
   const handleRebalance = async () => {
-    setRebalanceLoading('bridge')
-    setRebalanceMsg('')
+    setRebalanceLoading('bridge'); setRebalanceMsg('')
     try {
-      const resp = await api.rebalance(rebalanceFrom, rebalanceTo, undefined, rebalanceToken)
-      setRebalanceMsg(resp.message)
-      loadBalances()
+      const r = await api.rebalance(rebalanceFrom, rebalanceTo, undefined, rebalanceToken)
+      setRebalanceMsg(r.message); loadBalances()
+    } catch (err: any) { setRebalanceMsg(`Error: ${err.message}`) }
+    finally { setRebalanceLoading(null) }
+  }
+
+  const resetFlowState = () => {
+    setStep('idle'); setQuote(null); setOrderId(''); setOrderStatus(null); setError(''); setSlowMsg('')
+  }
+
+  // ── Slow route (Celestia bridge, user → user) ─────────────────────────────
+
+  const handleSlowBridge = async () => {
+    if (!fromChain || !toChain || !amount) return
+    setSlowLoading(true); setSlowMsg('')
+    try {
+      const fromName  = config!.chains[fromChain].name
+      const toName    = config!.chains[toChain].name
+      const fromId    = config!.chains[fromChain].chainId
+      const rawAmount = Math.round(parseFloat(amount) * 10 ** selectedTokenDecimals).toString()
+
+      if (isConnected && connectedAddress) {
+        // Wallet-connected: server prepares the forwarding, wallet executes the txs
+        setSlowMsg('Preparing Celestia route…')
+        const prep = await api.bridgePrepare(fromName, toName, asset, connectedAddress, rawAmount)
+
+        await switchChainAsync({ chainId: fromId })
+
+        if (prep.needsApproval && prep.underlyingToken) {
+          setSlowMsg('Approving token…')
+          await writeContractAsync({
+            address: prep.underlyingToken as `0x${string}`,
+            abi: parseAbi(['function approve(address, uint256) returns (bool)']),
+            functionName: 'approve',
+            args: [prep.warpToken as `0x${string}`, BigInt(rawAmount)],
+            chainId: fromId,
+          })
+        }
+
+        setSlowMsg('Submitting bridge transaction…')
+        const txHash = await writeContractAsync({
+          address: prep.warpToken as `0x${string}`,
+          abi: parseAbi(['function transferRemote(uint32, bytes32, uint256) payable returns (bytes32)']),
+          functionName: 'transferRemote',
+          args: [prep.celestiaDomainId, prep.forwardingAddressBytes32 as `0x${string}`, BigInt(rawAmount)],
+          chainId: fromId,
+          value: 0n,
+        })
+
+        setSlowMsg(`Submitted (${txHash.slice(0, 10)}…). Tokens arrive in ~2 min via Celestia.`)
+        loadBalances()
+      } else {
+        // No wallet: server executes using USER_PK
+        const resp = await api.bridge(fromName, toName, rawAmount, asset)
+        setSlowMsg(resp.message)
+        loadBalances()
+      }
     } catch (err: any) {
-      setRebalanceMsg(`Error: ${err.message}`)
+      setSlowMsg(`Error: ${err.message}`)
     } finally {
-      setRebalanceLoading(null)
+      setSlowLoading(false)
     }
   }
 
-  // ── Swap chains ──────────────────────────────────────────────────────────
-
   const swapChains = () => {
-    setFromChain(toChain)
-    setToChain(fromChain)
-    setStep('idle')
-    setQuote(null)
+    setFromChain(toChain); setToChain(fromChain); resetFlowState()
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  // ── Loading ───────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="flex items-center gap-3 text-gray-400">
-          <Spinner size={24} />
-          <span>Connecting to solver...</span>
+      <div className="min-h-screen bg-surface-0 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-5">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-brand to-purple-400 flex items-center justify-center shadow-brand">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="white"/>
+            </svg>
+          </div>
+          <div className="flex items-center gap-2 text-gray-500 text-sm">
+            <Spinner size={13} /> Connecting to solver…
+          </div>
         </div>
       </div>
     )
   }
 
+  // ── Derived ───────────────────────────────────────────────────────────────
+
   const chainEntries = config
     ? Object.entries(config.chains).sort((a, b) => a[1].name.localeCompare(b[1].name))
     : []
 
-  // Parse output amount from quote preview
   let outputAmount = ''
   if (quote?.preview?.outputs?.[0]?.amount) {
-    outputAmount = (parseInt(quote.preview.outputs[0].amount) / (10 ** selectedTokenDecimals)).toFixed(2)
+    outputAmount = (parseInt(quote.preview.outputs[0].amount) / 10 ** selectedTokenDecimals).toFixed(2)
   }
 
-  const isServicesUp = health.backend === 'ok' && health.aggregator === 'ok'
+  const isServicesUp   = health.backend === 'ok' && health.aggregator === 'ok'
   const isSolverWallet = isConnected && connectedAddress && config?.solverAddress
     && connectedAddress.toLowerCase() === config.solverAddress.toLowerCase()
 
+  // ── Render ────────────────────────────────────────────────────────────────
+
   return (
-    <div className="min-h-screen bg-surface-0">
-      {/* ── Header ───────────────────────────────────────────────────── */}
-      <header className="border-b border-border px-6 py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-brand to-purple-400 flex items-center justify-center text-white font-bold text-sm">
-              O
+    <div className="min-h-screen bg-surface-0 flex flex-col overflow-hidden">
+
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <header className="relative z-50 shrink-0 bg-surface-0/80 backdrop-blur-xl"
+        style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div className="max-w-7xl mx-auto px-8 h-[58px] flex items-center justify-between">
+
+          {/* Logo */}
+          <div className="flex items-center gap-2.5">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center"
+              style={{ boxShadow: '0 0 12px rgba(124,58,237,0.4)' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="white">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+              </svg>
             </div>
-            <h1 className="text-lg font-semibold text-white">OIF Solver</h1>
-            <span className="text-xs text-gray-500 bg-surface-2 px-2 py-0.5 rounded-full">MVP</span>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-sm font-semibold text-white tracking-tight">OIF</span>
+              <span className="text-[11px] text-gray-600 font-medium">Solver</span>
+            </div>
           </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 text-xs text-gray-400">
-              <StatusDot ok={health.backend === 'ok'} />
-              <span>Backend</span>
-              <StatusDot ok={health.aggregator === 'ok'} />
-              <span>Aggregator</span>
-            </div>
-            {isConnected ? (
-              <div className="flex items-center gap-2">
-                <AppKitNetworkButton />
-                <div className="bg-surface-2 border border-brand/40 rounded-lg px-3 py-1.5 text-xs font-mono text-brand">
-                  {truncAddr(connectedAddress!)}
-                </div>
-                <button
-                  onClick={() => disconnect()}
-                  className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
-                >
-                  Disconnect
-                </button>
+
+          {/* Wallet */}
+          {isConnected ? (
+            <div className="flex items-center gap-1.5">
+              <AppKitNetworkButton />
+              <div className="flex items-center gap-1.5 bg-surface-2/80 border border-white/[0.06] rounded-lg px-2.5 py-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" style={{ boxShadow: '0 0 4px rgba(52,211,153,0.6)' }} />
+                <span className="text-[11px] font-mono text-gray-300">{truncAddr(connectedAddress!)}</span>
               </div>
-            ) : (
               <button
-                onClick={() => open()}
-                className="bg-brand hover:bg-brand-light text-white text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors"
+                onClick={() => disconnect()}
+                className="w-6 h-6 flex items-center justify-center rounded-md text-gray-700 hover:text-gray-400 hover:bg-surface-2 transition-colors"
+                title="Disconnect"
               >
-                Connect Wallet
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
               </button>
-            )}
-          </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => open()}
+              className="flex items-center gap-1.5 text-white text-[11px] font-semibold px-3.5 py-1.5 rounded-lg transition-all active:scale-[0.98]"
+              style={{ background: 'linear-gradient(135deg, #7c3aed, #6d28d9)', boxShadow: '0 0 12px rgba(124,58,237,0.3)' }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                <rect x="2" y="7" width="20" height="14" rx="2" stroke="currentColor" strokeWidth="2"/>
+                <path d="M16 14a1 1 0 1 1-2 0 1 1 0 0 1 2 0z" fill="currentColor"/>
+                <path d="M2 10h20" stroke="currentColor" strokeWidth="2"/>
+              </svg>
+              Connect Wallet
+            </button>
+          )}
         </div>
       </header>
 
-      {/* ── Main Content ─────────────────────────────────────────────── */}
-      <main className="max-w-6xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* ── Main ───────────────────────────────────────────────────────────── */}
+      <main className="relative z-10 flex-1 max-w-7xl mx-auto w-full px-8 py-10">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 items-stretch">
 
-          {/* ── Swap Card (left, spans 2 cols) ─────────────────────── */}
-          <div className="lg:col-span-2">
-            <div className="bg-surface-1 border border-border rounded-2xl p-6 animate-pulse-glow">
-              <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-5">
-                Cross-Chain Transfer
-              </h2>
+          {/* ══ Swap Card ════════════════════════════════════════════════════ */}
+          <div className="bg-surface-1 border border-border rounded-2xl shadow-card animate-pulse-glow"
+            style={{ boxShadow: '0 4px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04)' }}>
 
-              {isSolverWallet && (
-                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-4 text-xs text-amber-400">
-                  Your connected wallet is the solver address. Connect a different wallet to submit orders — the solver cannot fill orders to itself.
+            {/* Card top bar */}
+            <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-border/50">
+              <div>
+                <h2 className="text-base font-bold text-white">Transfer</h2>
+                <p className="text-[11px] text-gray-600 mt-0.5">Cross-chain via intent protocol</p>
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                <span className={`w-1.5 h-1.5 rounded-full ${isServicesUp ? 'bg-emerald-500' : 'bg-red-500'}`} />
+                {isServicesUp ? 'Ready' : 'Offline'}
+              </div>
+            </div>
+
+            <div className="p-6 space-y-2">
+
+              {/* Route toggle */}
+              <div className="grid grid-cols-2 gap-1 p-1 bg-surface-0/70 rounded-xl border border-border/60 mb-4">
+                {(['fast', 'slow'] as const).map(r => (
+                  <button
+                    key={r}
+                    onClick={() => { setRouteType(r); resetFlowState() }}
+                    className={`flex flex-col items-center gap-0.5 py-2.5 rounded-[10px] transition-all duration-150 ${
+                      routeType === r
+                        ? 'bg-surface-3 border border-border-light'
+                        : 'hover:bg-surface-2/40'
+                    }`}
+                  >
+                    <span className={`text-xs font-bold flex items-center gap-1.5 ${routeType === r ? 'text-white' : 'text-gray-600'}`}>
+                      {r === 'fast'
+                        ? <><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Fast</>
+                        : <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M2 12c1.5-3 3.5-3 5 0s3.5 3 5 0 3.5-3 5 0"/></svg> Slow</>
+                      }
+                    </span>
+                    <span className={`text-[10px] font-normal ${routeType === r ? 'text-gray-500' : 'text-gray-700'}`}>
+                      {r === 'fast' ? 'Instant · Solver' : '~2 min · Celestia'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Solver wallet warning (fast route only) */}
+              {isSolverWallet && routeType === 'fast' && (
+                <div className="flex items-start gap-2.5 bg-amber-500/[0.07] border border-amber-500/20 rounded-xl px-4 py-3 animate-fade-in">
+                  <svg className="shrink-0 mt-0.5" width="13" height="13" viewBox="0 0 24 24" fill="none">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                      stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <line x1="12" y1="9" x2="12" y2="13" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                  <p className="text-xs text-amber-400 leading-relaxed">
+                    Connected as the solver wallet — switch to a user wallet to submit orders.
+                  </p>
                 </div>
               )}
 
-              {/* From */}
-              <div className="bg-surface-2 border border-border rounded-xl p-4 mb-2">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs text-gray-500 font-medium">From</label>
+              {/* You Send */}
+              <div className="bg-surface-2 border border-border rounded-xl p-4 hover:border-border-light transition-colors group">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">You send</span>
                   {balances && fromChain && balances[fromChain] && asset && (
-                    <span className="text-xs text-gray-500">
-                      Balance: {formatToken(balances[fromChain].balances.user[asset]?.formatted ?? '0')} {asset}
-                    </span>
+                    <button
+                      onClick={() => {
+                        const b = balances[fromChain]?.balances?.user?.[asset]?.formatted ?? '0'
+                        if (parseFloat(b) > 0) { setAmount(parseFloat(b).toFixed(2)); setStep('idle'); setQuote(null) }
+                      }}
+                      className="text-[11px] text-gray-600 hover:text-brand-light transition-colors tabular-nums"
+                    >
+                      {formatToken(balances[fromChain].balances.user[asset]?.formatted ?? '0')} {asset}
+                      <span className="ml-1.5 text-brand-light font-bold">MAX</span>
+                    </button>
                   )}
                 </div>
                 <div className="flex items-center gap-3">
                   <select
                     value={fromChain}
                     onChange={e => { setFromChain(e.target.value); setStep('idle'); setQuote(null) }}
-                    className="bg-surface-3 border border-border-light rounded-lg px-3 py-2 text-white text-sm
-                      font-medium outline-none focus:border-brand transition-colors cursor-pointer min-w-[140px]"
+                    className="bg-surface-3 border border-border-light rounded-xl px-3 py-2.5 text-white text-sm
+                      font-semibold outline-none cursor-pointer min-w-[130px] transition-colors"
                   >
                     {chainEntries.map(([id, c]) => (
                       <option key={id} value={id} disabled={id === toChain}>{c.name}</option>
@@ -465,45 +495,43 @@ export default function App() {
                     placeholder="0.00"
                     min="0"
                     step="0.01"
-                    className="flex-1 bg-transparent text-2xl font-semibold text-white outline-none
-                      text-right placeholder-gray-600"
+                    className="flex-1 bg-transparent text-[30px] font-bold text-white outline-none text-right
+                      placeholder:text-surface-4 min-w-0 tabular-nums"
                   />
                   <select
                     value={asset}
                     onChange={e => { setAsset(e.target.value); setStep('idle'); setQuote(null) }}
-                    className="bg-surface-3 border border-border-light rounded-lg px-3 py-2 text-sm
-                      font-semibold text-white outline-none focus:border-brand transition-colors
-                      cursor-pointer min-w-[80px]"
+                    className="bg-surface-3 border border-border-light rounded-xl px-3 py-2.5 text-sm
+                      font-bold text-white outline-none cursor-pointer min-w-[84px] transition-colors"
                   >
-                    {availableTokens.map(sym => (
-                      <option key={sym} value={sym}>{sym}</option>
-                    ))}
+                    {availableTokens.map(sym => <option key={sym} value={sym}>{sym}</option>)}
                   </select>
                 </div>
               </div>
 
-              {/* Swap button */}
-              <div className="flex justify-center -my-1 relative z-10">
+              {/* Swap arrow */}
+              <div className="flex justify-center py-1 relative z-10">
                 <button
                   onClick={swapChains}
-                  className="bg-surface-2 border border-border hover:border-brand rounded-xl p-2
-                    transition-all hover:bg-surface-3 group"
+                  className="w-9 h-9 rounded-xl bg-surface-2 border border-border hover:border-brand/50
+                    hover:bg-surface-3 flex items-center justify-center transition-all duration-300
+                    hover:rotate-180 group"
                 >
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
-                    className="text-gray-400 group-hover:text-brand transition-colors">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
+                    className="text-gray-500 group-hover:text-brand-light transition-colors">
                     <path d="M4 6L8 2L12 6M4 10L8 14L12 10" stroke="currentColor" strokeWidth="2"
-                      strokeLinecap="round" strokeLinejoin="round" />
+                      strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
                 </button>
               </div>
 
-              {/* To */}
-              <div className="bg-surface-2 border border-border rounded-xl p-4 mt-2 mb-4">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs text-gray-500 font-medium">To</label>
+              {/* You Receive */}
+              <div className="bg-surface-2/60 border border-border rounded-xl p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">You receive</span>
                   {balances && toChain && balances[toChain] && asset && (
-                    <span className="text-xs text-gray-500">
-                      Balance: {formatToken(balances[toChain].balances.user[asset]?.formatted ?? '0')} {asset}
+                    <span className="text-[11px] text-gray-600 tabular-nums">
+                      {formatToken(balances[toChain].balances.user[asset]?.formatted ?? '0')} {asset}
                     </span>
                   )}
                 </div>
@@ -511,405 +539,436 @@ export default function App() {
                   <select
                     value={toChain}
                     onChange={e => { setToChain(e.target.value); setStep('idle'); setQuote(null) }}
-                    className="bg-surface-3 border border-border-light rounded-lg px-3 py-2 text-white text-sm
-                      font-medium outline-none focus:border-brand transition-colors cursor-pointer min-w-[140px]"
+                    className="bg-surface-3 border border-border-light rounded-xl px-3 py-2.5 text-white text-sm
+                      font-semibold outline-none cursor-pointer min-w-[130px] transition-colors"
                   >
                     {chainEntries.map(([id, c]) => (
                       <option key={id} value={id} disabled={id === fromChain}>{c.name}</option>
                     ))}
                   </select>
-                  <div className="flex-1 text-2xl font-semibold text-right text-gray-500">
-                    {step === 'quoting' ? (
-                      <span className="flex items-center justify-end gap-2 text-gray-500 text-lg">
-                        <Spinner /> Fetching...
+                  <div className="flex-1 text-right min-w-0">
+                    {routeType === 'slow' ? (
+                      amount && parseFloat(amount) > 0
+                        ? <span className="text-[30px] font-bold text-gray-400 tabular-nums">≈ {parseFloat(amount).toFixed(2)}</span>
+                        : <span className="text-[30px] font-bold text-surface-4">—</span>
+                    ) : step === 'quoting' ? (
+                      <span className="flex items-center justify-end gap-2 text-gray-500 text-sm">
+                        <Spinner size={14} /> Fetching…
                       </span>
                     ) : outputAmount ? (
-                      <span className="text-white">{outputAmount}</span>
+                      <span className="text-[30px] font-bold text-white tabular-nums animate-fade-in">{outputAmount}</span>
                     ) : (
-                      '—'
+                      <span className="text-[30px] font-bold text-surface-4">—</span>
                     )}
                   </div>
-                  <div className="bg-surface-3 border border-border-light rounded-lg px-3 py-2 text-sm
-                    font-semibold text-white min-w-[80px] text-center">
+                  <div className="bg-surface-3 border border-border-light rounded-xl px-3 py-2.5 text-sm
+                    font-bold text-white min-w-[84px] text-center">
                     {asset || '—'}
                   </div>
                 </div>
               </div>
 
-              {/* Quote details */}
-              {quote && step !== 'idle' && (
-                <div className="bg-surface-0 border border-border rounded-xl p-3 mb-4 text-xs text-gray-400 space-y-1">
-                  <div className="flex justify-between">
-                    <span>Provider</span>
-                    <span className="text-gray-300">{quote.provider}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>ETA</span>
-                    <span className="text-gray-300">{quote.eta}s</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Valid until</span>
-                    <span className="text-gray-300">{new Date(quote.validUntil * 1000).toLocaleTimeString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Type</span>
-                    <span className="text-gray-300">{quote.order.type}</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Order tracking */}
-              {(step === 'polling' || step === 'done') && orderStatus && (() => {
-                const status = normalizeStatus(orderStatus.status)
-                return (
-                <div className={`border rounded-xl p-3 mb-4 text-xs space-y-1 ${
-                  status === 'finalized'
-                    ? 'bg-emerald-500/5 border-emerald-500/20'
-                    : status === 'failed'
-                    ? 'bg-red-500/5 border-red-500/20'
-                    : 'bg-surface-0 border-border'
-                }`}>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-400">Order Status</span>
-                    <span className={`font-semibold uppercase tracking-wider ${
-                      status === 'finalized' ? 'text-emerald-400'
-                      : status === 'failed' ? 'text-red-400'
-                      : 'text-amber-400'
-                    }`}>
-                      {status === 'finalized' ? 'Completed' : status}
-                      {step === 'polling' && status !== 'finalized' && status !== 'failed' && (
-                        <Spinner size={12} />
-                      )}
-                    </span>
-                  </div>
-                  {orderId && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Order ID</span>
-                      <span className="text-gray-300 font-mono">{truncAddr(orderId)}</span>
-                    </div>
-                  )}
-                  {orderStatus.settlement?.fillTransaction && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Fill Tx</span>
-                      <span className="text-gray-300 font-mono">
-                        {truncAddr(orderStatus.settlement.fillTransaction.hash)}
-                      </span>
-                    </div>
-                  )}
-                  {orderStatus.settlement?.claimTransaction && (
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Claim Tx</span>
-                      <span className="text-gray-300 font-mono">
-                        {truncAddr(orderStatus.settlement.claimTransaction.hash)}
-                      </span>
-                    </div>
-                  )}
-                </div>
-                )
-              })()}
-
-              {/* Error display */}
-              {error && (
-                <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-3 mb-4 text-xs text-red-400">
-                  {error}
-                </div>
-              )}
-
-              {/* Action button */}
-              {step === 'idle' || step === 'error' ? (
-                <button
-                  onClick={handleGetQuote}
-                  disabled={!isServicesUp || !fromChain || !toChain || !amount || fromChain === toChain || !!isSolverWallet}
-                  className="w-full py-3.5 rounded-xl font-semibold text-sm transition-all
-                    bg-gradient-to-r from-brand to-purple-500 hover:from-brand-light hover:to-purple-400
-                    text-white disabled:opacity-30 disabled:cursor-not-allowed
-                    hover:shadow-lg hover:shadow-brand/20"
-                >
-                  {!isServicesUp ? 'Services Offline' : isSolverWallet ? 'Solver Wallet Connected' : 'Get Quote'}
-                </button>
-              ) : step === 'quoting' ? (
-                <button disabled className="w-full py-3.5 rounded-xl font-semibold text-sm bg-surface-3 text-gray-400
-                  flex items-center justify-center gap-2">
-                  <Spinner /> Getting quote...
-                </button>
-              ) : step === 'quoted' ? (
-                <button
-                  onClick={handleAcceptQuote}
-                  className="w-full py-3.5 rounded-xl font-semibold text-sm transition-all
-                    bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-400 hover:to-green-400
-                    text-white hover:shadow-lg hover:shadow-emerald-500/20"
-                >
-                  Accept & Send
-                </button>
-              ) : step === 'signing' ? (
-                <button disabled className="w-full py-3.5 rounded-xl font-semibold text-sm bg-surface-3 text-gray-400
-                  flex items-center justify-center gap-2">
-                  <Spinner /> Signing & submitting...
-                </button>
-              ) : step === 'polling' ? (
-                <button disabled className="w-full py-3.5 rounded-xl font-semibold text-sm bg-surface-3 text-amber-400/80
-                  flex items-center justify-center gap-2">
-                  <Spinner /> Waiting for settlement...
-                </button>
-              ) : step === 'done' ? (
-                <button
-                  onClick={() => { setStep('idle'); setQuote(null); setOrderStatus(null); setOrderId(''); setError('') }}
-                  className="w-full py-3.5 rounded-xl font-semibold text-sm transition-all
-                    bg-gradient-to-r from-brand to-purple-500 hover:from-brand-light hover:to-purple-400
-                    text-white"
-                >
-                  New Transfer
-                </button>
-              ) : null}
-            </div>
-          </div>
-
-          {/* ── Right Sidebar ──────────────────────────────────────── */}
-          <div className="space-y-6">
-
-            {/* ── Balances ──────────────────────────────────────────── */}
-            <div className="bg-surface-1 border border-border rounded-2xl p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Balances</h2>
-                <button onClick={loadBalances} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">
-                  Refresh
-                </button>
-              </div>
-
-              {balances ? (
-                <div className="space-y-4">
-                  {Object.entries(balances).map(([chainId, cb]) => (
-                    <div key={chainId}>
-                      <div className="flex items-center gap-2 mb-2">
-                        <ChainBadge name={cb.name} />
-                        {config && <span className="text-[10px] text-gray-600 font-mono">#{config.chains[chainId]?.chainId}</span>}
-                      </div>
-                      <div className="space-y-1 ml-1">
-                        {/* User balances */}
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-gray-500">You</span>
-                          <div className="flex gap-3">
-                            {asset && cb.balances.user[asset] && (
-                              <span className="text-gray-300 font-mono">
-                                {formatToken(cb.balances.user[asset]?.formatted ?? '0')}
-                                <span className="text-gray-500 ml-1">{asset}</span>
-                              </span>
-                            )}
-                            {cb.balances.user['ETH'] && (
-                              <span className="text-gray-300 font-mono">
-                                {formatETH(cb.balances.user['ETH']?.formatted ?? '0')}
-                                <span className="text-gray-500 ml-1">ETH</span>
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        {/* Solver balances */}
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-gray-500">Solver</span>
-                          <div className="flex gap-3">
-                            {asset && cb.balances.solver[asset] && (
-                              <span className="text-gray-300 font-mono">
-                                {formatToken(cb.balances.solver[asset]?.formatted ?? '0')}
-                                <span className="text-gray-500 ml-1">{asset}</span>
-                              </span>
-                            )}
-                            {cb.balances.solver['ETH'] && (
-                              <span className="text-gray-300 font-mono">
-                                {formatETH(cb.balances.solver['ETH']?.formatted ?? '0')}
-                                <span className="text-gray-500 ml-1">ETH</span>
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
+              {/* Quote meta (fast route only) */}
+              {routeType === 'fast' && quote && step !== 'idle' && step !== 'error' && (
+                <div className="grid grid-cols-4 gap-2 animate-fade-in">
+                  {[
+                    { label: 'Provider', value: quote.provider },
+                    { label: 'ETA',      value: `${quote.eta}s` },
+                    { label: 'Valid',    value: new Date(quote.validUntil * 1000).toLocaleTimeString() },
+                    { label: 'Type',     value: quote.order.type },
+                  ].map(({ label, value }) => (
+                    <div key={label} className="bg-surface-0/70 rounded-xl px-3 py-2 border border-border/40">
+                      <div className="text-[9px] text-gray-700 mb-0.5 font-semibold uppercase tracking-wider">{label}</div>
+                      <div className="text-[11px] text-gray-400 font-medium truncate">{value}</div>
                     </div>
                   ))}
                 </div>
-              ) : (
-                <div className="text-xs text-gray-500 flex items-center gap-2">
-                  <Spinner size={12} /> Loading...
-                </div>
               )}
-            </div>
 
-            {/* ── Faucet ───────────────────────────────────────────── */}
-            <div className="bg-surface-1 border border-border rounded-2xl p-5">
-              <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
-                Faucet
-              </h2>
-              <p className="text-xs text-gray-500 mb-1">
-                Claim testnet gas and tokens for local chains.
-              </p>
-              <p className="text-xs mb-3">
-                {isConnected ? (
-                  <span className="text-brand">
-                    Recipient: {truncAddr(connectedAddress!)}
-                  </span>
-                ) : (
-                  <span className="text-gray-600">
-                    Recipient: {config ? truncAddr(config.userAddress) : '—'} (default)
-                  </span>
-                )}
-              </p>
-
-              {config && chainEntries.map(([chainId, chain]) => {
-                // Only show faucet for origin chains that support minting
-                if (!config.faucetChains?.includes(chain.name)) return null
+              {/* Order status (fast route only) */}
+              {routeType === 'fast' && (step === 'polling' || step === 'done') && orderStatus && (() => {
+                const status = normalizeStatus(orderStatus.status)
+                const ok     = status === 'finalized'
+                const fail   = status === 'failed'
                 return (
-                  <div key={chainId} className="mb-3 last:mb-0">
-                    <div className="flex items-center gap-2 mb-2">
-                      <ChainBadge name={chain.name} />
+                  <div className={`rounded-xl p-4 border animate-fade-in ${
+                    ok   ? 'bg-emerald-500/[0.06] border-emerald-500/20'
+                    : fail ? 'bg-red-500/[0.06] border-red-500/20'
+                    : 'bg-surface-0/60 border-border/60'
+                  }`}>
+                    <div className="flex items-center justify-between mb-2.5">
+                      <span className="text-xs text-gray-500 font-medium">Settlement</span>
+                      <div className={`flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider ${
+                        ok ? 'text-emerald-400' : fail ? 'text-red-400' : 'text-amber-400'
+                      }`}>
+                        {step === 'polling' && !ok && !fail && <Spinner size={10} />}
+                        {ok ? '✓ Complete' : status}
+                      </div>
                     </div>
-                    <div className="flex gap-2 flex-wrap">
-                      <button
-                        onClick={() => handleFaucet(chain.name, 'gas')}
-                        disabled={faucetLoading !== null}
-                        className="flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all
-                          bg-surface-2 border border-border hover:border-brand text-gray-300 hover:text-white
-                          disabled:opacity-50 disabled:cursor-not-allowed
-                          flex items-center justify-center gap-1.5 min-w-[100px]"
-                      >
-                        {faucetLoading === `${chain.name}-gas` ? <Spinner size={12} /> : null}
-                        Claim 1 ETH
-                      </button>
-                      {Object.keys(chain.tokens).map(sym => (
-                        <button
-                          key={sym}
-                          onClick={() => handleFaucet(chain.name, 'token', sym)}
-                          disabled={faucetLoading !== null}
-                          className="flex-1 py-2 px-3 rounded-lg text-xs font-medium transition-all
-                            bg-surface-2 border border-border hover:border-brand text-gray-300 hover:text-white
-                            disabled:opacity-50 disabled:cursor-not-allowed
-                            flex items-center justify-center gap-1.5 min-w-[100px]"
-                        >
-                          {faucetLoading === `${chain.name}-token-${sym}` ? <Spinner size={12} /> : null}
-                          Claim 10 {sym}
-                        </button>
-                      ))}
+                    <div className="space-y-1.5">
+                      {orderId && (
+                        <div className="flex justify-between">
+                          <span className="text-[11px] text-gray-600">Order</span>
+                          <span className="text-[11px] text-gray-400 font-mono">{truncAddr(orderId)}</span>
+                        </div>
+                      )}
+                      {orderStatus.settlement?.fillTransaction && (
+                        <div className="flex justify-between">
+                          <span className="text-[11px] text-gray-600">Fill tx</span>
+                          <span className="text-[11px] text-gray-400 font-mono">
+                            {truncAddr(orderStatus.settlement.fillTransaction.hash)}
+                          </span>
+                        </div>
+                      )}
+                      {orderStatus.settlement?.claimTransaction && (
+                        <div className="flex justify-between">
+                          <span className="text-[11px] text-gray-600">Claim tx</span>
+                          <span className="text-[11px] text-emerald-400 font-mono">
+                            {truncAddr(orderStatus.settlement.claimTransaction.hash)}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )
-              })}
+              })()}
 
-              {faucetMsg && (
-                <div className={`mt-3 text-xs p-2 rounded-lg ${
-                  faucetMsg.startsWith('Error')
-                    ? 'bg-red-500/5 text-red-400 border border-red-500/10'
-                    : 'bg-emerald-500/5 text-emerald-400 border border-emerald-500/10'
-                }`}>
-                  {faucetMsg}
+              {/* Error */}
+              {error && (
+                <div className="flex items-start gap-2.5 bg-red-500/[0.06] border border-red-500/20 rounded-xl px-4 py-3 animate-fade-in">
+                  <svg className="shrink-0 mt-0.5" width="13" height="13" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="#f87171" strokeWidth="2"/>
+                    <path d="M12 8v4m0 4h.01" stroke="#f87171" strokeWidth="2" strokeLinecap="round"/>
+                  </svg>
+                  <p className="text-xs text-red-400 leading-relaxed">{error}</p>
                 </div>
               )}
-            </div>
 
-            {/* ── Rebalance ──────────────────────────────────────── */}
-            <div className="bg-surface-1 border border-border rounded-2xl p-5">
-              <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-4">
-                Bridge
-              </h2>
-              <p className="text-xs text-gray-500 mb-3">
-                Move solver tokens between chains via Celestia.
-                Only tokens with Hyperlane warp routes are supported.
-              </p>
-
-              {/* Token + from/to selectors */}
-              <div className="space-y-2 mb-3">
-                <select
-                  value={rebalanceToken}
-                  onChange={e => setRebalanceToken(e.target.value)}
-                  className="w-full bg-surface-2 border border-border rounded-lg px-3 py-2 text-white text-xs
-                    font-medium outline-none focus:border-brand transition-colors cursor-pointer"
-                >
-                  {config && Object.values(config.chains).flatMap(c => Object.keys(c.tokens))
-                    .filter((sym, i, arr) => arr.indexOf(sym) === i && sym !== 'ETH')
-                    .map(sym => (
-                      <option key={sym} value={sym}>{sym}</option>
-                    ))
-                  }
-                </select>
-                <div className="flex items-center gap-2">
-                  <select
-                    value={rebalanceFrom}
-                    onChange={e => setRebalanceFrom(e.target.value)}
-                    className="flex-1 bg-surface-2 border border-border rounded-lg px-3 py-2 text-white text-xs
-                      font-medium outline-none focus:border-brand transition-colors cursor-pointer"
+              {/* CTA */}
+              {routeType === 'fast' ? (
+                // ── Fast route: quote → sign → settle ──────────────────────
+                step === 'idle' || step === 'error' ? (
+                  <button
+                    onClick={handleGetQuote}
+                    disabled={!isServicesUp || !fromChain || !toChain || !amount || fromChain === toChain || !!isSolverWallet}
+                    className="w-full py-4 rounded-xl font-bold text-[15px] transition-all duration-200
+                      bg-gradient-to-r from-brand to-purple-500 hover:from-brand-light hover:to-purple-400
+                      text-white disabled:opacity-20 disabled:cursor-not-allowed
+                      hover:shadow-brand active:scale-[0.99]"
                   >
-                    {chainEntries.map(([id, c]) => (
-                      <option key={id} value={c.name} disabled={c.name === rebalanceTo}>{c.name}</option>
-                    ))}
-                  </select>
-                  <span className="text-gray-500 text-xs">→</span>
-                  <select
-                    value={rebalanceTo}
-                    onChange={e => setRebalanceTo(e.target.value)}
-                    className="flex-1 bg-surface-2 border border-border rounded-lg px-3 py-2 text-white text-xs
-                      font-medium outline-none focus:border-brand transition-colors cursor-pointer"
-                  >
-                    {chainEntries.map(([id, c]) => (
-                      <option key={id} value={c.name} disabled={c.name === rebalanceFrom}>{c.name}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <button
-                onClick={handleRebalance}
-                disabled={rebalanceLoading !== null || rebalanceFrom === rebalanceTo}
-                className="w-full py-2 px-3 rounded-lg text-xs font-medium transition-all
-                  bg-surface-2 border border-border hover:border-brand text-gray-300 hover:text-white
-                  disabled:opacity-50 disabled:cursor-not-allowed
-                  flex items-center justify-center gap-1.5"
-              >
-                {rebalanceLoading === 'bridge' ? <Spinner size={12} /> : null}
-                Bridge {rebalanceToken}
-              </button>
-
-              {rebalanceMsg && (
-                <div className={`mt-3 text-xs p-2 rounded-lg ${
-                  rebalanceMsg.startsWith('Error')
-                    ? 'bg-red-500/5 text-red-400 border border-red-500/10'
-                    : 'bg-emerald-500/5 text-emerald-400 border border-emerald-500/10'
-                }`}>
-                  {rebalanceMsg}
-                </div>
+                    {!isServicesUp ? 'Services Offline' : isSolverWallet ? 'Switch to a User Wallet' : 'Get Quote'}
+                  </button>
+                ) : step === 'quoting' ? (
+                  <button disabled className="w-full py-4 rounded-xl font-bold text-sm bg-surface-3 text-gray-500
+                    flex items-center justify-center gap-2.5 cursor-not-allowed">
+                    <Spinner size={16} /> Getting quote…
+                  </button>
+                ) : step === 'quoted' ? (
+                  <button onClick={handleAcceptQuote}
+                    className="w-full py-4 rounded-xl font-bold text-[15px] transition-all duration-200
+                      bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-400 hover:to-green-400
+                      text-white hover:shadow-[0_0_24px_rgba(16,185,129,0.28)] active:scale-[0.99]">
+                    Accept & Send →
+                  </button>
+                ) : step === 'signing' ? (
+                  <button disabled className="w-full py-4 rounded-xl font-bold text-sm bg-surface-3 text-gray-500
+                    flex items-center justify-center gap-2.5 cursor-not-allowed">
+                    <Spinner size={16} /> Signing & submitting…
+                  </button>
+                ) : step === 'polling' ? (
+                  <button disabled className="w-full py-4 rounded-xl font-bold text-sm bg-surface-3 text-amber-400/70
+                    flex items-center justify-center gap-2.5 cursor-not-allowed">
+                    <Spinner size={16} /> Awaiting settlement…
+                  </button>
+                ) : step === 'done' ? (
+                  <button
+                    onClick={resetFlowState}
+                    className="w-full py-4 rounded-xl font-bold text-[15px] transition-all duration-200
+                      bg-gradient-to-r from-brand to-purple-500 hover:from-brand-light hover:to-purple-400
+                      text-white hover:shadow-brand active:scale-[0.99]">
+                    New Transfer
+                  </button>
+                ) : null
+              ) : (
+                // ── Slow route: direct Celestia bridge ─────────────────────
+                <>
+                  {slowMsg && (
+                    <div className={`text-[11px] px-3 py-2.5 rounded-xl animate-fade-in border ${
+                      slowMsg.startsWith('Error')
+                        ? 'bg-red-500/[0.06] text-red-400 border-red-500/15'
+                        : 'bg-emerald-500/[0.06] text-emerald-400 border-emerald-500/15'
+                    }`}>{slowMsg}</div>
+                  )}
+                  {slowMsg && !slowMsg.startsWith('Error') ? (
+                    <button
+                      onClick={resetFlowState}
+                      className="w-full py-4 rounded-xl font-bold text-[15px] transition-all duration-200
+                        bg-gradient-to-r from-brand to-purple-500 hover:from-brand-light hover:to-purple-400
+                        text-white hover:shadow-brand active:scale-[0.99]">
+                      New Transfer
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleSlowBridge}
+                      disabled={slowLoading || !fromChain || !toChain || !amount || fromChain === toChain}
+                      className="w-full py-4 rounded-xl font-bold text-[15px] transition-all duration-200
+                        bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500
+                        text-white disabled:opacity-20 disabled:cursor-not-allowed
+                        hover:shadow-[0_0_24px_rgba(14,165,233,0.28)] active:scale-[0.99]"
+                    >
+                      {slowLoading
+                        ? <span className="flex items-center justify-center gap-2.5"><Spinner size={16} /> Bridging…</span>
+                        : 'Bridge via Celestia'
+                      }
+                    </button>
+                  )}
+                </>
               )}
             </div>
+          </div>
 
-            {/* ── System Info ──────────────────────────────────────── */}
-            <div className="bg-surface-1 border border-border rounded-2xl p-5">
-              <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">
-                System
-              </h2>
-              <div className="space-y-1.5 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-gray-500">User</span>
-                  <span className="text-gray-300 font-mono">{config ? truncAddr(config.userAddress) : '—'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Solver</span>
-                  <span className="text-gray-300 font-mono">{config?.solverAddress ? truncAddr(config.solverAddress) : '—'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Chains</span>
-                  <span className="text-gray-300">{chainEntries.length}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Aggregator</span>
-                  <span className={health.aggregator === 'ok' ? 'text-emerald-400' : 'text-red-400'}>
-                    {health.aggregator}
-                  </span>
-                </div>
-              </div>
+          {/* ══ Right Panel ══════════════════════════════════════════════════ */}
+          <div className="bg-surface-1 border border-border rounded-2xl shadow-card overflow-hidden flex flex-col"
+            style={{ boxShadow: '0 4px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04)' }}>
+
+            {/* Tabs */}
+            <div className="flex border-b border-border/60 px-1 pt-1 gap-0.5 shrink-0">
+              {(['balances', 'tools'] as const).map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setRightTab(tab)}
+                  className={`flex-1 py-2.5 text-[11px] font-semibold rounded-t-lg transition-all capitalize ${
+                    rightTab === tab
+                      ? 'text-white bg-surface-2/60 border-b-2 border-brand'
+                      : 'text-gray-600 hover:text-gray-400'
+                  }`}
+                >{tab}</button>
+              ))}
             </div>
+
+            {/* ── Balances tab ────────────────────────────────────────────── */}
+            {rightTab === 'balances' && (
+              <div className="p-5 flex-1 overflow-y-auto">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-xs font-bold text-white">Balances</span>
+                  <button
+                    onClick={loadBalances}
+                    className="text-[11px] text-gray-600 hover:text-gray-400 transition-colors px-2 py-1 rounded-lg hover:bg-surface-2"
+                  >Refresh</button>
+                </div>
+                {balances ? (
+                  <div className="space-y-3">
+                    {Object.entries(balances).map(([chainId, cb]) => (
+                      <div key={chainId}>
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <ChainBadge name={cb.name} />
+                          {config && <span className="text-[10px] text-gray-700 font-mono">#{config.chains[chainId]?.chainId}</span>}
+                        </div>
+                        <div className="rounded-lg overflow-hidden border border-border/50 text-[11px]">
+                          <div className="flex items-center justify-between px-3 py-1.5 bg-surface-0/50">
+                            <span className="text-gray-600">You</span>
+                            <div className="flex gap-2.5 tabular-nums">
+                              {asset && cb.balances.user[asset] && (
+                                <span className="text-gray-300 font-mono">
+                                  {formatToken(cb.balances.user[asset]?.formatted ?? '0')}
+                                  <span className="text-gray-600 ml-0.5">{asset}</span>
+                                </span>
+                              )}
+                              {cb.balances.user['ETH'] && (
+                                <span className="text-gray-500 font-mono">
+                                  {formatETH(cb.balances.user['ETH']?.formatted ?? '0')}
+                                  <span className="text-gray-700 ml-0.5">ETH</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between px-3 py-1.5 bg-surface-0/30 border-t border-border/40">
+                            <span className="text-gray-600">Solver</span>
+                            <div className="flex gap-2.5 tabular-nums">
+                              {asset && cb.balances.solver[asset] && (
+                                <span className="text-gray-300 font-mono">
+                                  {formatToken(cb.balances.solver[asset]?.formatted ?? '0')}
+                                  <span className="text-gray-600 ml-0.5">{asset}</span>
+                                </span>
+                              )}
+                              {cb.balances.solver['ETH'] && (
+                                <span className="text-gray-500 font-mono">
+                                  {formatETH(cb.balances.solver['ETH']?.formatted ?? '0')}
+                                  <span className="text-gray-700 ml-0.5">ETH</span>
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-gray-600 text-xs py-1">
+                    <Spinner size={11} /> Loading…
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Tools tab (Faucet + Bridge + System) ────────────────────── */}
+            {rightTab === 'tools' && (
+              <div className="divide-y divide-border/60 flex-1 overflow-y-auto">
+
+                {/* Faucet */}
+                <div className="p-5">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-bold text-white">Faucet</span>
+                    <span className="text-[11px] text-gray-600">
+                      {isConnected
+                        ? <span className="text-brand-light font-mono">{truncAddr(connectedAddress!)}</span>
+                        : config ? <span className="font-mono">{truncAddr(config.userAddress)}</span> : '—'
+                      }
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-600 mb-3">Claim testnet gas and tokens.</p>
+                  {config && chainEntries.map(([chainId, chain]) => {
+                    if (!config.faucetChains?.includes(chain.name)) return null
+                    return (
+                      <div key={chainId} className="mb-3 last:mb-0">
+                        <div className="mb-1.5"><ChainBadge name={chain.name} /></div>
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => handleFaucet(chain.name, 'gas')}
+                            disabled={faucetLoading !== null}
+                            className="flex-1 py-2 px-2 rounded-lg text-[11px] font-semibold
+                              bg-surface-2 border border-border hover:border-border-light
+                              text-gray-400 hover:text-white transition-all
+                              disabled:opacity-40 disabled:cursor-not-allowed
+                              flex items-center justify-center gap-1"
+                          >
+                            {faucetLoading === `${chain.name}-gas` ? <Spinner size={10} /> : null}
+                            1 ETH
+                          </button>
+                          {Object.keys(chain.tokens).map(sym => (
+                            <button key={sym}
+                              onClick={() => handleFaucet(chain.name, 'token', sym)}
+                              disabled={faucetLoading !== null}
+                              className="flex-1 py-2 px-2 rounded-lg text-[11px] font-semibold
+                                bg-surface-2 border border-border hover:border-border-light
+                                text-gray-400 hover:text-white transition-all
+                                disabled:opacity-40 disabled:cursor-not-allowed
+                                flex items-center justify-center gap-1"
+                            >
+                              {faucetLoading === `${chain.name}-token-${sym}` ? <Spinner size={10} /> : null}
+                              10 {sym}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {faucetMsg && (
+                    <div className={`mt-2 text-[11px] px-3 py-2 rounded-lg animate-fade-in ${
+                      faucetMsg.startsWith('Error')
+                        ? 'bg-red-500/[0.06] text-red-400 border border-red-500/15'
+                        : 'bg-emerald-500/[0.06] text-emerald-400 border border-emerald-500/15'
+                    }`}>{faucetMsg}</div>
+                  )}
+                </div>
+
+                {/* Bridge */}
+                <div className="p-5">
+                  <span className="text-xs font-bold text-white block mb-1">Bridge</span>
+                  <p className="text-[11px] text-gray-600 mb-3">Move solver tokens via Hyperlane.</p>
+                  <div className="space-y-2 mb-2">
+                    <select
+                      value={rebalanceToken}
+                      onChange={e => setRebalanceToken(e.target.value)}
+                      className="w-full bg-surface-2 border border-border rounded-xl px-3 py-2.5 text-white text-xs
+                        font-semibold outline-none cursor-pointer transition-colors"
+                    >
+                      {config && Object.values(config.chains).flatMap(c => Object.keys(c.tokens))
+                        .filter((s, i, a) => a.indexOf(s) === i && s !== 'ETH')
+                        .map(sym => <option key={sym} value={sym}>{sym}</option>)
+                      }
+                    </select>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={rebalanceFrom}
+                        onChange={e => setRebalanceFrom(e.target.value)}
+                        className="flex-1 bg-surface-2 border border-border rounded-xl px-3 py-2.5 text-white text-xs
+                          font-semibold outline-none cursor-pointer transition-colors"
+                      >
+                        {chainEntries.map(([id, c]) => (
+                          <option key={id} value={c.name} disabled={c.name === rebalanceTo}>{c.name}</option>
+                        ))}
+                      </select>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-gray-600 shrink-0">
+                        <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                      <select
+                        value={rebalanceTo}
+                        onChange={e => setRebalanceTo(e.target.value)}
+                        className="flex-1 bg-surface-2 border border-border rounded-xl px-3 py-2.5 text-white text-xs
+                          font-semibold outline-none cursor-pointer transition-colors"
+                      >
+                        {chainEntries.map(([id, c]) => (
+                          <option key={id} value={c.name} disabled={c.name === rebalanceFrom}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleRebalance}
+                    disabled={rebalanceLoading !== null || rebalanceFrom === rebalanceTo}
+                    className="w-full py-2.5 rounded-xl text-xs font-semibold transition-all
+                      bg-surface-2 border border-border hover:border-border-light text-gray-400 hover:text-white
+                      disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                  >
+                    {rebalanceLoading === 'bridge' ? <Spinner size={11} /> : null}
+                    Bridge {rebalanceToken}
+                  </button>
+                  {rebalanceMsg && (
+                    <div className={`mt-2 text-[11px] px-3 py-2 rounded-lg animate-fade-in ${
+                      rebalanceMsg.startsWith('Error')
+                        ? 'bg-red-500/[0.06] text-red-400 border border-red-500/15'
+                        : 'bg-emerald-500/[0.06] text-emerald-400 border border-emerald-500/15'
+                    }`}>{rebalanceMsg}</div>
+                  )}
+                </div>
+
+                {/* System */}
+                <div className="p-5">
+                  <span className="text-xs font-bold text-white block mb-3">System</span>
+                  <div className="space-y-2">
+                    {[
+                      { label: 'User',       value: config ? truncAddr(config.userAddress) : '—',                  mono: true  },
+                      { label: 'Solver',     value: config?.solverAddress ? truncAddr(config.solverAddress) : '—', mono: true  },
+                      { label: 'Chains',     value: String(chainEntries.length),                                   mono: false },
+                      { label: 'Backend',    value: health.backend,    status: health.backend },
+                      { label: 'Aggregator', value: health.aggregator, status: health.aggregator },
+                    ].map(({ label, value, mono, status }) => (
+                      <div key={label} className="flex items-center justify-between">
+                        <span className="text-[11px] text-gray-600">{label}</span>
+                        <span className={`text-[11px] ${
+                          mono ? 'font-mono text-gray-400'
+                          : status === 'ok'  ? 'text-emerald-400 font-medium'
+                          : status !== undefined ? 'text-red-400 font-medium'
+                          : 'text-gray-300'
+                        }`}>{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+              </div>
+            )}
+
           </div>
         </div>
       </main>
 
-      {/* ── Footer ───────────────────────────────────────────────────── */}
-      <footer className="border-t border-border px-6 py-4 mt-8">
-        <div className="max-w-6xl mx-auto flex items-center justify-between text-xs text-gray-600">
-          <span>OIF Solver MVP</span>
-          <span>Powered by Open Intents Framework</span>
+      {/* ── Footer ─────────────────────────────────────────────────────────── */}
+      <footer className="relative z-10 border-t border-border/50 px-8 py-4 shrink-0">
+        <div className="max-w-7xl mx-auto flex items-center justify-between text-[11px] text-gray-700">
+          <span className="font-semibold">OIF Solver</span>
+          <span>Open Intents Framework</span>
         </div>
       </footer>
     </div>
