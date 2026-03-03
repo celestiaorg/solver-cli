@@ -55,16 +55,20 @@ export async function initWallet() {
 
   wagmiConfig = wagmiAdapter.wagmiConfig
 
-  createAppKit({
-    adapters: [wagmiAdapter],
-    networks,
-    projectId,
-    metadata: {
-      name: 'OIF Solver',
-      description: 'Cross-chain solver UI',
-      url: 'http://localhost:5173',
-      icons: [],
-    },
-    themeMode: 'dark',
-  })
+  try {
+    createAppKit({
+      adapters: [wagmiAdapter],
+      networks,
+      projectId,
+      metadata: {
+        name: 'OIF Solver',
+        description: 'Cross-chain solver UI',
+        url: 'http://localhost:5173',
+        icons: [],
+      },
+      themeMode: 'dark',
+    })
+  } catch (e) {
+    console.warn('AppKit init failed (wallet connect features disabled):', e)
+  }
 }

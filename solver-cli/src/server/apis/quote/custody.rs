@@ -39,11 +39,43 @@
 
 use std::sync::Arc;
 
+use alloy_primitives::{Address, U256};
 use solver_delivery::DeliveryService;
 use solver_types::standards::eip7683::LockType;
-use solver_types::{AssetLockReference, LockKind, OrderInput, QuoteError};
+use solver_types::{AssetLockReference, LockKind, OrderInput, QuoteError, Transaction};
 
-use super::registry::PROTOCOL_REGISTRY;
+/// Canonical Permit2 address — identical on every chain that has it deployed.
+const PERMIT2_CANONICAL: &str = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+
+/// Detects EIP-3009 support by checking for RECEIVE_WITH_AUTHORIZATION_TYPEHASH on-chain.
+async fn detect_eip3009_via_rpc(
+    chain_id: u64,
+    token_address: Address,
+    delivery_service: Arc<DeliveryService>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    // selector for RECEIVE_WITH_AUTHORIZATION_TYPEHASH() view function: 0x7f2eecc3
+    let call_data = hex::decode("7f2eecc3")?;
+    let tx = Transaction {
+        to: Some(solver_types::Address(token_address.to_vec())),
+        data: call_data,
+        value: U256::ZERO,
+        gas_limit: None,
+        gas_price: None,
+        max_fee_per_gas: None,
+        max_priority_fee_per_gas: None,
+        nonce: None,
+        chain_id,
+    };
+    match delivery_service.contract_call(chain_id, tx).await {
+        Ok(result) => {
+            let expected = hex::decode(
+                "d099cc98ef71107a616c4f0f941f04c322d8e254fe26b3c6668db87aae413de8",
+            )?;
+            Ok(result.len() == 32 && result[..] == expected[..])
+        }
+        Err(_) => Ok(false),
+    }
+}
 
 /// Custody strategy decision
 #[derive(Debug, Clone)]
@@ -98,16 +130,20 @@ impl CustodyStrategy {
             .ethereum_address()
             .map_err(|e| QuoteError::InvalidRequest(format!("Invalid Ethereum address: {}", e)))?;
 
-        let capabilities = PROTOCOL_REGISTRY
-            .get_token_capabilities(chain_id, token_address, self.delivery_service.clone())
-            .await;
+        let supports_eip3009 =
+            detect_eip3009_via_rpc(chain_id, token_address, self.delivery_service.clone())
+                .await
+                .unwrap_or(false);
+
+        // Permit2 is deployed at the canonical address on all supported chains.
+        let permit2_available = true;
 
         // Respect user's explicit auth scheme preference from originSubmission
         if let Some(origin) = origin_submission {
             if let Some(schemes) = &origin.schemes {
                 // Check for explicit EIP-3009 preference
                 if schemes.contains(&solver_types::AuthScheme::Eip3009) {
-                    if capabilities.supports_eip3009 {
+                    if supports_eip3009 {
                         return Ok(CustodyDecision::Escrow {
                             lock_type: LockType::Eip3009Escrow,
                         });
@@ -120,7 +156,7 @@ impl CustodyStrategy {
 
                 // Check for explicit Permit2 preference
                 if schemes.contains(&solver_types::AuthScheme::Permit2) {
-                    if capabilities.permit2_available {
+                    if permit2_available {
                         return Ok(CustodyDecision::Escrow {
                             lock_type: LockType::Permit2Escrow,
                         });
@@ -134,11 +170,11 @@ impl CustodyStrategy {
         }
 
         // Fallback to automatic selection if no explicit preference
-        if capabilities.supports_eip3009 {
+        if supports_eip3009 {
             Ok(CustodyDecision::Escrow {
                 lock_type: LockType::Eip3009Escrow,
             })
-        } else if capabilities.permit2_available {
+        } else if permit2_available {
             Ok(CustodyDecision::Escrow {
                 lock_type: LockType::Permit2Escrow,
             })
