@@ -45,6 +45,13 @@ pub enum SignerConfig {
     Env,
     File { key: String },
     AwsKms { key_id: String, region: String },
+    GcpKms {
+        project_id: String,
+        location: String,
+        keyring: String,
+        key_name: String,
+        key_version: u32,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -148,6 +155,7 @@ enum RawSignerType {
     Env,
     File,
     AwsKms,
+    GcpKms,
 }
 
 #[derive(Debug, Deserialize)]
@@ -158,6 +166,11 @@ struct RawSignerConfig {
     key: Option<String>,
     key_id: Option<String>,
     region: Option<String>,
+    project_id: Option<String>,
+    location: Option<String>,
+    keyring: Option<String>,
+    key_name: Option<String>,
+    key_version: Option<u32>,
     env_var: Option<String>,
 }
 
@@ -533,13 +546,29 @@ fn parse_signer_config(value: Option<RawSignerConfig>) -> Result<SignerConfig> {
             if value.env_var.is_some() {
                 bail!("chains.signer.env_var is not supported for type = \"env\"");
             }
-            if value.key.is_some() || value.key_id.is_some() || value.region.is_some() {
+            if value.key.is_some()
+                || value.key_id.is_some()
+                || value.region.is_some()
+                || value.project_id.is_some()
+                || value.location.is_some()
+                || value.keyring.is_some()
+                || value.key_name.is_some()
+                || value.key_version.is_some()
+            {
                 bail!("chains.signer type = \"env\" only accepts field \"type\"");
             }
             SignerConfig::Env
         }
         RawSignerType::File => {
-            if value.env_var.is_some() || value.key_id.is_some() || value.region.is_some() {
+            if value.env_var.is_some()
+                || value.key_id.is_some()
+                || value.region.is_some()
+                || value.project_id.is_some()
+                || value.location.is_some()
+                || value.keyring.is_some()
+                || value.key_name.is_some()
+                || value.key_version.is_some()
+            {
                 bail!("chains.signer type = \"file\" only accepts fields \"type\" and \"key\"");
             }
             let key = value.key.ok_or_else(|| {
@@ -551,7 +580,14 @@ fn parse_signer_config(value: Option<RawSignerConfig>) -> Result<SignerConfig> {
             SignerConfig::File { key }
         }
         RawSignerType::AwsKms => {
-            if value.env_var.is_some() || value.key.is_some() {
+            if value.env_var.is_some()
+                || value.key.is_some()
+                || value.project_id.is_some()
+                || value.location.is_some()
+                || value.keyring.is_some()
+                || value.key_name.is_some()
+                || value.key_version.is_some()
+            {
                 bail!(
                     "chains.signer type = \"aws_kms\" only accepts fields \"type\", \"key_id\", and \"region\""
                 );
@@ -569,6 +605,54 @@ fn parse_signer_config(value: Option<RawSignerConfig>) -> Result<SignerConfig> {
                 bail!("chains.signer.region cannot be empty for type = \"aws_kms\"");
             }
             SignerConfig::AwsKms { key_id, region }
+        }
+        RawSignerType::GcpKms => {
+            if value.env_var.is_some()
+                || value.key.is_some()
+                || value.key_id.is_some()
+                || value.region.is_some()
+            {
+                bail!(
+                    "chains.signer type = \"gcp_kms\" only accepts fields \"type\", \"project_id\", \"location\", \"keyring\", \"key_name\", and \"key_version\""
+                );
+            }
+            let project_id = value.project_id.ok_or_else(|| {
+                anyhow::anyhow!("chains.signer.project_id is required for type = \"gcp_kms\"")
+            })?;
+            let location = value.location.ok_or_else(|| {
+                anyhow::anyhow!("chains.signer.location is required for type = \"gcp_kms\"")
+            })?;
+            let keyring = value.keyring.ok_or_else(|| {
+                anyhow::anyhow!("chains.signer.keyring is required for type = \"gcp_kms\"")
+            })?;
+            let key_name = value.key_name.ok_or_else(|| {
+                anyhow::anyhow!("chains.signer.key_name is required for type = \"gcp_kms\"")
+            })?;
+            let key_version = value.key_version.ok_or_else(|| {
+                anyhow::anyhow!("chains.signer.key_version is required for type = \"gcp_kms\"")
+            })?;
+            if project_id.trim().is_empty() {
+                bail!("chains.signer.project_id cannot be empty for type = \"gcp_kms\"");
+            }
+            if location.trim().is_empty() {
+                bail!("chains.signer.location cannot be empty for type = \"gcp_kms\"");
+            }
+            if keyring.trim().is_empty() {
+                bail!("chains.signer.keyring cannot be empty for type = \"gcp_kms\"");
+            }
+            if key_name.trim().is_empty() {
+                bail!("chains.signer.key_name cannot be empty for type = \"gcp_kms\"");
+            }
+            if key_version == 0 {
+                bail!("chains.signer.key_version must be > 0 for type = \"gcp_kms\"");
+            }
+            SignerConfig::GcpKms {
+                project_id,
+                location,
+                keyring,
+                key_name,
+                key_version,
+            }
         }
     };
 
@@ -632,6 +716,56 @@ fn normalize_env_key(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn config_with_first_chain_signer_block(signer_block: &str) -> String {
+        format!(
+            r#"
+dry_run = true
+
+[forwarding]
+domain_id = 69420
+service_url = "http://127.0.0.1:8080"
+
+[accounts]
+rebalancer = "0x000000000000000000000000000000000000dEaD"
+
+[[chains]]
+name = "evolve"
+chain_id = 1234
+rpc_url = "http://127.0.0.1:8545"
+account = "rebalancer"
+{signer_block}
+
+[[chains]]
+name = "sepolia"
+chain_id = 11155111
+rpc_url = "https://rpc.sepolia.org"
+account = "rebalancer"
+  [chains.signer]
+  type = "env"
+
+[[assets]]
+symbol = "USDC"
+decimals = 6
+
+  [[assets.tokens]]
+  chain_id = 1234
+  address = "0x0000000000000000000000000000000000000001"
+
+  [[assets.tokens]]
+  chain_id = 11155111
+  address = "0x0000000000000000000000000000000000000002"
+
+  [assets.weights]
+  "1234" = 0.50
+  "11155111" = 0.50
+
+  [assets.min_weights]
+  "1234" = 0.40
+  "11155111" = 0.40
+"#
+        )
+    }
 
     #[test]
     fn accepts_valid_config() {
@@ -963,6 +1097,263 @@ decimals = 6
         let raw: RawRebalancerConfig = toml::from_str(toml).expect("valid TOML");
         let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
         assert!(err.to_string().contains("Invalid signer config for chain"));
+    }
+
+    #[test]
+    fn accepts_valid_gcp_kms_signer_config() {
+        let toml = config_with_first_chain_signer_block(
+            r#"  [chains.signer]
+  type = "gcp_kms"
+  project_id = "my-gcp-project"
+  location = "us-central1"
+  keyring = "solver-keyring"
+  key_name = "solver-key"
+  key_version = 1
+"#,
+        );
+
+        let raw: RawRebalancerConfig = toml::from_str(&toml).expect("valid TOML");
+        let config = RebalancerConfig::from_raw(raw).expect("valid config");
+        let chain = config
+            .chains
+            .iter()
+            .find(|chain| chain.name == "evolve")
+            .expect("missing evolve chain");
+
+        match &chain.signer {
+            SignerConfig::GcpKms {
+                project_id,
+                location,
+                keyring,
+                key_name,
+                key_version,
+            } => {
+                assert_eq!(project_id, "my-gcp-project");
+                assert_eq!(location, "us-central1");
+                assert_eq!(keyring, "solver-keyring");
+                assert_eq!(key_name, "solver-key");
+                assert_eq!(*key_version, 1);
+            }
+            signer => panic!("expected gcp_kms signer, got {:?}", signer),
+        }
+    }
+
+    #[test]
+    fn rejects_missing_gcp_kms_project_id() {
+        let toml = config_with_first_chain_signer_block(
+            r#"  [chains.signer]
+  type = "gcp_kms"
+  location = "us-central1"
+  keyring = "solver-keyring"
+  key_name = "solver-key"
+  key_version = 1
+"#,
+        );
+
+        let raw: RawRebalancerConfig = toml::from_str(&toml).expect("valid TOML");
+        let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
+        let details = format!("{err:#}");
+        assert!(
+            details.contains("chains.signer.project_id is required for type = \"gcp_kms\""),
+            "unexpected error: {details}"
+        );
+    }
+
+    #[test]
+    fn rejects_missing_gcp_kms_location() {
+        let toml = config_with_first_chain_signer_block(
+            r#"  [chains.signer]
+  type = "gcp_kms"
+  project_id = "my-gcp-project"
+  keyring = "solver-keyring"
+  key_name = "solver-key"
+  key_version = 1
+"#,
+        );
+
+        let raw: RawRebalancerConfig = toml::from_str(&toml).expect("valid TOML");
+        let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
+        let details = format!("{err:#}");
+        assert!(
+            details.contains("chains.signer.location is required for type = \"gcp_kms\""),
+            "unexpected error: {details}"
+        );
+    }
+
+    #[test]
+    fn rejects_missing_gcp_kms_keyring() {
+        let toml = config_with_first_chain_signer_block(
+            r#"  [chains.signer]
+  type = "gcp_kms"
+  project_id = "my-gcp-project"
+  location = "us-central1"
+  key_name = "solver-key"
+  key_version = 1
+"#,
+        );
+
+        let raw: RawRebalancerConfig = toml::from_str(&toml).expect("valid TOML");
+        let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
+        let details = format!("{err:#}");
+        assert!(
+            details.contains("chains.signer.keyring is required for type = \"gcp_kms\""),
+            "unexpected error: {details}"
+        );
+    }
+
+    #[test]
+    fn rejects_missing_gcp_kms_key_name() {
+        let toml = config_with_first_chain_signer_block(
+            r#"  [chains.signer]
+  type = "gcp_kms"
+  project_id = "my-gcp-project"
+  location = "us-central1"
+  keyring = "solver-keyring"
+  key_version = 1
+"#,
+        );
+
+        let raw: RawRebalancerConfig = toml::from_str(&toml).expect("valid TOML");
+        let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
+        let details = format!("{err:#}");
+        assert!(
+            details.contains("chains.signer.key_name is required for type = \"gcp_kms\""),
+            "unexpected error: {details}"
+        );
+    }
+
+    #[test]
+    fn rejects_missing_gcp_kms_key_version() {
+        let toml = config_with_first_chain_signer_block(
+            r#"  [chains.signer]
+  type = "gcp_kms"
+  project_id = "my-gcp-project"
+  location = "us-central1"
+  keyring = "solver-keyring"
+  key_name = "solver-key"
+"#,
+        );
+
+        let raw: RawRebalancerConfig = toml::from_str(&toml).expect("valid TOML");
+        let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
+        let details = format!("{err:#}");
+        assert!(
+            details.contains("chains.signer.key_version is required for type = \"gcp_kms\""),
+            "unexpected error: {details}"
+        );
+    }
+
+    #[test]
+    fn rejects_empty_gcp_kms_string_fields() {
+        let cases = [
+            (
+                "project_id",
+                r#"  [chains.signer]
+  type = "gcp_kms"
+  project_id = " "
+  location = "us-central1"
+  keyring = "solver-keyring"
+  key_name = "solver-key"
+  key_version = 1
+"#,
+                "chains.signer.project_id cannot be empty for type = \"gcp_kms\"",
+            ),
+            (
+                "location",
+                r#"  [chains.signer]
+  type = "gcp_kms"
+  project_id = "my-gcp-project"
+  location = " "
+  keyring = "solver-keyring"
+  key_name = "solver-key"
+  key_version = 1
+"#,
+                "chains.signer.location cannot be empty for type = \"gcp_kms\"",
+            ),
+            (
+                "keyring",
+                r#"  [chains.signer]
+  type = "gcp_kms"
+  project_id = "my-gcp-project"
+  location = "us-central1"
+  keyring = " "
+  key_name = "solver-key"
+  key_version = 1
+"#,
+                "chains.signer.keyring cannot be empty for type = \"gcp_kms\"",
+            ),
+            (
+                "key_name",
+                r#"  [chains.signer]
+  type = "gcp_kms"
+  project_id = "my-gcp-project"
+  location = "us-central1"
+  keyring = "solver-keyring"
+  key_name = " "
+  key_version = 1
+"#,
+                "chains.signer.key_name cannot be empty for type = \"gcp_kms\"",
+            ),
+        ];
+
+        for (field, signer_block, expected) in cases {
+            let toml = config_with_first_chain_signer_block(signer_block);
+            let raw: RawRebalancerConfig = toml::from_str(&toml).expect("valid TOML");
+            let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
+            let details = format!("{err:#}");
+            assert!(
+                details.contains(expected),
+                "expected error for field {}",
+                field
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_zero_gcp_kms_key_version() {
+        let toml = config_with_first_chain_signer_block(
+            r#"  [chains.signer]
+  type = "gcp_kms"
+  project_id = "my-gcp-project"
+  location = "us-central1"
+  keyring = "solver-keyring"
+  key_name = "solver-key"
+  key_version = 0
+"#,
+        );
+
+        let raw: RawRebalancerConfig = toml::from_str(&toml).expect("valid TOML");
+        let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
+        let details = format!("{err:#}");
+        assert!(
+            details.contains("chains.signer.key_version must be > 0 for type = \"gcp_kms\""),
+            "unexpected error: {details}"
+        );
+    }
+
+    #[test]
+    fn rejects_non_gcp_fields_for_gcp_kms_signer_type() {
+        let toml = config_with_first_chain_signer_block(
+            r#"  [chains.signer]
+  type = "gcp_kms"
+  project_id = "my-gcp-project"
+  location = "us-central1"
+  keyring = "solver-keyring"
+  key_name = "solver-key"
+  key_version = 1
+  key = "0x1234"
+"#,
+        );
+
+        let raw: RawRebalancerConfig = toml::from_str(&toml).expect("valid TOML");
+        let err = RebalancerConfig::from_raw(raw).expect_err("should fail");
+        let details = format!("{err:#}");
+        assert!(
+            details.contains(
+                "chains.signer type = \"gcp_kms\" only accepts fields \"type\", \"project_id\", \"location\", \"keyring\", \"key_name\", and \"key_version\""
+            ),
+            "unexpected error: {details}"
+        );
     }
 
     #[test]

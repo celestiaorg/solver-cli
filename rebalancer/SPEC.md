@@ -84,7 +84,7 @@ domain_id = 11155111 # optional; defaults to chain_id
 rpc_url = "https://ethereum-sepolia-rpc.publicnode.com"
 account = "rebalancer"
   [chains.signer]
-  type = "env" # env | file | aws_kms
+  type = "env" # env | file | aws_kms | gcp_kms
 
 [[chains]]
 name = "eden"
@@ -152,6 +152,12 @@ Signer rules:
 1. `type = "env"` supports only `type`.
 2. `type = "file"` requires `key`.
 3. `type = "aws_kms"` requires `key_id` and `region`.
+4. `type = "gcp_kms"` requires:
+   - `project_id`
+   - `location`
+   - `keyring`
+   - `key_name`
+   - `key_version` (`> 0`)
 
 `env` signer runtime key lookup order:
 1. `REBALANCER_<NORMALIZED_CHAIN_NAME>_PK`

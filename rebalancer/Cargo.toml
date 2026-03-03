@@ -18,6 +18,7 @@ alloy = { version = "1.0", features = [
     "json-rpc",
     "rpc-types",
     "signer-aws",
+    "signer-gcp",
 ] }
 anyhow = "1.0"
 aws-config = { version = "=1.8.13", features = ["rt-tokio", "credentials-login"] }

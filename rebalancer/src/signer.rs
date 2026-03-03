@@ -6,6 +6,13 @@ use alloy::{
         aws_sdk_kms::{self, config::Region},
         AwsSigner,
     },
+    signers::gcp::{
+        gcloud_sdk::{
+            google::cloud::kms::v1::key_management_service_client::KeyManagementServiceClient,
+            GoogleApi,
+        },
+        GcpKeyRingRef, GcpSigner, KeySpecifier,
+    },
     signers::{local::PrivateKeySigner, Signer},
 };
 use anyhow::{bail, Context, Result};
@@ -29,6 +36,22 @@ impl TxSigner {
                 let backend = AwsKmsRemoteSignerBackend {
                     key_id: key_id.clone(),
                     region: region.clone(),
+                };
+                backend.load_signer(chain).await
+            }
+            SignerConfig::GcpKms {
+                project_id,
+                location,
+                keyring,
+                key_name,
+                key_version,
+            } => {
+                let backend = GcpKmsRemoteSignerBackend {
+                    project_id: project_id.clone(),
+                    location: location.clone(),
+                    keyring: keyring.clone(),
+                    key_name: key_name.clone(),
+                    key_version: *key_version,
                 };
                 backend.load_signer(chain).await
             }
@@ -80,6 +103,53 @@ impl AwsKmsRemoteSignerBackend {
             .with_context(|| {
                 format!(
                     "Failed to initialize aws_kms signer for chain {}",
+                    chain.name
+                )
+            })?;
+        let address = signer.address();
+
+        Ok(TxSigner {
+            address,
+            wallet: EthereumWallet::from(signer),
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct GcpKmsRemoteSignerBackend {
+    project_id: String,
+    location: String,
+    keyring: String,
+    key_name: String,
+    key_version: u32,
+}
+
+impl GcpKmsRemoteSignerBackend {
+    async fn load_signer(&self, chain: &ChainConfig) -> Result<TxSigner> {
+        let keyring_ref = GcpKeyRingRef {
+            google_project_id: self.project_id.clone(),
+            location: self.location.clone(),
+            name: self.keyring.clone(),
+        };
+        let key_specifier = KeySpecifier::new(keyring_ref, &self.key_name, self.key_version.into());
+
+        let kms_client = GoogleApi::from_function(
+            KeyManagementServiceClient::new,
+            "https://cloudkms.googleapis.com",
+            None,
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to initialize gcp_kms signer for chain {}",
+                chain.name
+            )
+        })?;
+        let signer = GcpSigner::new(kms_client, key_specifier, None)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to initialize gcp_kms signer for chain {}",
                     chain.name
                 )
             })?;
