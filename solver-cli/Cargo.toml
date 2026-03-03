@@ -110,5 +110,8 @@ tower-http = { version = "0.6.6", features = ["cors", "normalize-path"], optiona
 
 [dev-dependencies]
 assert_cmd = "2.0"
+mockall = "0.13"
 predicates = "3.0"
 tempfile = "3.8"
+solver-settlement = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", features = ["testing"] }
+solver-storage = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", features = ["testing"] }
