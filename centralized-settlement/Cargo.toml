@@ -1,0 +1,30 @@
+[package]
+name = "centralized-settlement"
+version = "0.1.0"
+edition = "2021"
+description = "Centralized oracle settlement implementation for OIF solver"
+license = "MIT"
+
+[dependencies]
+alloy-primitives = "1.0"
+alloy-provider = "1.0"
+alloy-rpc-types = "1.0"
+alloy-sol-types = "1.0"
+async-trait = "0.1"
+serde_json = "1.0"
+sha3 = "0.10"
+thiserror = "2.0"
+tokio = { version = "1.0", features = ["rt-multi-thread"] }
+toml = "0.9"
+tracing = "0.1"
+
+solver-account = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0" }
+solver-config = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0" }
+solver-core = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0" }
+solver-delivery = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0" }
+solver-discovery = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0" }
+solver-order = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0" }
+solver-pricing = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0" }
+solver-settlement = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0" }
+solver-storage = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0" }
+solver-types = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", features = ["oif-interfaces"] }
