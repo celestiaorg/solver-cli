@@ -2,8 +2,6 @@ mod chain;
 mod commands;
 mod deployment;
 mod rebalancer;
-#[cfg(feature = "solver-runtime")]
-mod server;
 mod solver;
 mod state;
 mod utils;

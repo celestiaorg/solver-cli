@@ -118,7 +118,7 @@ async fn run_solver_from_config_impl(config_path: &Path) -> Result<()> {
         );
 
         let solver_task = solver.run();
-        let api_task = crate::server::start_server(api_config, api_solver);
+        let api_task = solver_service::server::start_server(api_config, api_solver);
 
         tokio::select! {
             result = solver_task => {
