@@ -262,3 +262,28 @@ fn address_to_bytes32(address: Address) -> FixedBytes<32> {
     out[12..].copy_from_slice(address.as_slice());
     FixedBytes::from(out)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn address_to_bytes32_matches_expected_left_padding() {
+        let address: Address = "0xd5e85e86fc692cedad6d6992f1f0ccf273e39913"
+            .parse()
+            .unwrap();
+        assert_eq!(
+            address_to_bytes32(address).to_string(),
+            "0x000000000000000000000000d5e85e86fc692cedad6d6992f1f0ccf273e39913"
+        );
+    }
+
+    #[test]
+    fn bytes32_log_format_matches_address_variant() {
+        let address: Address = "0xd5e85e86fc692cedad6d6992f1f0ccf273e39913"
+            .parse()
+            .unwrap();
+        assert!(format!("{}", address)
+            .eq_ignore_ascii_case("0xd5e85e86fc692cedad6d6992f1f0ccf273e39913"));
+    }
+}

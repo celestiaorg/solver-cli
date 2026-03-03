@@ -1,5 +1,6 @@
 pub mod client;
 pub mod config;
+pub mod forwarding;
 pub mod planner;
 pub mod service;
 pub mod signer;
