@@ -825,7 +825,7 @@ impl QuoteGenerator {
                 token: output_token_bytes32,
                 amount: output_amount_u256,
                 recipient: recipient_bytes32,
-                call: vec![].into(),
+                callbackData: vec![].into(),
                 context: vec![].into(),
             }],
         };
@@ -851,7 +851,7 @@ impl QuoteGenerator {
                             o.token,
                             o.amount,
                             o.recipient,
-                            o.call.clone(),
+                            o.callbackData.clone(),
                             o.context.clone(),
                         )
                     })
@@ -1493,6 +1493,7 @@ mod tests {
             auth: None,
             quote: Some(QuoteConfig {
                 validity_seconds: 300,
+                ..QuoteConfig::default()
             }),
         };
 

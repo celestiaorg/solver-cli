@@ -75,8 +75,10 @@ async fn run_solver_from_config_impl(config_path: &Path) -> Result<()> {
     for (name, factory) in solver_settlement::get_all_implementations() {
         settlement_factories.insert(name.to_string(), factory);
     }
-    settlement_factories
-        .insert("centralized".to_string(), create_settlement as solver_settlement::SettlementFactory);
+    settlement_factories.insert(
+        "centralized".to_string(),
+        create_settlement as solver_settlement::SettlementFactory,
+    );
 
     let mut strategy_factories = HashMap::new();
     for (name, factory) in solver_order::get_all_strategy_implementations() {
@@ -94,7 +96,8 @@ async fn run_solver_from_config_impl(config_path: &Path) -> Result<()> {
         strategy_factories,
     };
 
-    let solver = solver_core::SolverBuilder::new(config.clone())
+    let dynamic_config = Arc::new(tokio::sync::RwLock::new(config.clone()));
+    let solver = solver_core::SolverBuilder::new(dynamic_config, config.clone())
         .build(factories)
         .await
         .map_err(|e| anyhow::anyhow!("{}", e))?;

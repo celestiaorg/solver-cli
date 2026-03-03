@@ -884,6 +884,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "arc-swap"
+version = "1.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9f3647c145568cec02c42054e07bdf9a5a698e15b466fb2341bfc393cd24aa5"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "ark-ff"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1626,6 +1635,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "backon"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cffb0e931875b666fc4fcb20fee52e9bbd1ef836fd9e9e04ec21555f9f85f7ef"
+dependencies = [
+ "fastrand",
+]
+
+[[package]]
 name = "base16ct"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1950,6 +1968,20 @@ checksum = "117725a109d387c937a1533ce01b450cbde6b88abceea8473c4d7a85853cda3c"
 dependencies = [
  "lazy_static",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "combine"
+version = "4.6.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ba5a308b75df32fe02788e748662718f03fde005016435c444eea572398219fd"
+dependencies = [
+ "bytes",
+ "futures-core",
+ "memchr",
+ "pin-project-lite",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -4186,6 +4218,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3edd4d5d42c92f0a659926464d4cce56b562761267ecf0f469d85b7de384175"
 
 [[package]]
+name = "redis"
+version = "0.32.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "014cc767fefab6a3e798ca45112bccad9c6e0e218fbd49720042716c73cfef44"
+dependencies = [
+ "arc-swap",
+ "backon",
+ "bytes",
+ "cfg-if",
+ "combine",
+ "futures-channel",
+ "futures-util",
+ "itoa",
+ "num-bigint",
+ "percent-encoding",
+ "pin-project-lite",
+ "ryu",
+ "sha1_smol",
+ "socket2",
+ "tokio",
+ "tokio-util",
+ "url",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4837,6 +4894,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "sha1_smol"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbfa15b3dddfee50a0fff136974b3e1bde555604ba463834a7eb7deb6417705d"
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4954,7 +5017,7 @@ dependencies = [
 [[package]]
 name = "solver-account"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?tag=v0.1.0#dfd4f88d93de6a256a88fb90bc06e3704a5c722a"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=main#f3a2d945d5f1024d1d80659a23acf73036e66b27"
 dependencies = [
  "alloy-consensus",
  "alloy-network",
@@ -4965,6 +5028,7 @@ dependencies = [
  "hex",
  "solver-types",
  "thiserror 2.0.18",
+ "tokio",
  "toml",
 ]
 
@@ -5028,7 +5092,7 @@ dependencies = [
 [[package]]
 name = "solver-config"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?tag=v0.1.0#dfd4f88d93de6a256a88fb90bc06e3704a5c722a"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=main#f3a2d945d5f1024d1d80659a23acf73036e66b27"
 dependencies = [
  "dotenvy",
  "regex",
@@ -5043,7 +5107,7 @@ dependencies = [
 [[package]]
 name = "solver-core"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?tag=v0.1.0#dfd4f88d93de6a256a88fb90bc06e3704a5c722a"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=main#f3a2d945d5f1024d1d80659a23acf73036e66b27"
 dependencies = [
  "alloy-primitives",
  "chrono",
@@ -5070,7 +5134,7 @@ dependencies = [
 [[package]]
 name = "solver-delivery"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?tag=v0.1.0#dfd4f88d93de6a256a88fb90bc06e3704a5c722a"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=main#f3a2d945d5f1024d1d80659a23acf73036e66b27"
 dependencies = [
  "alloy-consensus",
  "alloy-network",
@@ -5099,7 +5163,7 @@ dependencies = [
 [[package]]
 name = "solver-discovery"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?tag=v0.1.0#dfd4f88d93de6a256a88fb90bc06e3704a5c722a"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=main#f3a2d945d5f1024d1d80659a23acf73036e66b27"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
@@ -5129,7 +5193,7 @@ dependencies = [
 [[package]]
 name = "solver-order"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?tag=v0.1.0#dfd4f88d93de6a256a88fb90bc06e3704a5c722a"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=main#f3a2d945d5f1024d1d80659a23acf73036e66b27"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
@@ -5149,7 +5213,7 @@ dependencies = [
 [[package]]
 name = "solver-pricing"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?tag=v0.1.0#dfd4f88d93de6a256a88fb90bc06e3704a5c722a"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=main#f3a2d945d5f1024d1d80659a23acf73036e66b27"
 dependencies = [
  "alloy-primitives",
  "async-trait",
@@ -5167,7 +5231,7 @@ dependencies = [
 [[package]]
 name = "solver-settlement"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?tag=v0.1.0#dfd4f88d93de6a256a88fb90bc06e3704a5c722a"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=main#f3a2d945d5f1024d1d80659a23acf73036e66b27"
 dependencies = [
  "alloy-primitives",
  "alloy-provider",
@@ -5192,11 +5256,13 @@ dependencies = [
 [[package]]
 name = "solver-storage"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?tag=v0.1.0#dfd4f88d93de6a256a88fb90bc06e3704a5c722a"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=main#f3a2d945d5f1024d1d80659a23acf73036e66b27"
 dependencies = [
  "async-trait",
+ "chrono",
  "fs2",
  "mockall",
+ "redis",
  "serde",
  "serde_json",
  "solver-types",
@@ -5204,12 +5270,13 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
 name = "solver-types"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?tag=v0.1.0#dfd4f88d93de6a256a88fb90bc06e3704a5c722a"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=main#f3a2d945d5f1024d1d80659a23acf73036e66b27"
 dependencies = [
  "alloy-consensus",
  "alloy-contract",

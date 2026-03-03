@@ -8,8 +8,9 @@ use axum::extract::{Extension, Path};
 use solver_core::SolverEngine;
 use solver_types::{
     bytes32_to_address, standards::eip7930::InteropAddress, utils::conversion::parse_address,
-    with_0x_prefix, AssetAmount, GetOrderError, GetOrderResponse, Order, OrderResponse,
-    OrderStatus, Settlement, SettlementType, StorageKey, TransactionType,
+    with_0x_prefix, AssetAmount, FillTransactionInfo, FillTransactionStatus, GetOrderError,
+    GetOrderResponse, Order, OrderResponse, OrderStatus, Settlement, SettlementType, StorageKey,
+    TransactionType,
 };
 
 /// Handles GET /orders/{id} requests.
@@ -253,9 +254,9 @@ async fn convert_eip7683_order_to_response(
             | OrderStatus::PostFilled
             | OrderStatus::PreClaimed
             | OrderStatus::Settled
-            | OrderStatus::Finalized => "executed",
+            | OrderStatus::Finalized => FillTransactionStatus::Executed,
             // Fill transaction is in progress
-            OrderStatus::Executing => "pending",
+            OrderStatus::Executing => FillTransactionStatus::Pending,
             // These states shouldn't have a fill_tx_hash, but if they do, log warning
             OrderStatus::Created | OrderStatus::Pending => {
                 tracing::warn!(
@@ -263,29 +264,29 @@ async fn convert_eip7683_order_to_response(
                     status = ?order.status,
                     "Unexpected fill_tx_hash in pre-execution state"
                 );
-                "pending"
+                FillTransactionStatus::Pending
             }
             // Fill transaction failed
-            OrderStatus::Failed(TransactionType::Fill) => "failed",
+            OrderStatus::Failed(TransactionType::Fill, _) => FillTransactionStatus::Failed,
             // Prepare failed - shouldn't have fill_tx_hash
-            OrderStatus::Failed(TransactionType::Prepare) => {
+            OrderStatus::Failed(TransactionType::Prepare, _) => {
                 tracing::warn!(
                     order_id = %order.id,
                     "Unexpected fill_tx_hash when prepare transaction failed"
                 );
-                "failed"
+                FillTransactionStatus::Failed
             }
             // Fill succeeded but later transaction failed
-            OrderStatus::Failed(TransactionType::PostFill)
-            | OrderStatus::Failed(TransactionType::PreClaim)
-            | OrderStatus::Failed(TransactionType::Claim) => "executed",
+            OrderStatus::Failed(TransactionType::PostFill, _)
+            | OrderStatus::Failed(TransactionType::PreClaim, _)
+            | OrderStatus::Failed(TransactionType::Claim, _) => FillTransactionStatus::Executed,
         };
 
-        serde_json::json!({
-            "hash": with_0x_prefix(&alloy_primitives::hex::encode(&fill_tx_hash.0)),
-            "status": tx_status,
-            "timestamp": order.updated_at
-        })
+        FillTransactionInfo {
+            hash: with_0x_prefix(&alloy_primitives::hex::encode(&fill_tx_hash.0)),
+            status: tx_status,
+            timestamp: order.updated_at,
+        }
     });
 
     let response = OrderResponse {
@@ -367,9 +368,11 @@ mod tests {
         // Create a mock pricing service for tests
         let pricing_config = toml::Value::Table(toml::map::Map::new());
         let pricing_impl = mock::create_mock_pricing(&pricing_config).unwrap();
-        let pricing = Arc::new(PricingService::new(pricing_impl));
+        let pricing = Arc::new(PricingService::new(pricing_impl, Vec::new()));
 
+        let dynamic_config = Arc::new(tokio::sync::RwLock::new(cfg.clone()));
         SolverEngine::new(
+            dynamic_config,
             cfg,
             storage,
             account,
@@ -524,10 +527,7 @@ mod tests {
 
         // fill tx
         let fill_tx = resp.fill_transaction.expect("has fill tx");
-        assert_eq!(
-            fill_tx.get("status").and_then(|v| v.as_str()),
-            Some("executed")
-        );
+        assert_eq!(fill_tx.status, FillTransactionStatus::Executed);
     }
 
     #[tokio::test]
@@ -565,9 +565,6 @@ mod tests {
         // Keep a fill_tx_hash
         let resp = convert_order_to_response(order).await.expect("ok");
         let fill_tx = resp.fill_transaction.expect("has fill tx");
-        assert_eq!(
-            fill_tx.get("status").and_then(|v| v.as_str()),
-            Some("pending")
-        );
+        assert_eq!(fill_tx.status, FillTransactionStatus::Pending);
     }
 }

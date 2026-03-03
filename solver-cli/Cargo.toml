@@ -99,16 +99,16 @@ rebalancer = { path = "../rebalancer" }
 rust_decimal = { version = "1.35", features = ["serde", "serde-with-str"], optional = true }
 sha3 = { version = "0.10", optional = true }
 secp256k1 = { version = "0.31", features = ["recovery"], optional = true }
-solver-account = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
-solver-config = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
-solver-core = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
-solver-delivery = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
-solver-discovery = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
-solver-order = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
-solver-pricing = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
-solver-settlement = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
-solver-storage = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
-solver-types = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", features = ["oif-interfaces"], optional = true }
+solver-account = { git = "https://github.com/celestiaorg/oif-solver", branch = "main", optional = true }
+solver-config = { git = "https://github.com/celestiaorg/oif-solver", branch = "main", optional = true }
+solver-core = { git = "https://github.com/celestiaorg/oif-solver", branch = "main", optional = true }
+solver-delivery = { git = "https://github.com/celestiaorg/oif-solver", branch = "main", optional = true }
+solver-discovery = { git = "https://github.com/celestiaorg/oif-solver", branch = "main", optional = true }
+solver-order = { git = "https://github.com/celestiaorg/oif-solver", branch = "main", optional = true }
+solver-pricing = { git = "https://github.com/celestiaorg/oif-solver", branch = "main", optional = true }
+solver-settlement = { git = "https://github.com/celestiaorg/oif-solver", branch = "main", optional = true }
+solver-storage = { git = "https://github.com/celestiaorg/oif-solver", branch = "main", optional = true }
+solver-types = { git = "https://github.com/celestiaorg/oif-solver", branch = "main", features = ["oif-interfaces"], optional = true }
 tower = { version = "0.5", optional = true }
 tower-http = { version = "0.6.6", features = ["cors", "normalize-path"], optional = true }
 
@@ -117,5 +117,5 @@ assert_cmd = "2.0"
 mockall = "0.13"
 predicates = "3.0"
 tempfile = "3.8"
-solver-settlement = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", features = ["testing"] }
-solver-storage = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", features = ["testing"] }
+solver-settlement = { git = "https://github.com/celestiaorg/oif-solver", branch = "main", features = ["testing"] }
+solver-storage = { git = "https://github.com/celestiaorg/oif-solver", branch = "main", features = ["testing"] }

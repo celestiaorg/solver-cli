@@ -270,11 +270,11 @@ impl QuoteValidator {
     /// # Errors
     ///
     /// Returns `QuoteError::UnsupportedAsset` if unsupported chains are detected
-    pub fn validate_supported_networks(
+    pub async fn validate_supported_networks(
         request: &GetQuoteRequest,
         solver: &SolverEngine,
     ) -> Result<(), QuoteError> {
-        let networks = solver.token_manager().get_networks();
+        let networks = solver.token_manager().get_networks().await;
 
         // Check if any input is on a supported origin chain
         let has_valid_input = request.intent.inputs.iter().any(|input| {
@@ -321,11 +321,16 @@ impl QuoteValidator {
     /// * `solver` - The solver engine containing token configuration
     /// * `chain_id` - The blockchain network ID
     /// * `address` - The token contract address
-    fn is_token_supported(solver: &SolverEngine, chain_id: u64, address: &AlloyAddress) -> bool {
+    async fn is_token_supported(
+        solver: &SolverEngine,
+        chain_id: u64,
+        address: &AlloyAddress,
+    ) -> bool {
         let solver_address: solver_types::Address = (*address).into();
         solver
             .token_manager()
             .is_supported(chain_id, &solver_address)
+            .await
     }
 
     /// Validates an ERC-7930 interoperable address.
@@ -389,7 +394,7 @@ impl QuoteValidator {
     /// # Errors
     ///
     /// Returns `QuoteError::UnsupportedAsset` if ANY input is not supported
-    pub fn validate_and_collect_inputs_with_costs(
+    pub async fn validate_and_collect_inputs_with_costs(
         request: &GetQuoteRequest,
         solver: &SolverEngine,
         cost_context: &CostContext,
@@ -401,7 +406,7 @@ impl QuoteValidator {
             let (chain_id, evm_addr) = Self::extract_chain_and_address(asset_addr)?;
 
             // ALL assets must be supported for proper pricing
-            if !Self::is_token_supported(solver, chain_id, &evm_addr) {
+            if !Self::is_token_supported(solver, chain_id, &evm_addr).await {
                 return Err(QuoteError::UnsupportedAsset(format!(
                     "Input token not supported on chain {}: {}",
                     chain_id,
@@ -452,7 +457,7 @@ impl QuoteValidator {
     /// # Errors
     ///
     /// Returns `QuoteError::UnsupportedAsset` if ANY output is not supported
-    pub fn validate_and_collect_outputs_with_costs(
+    pub async fn validate_and_collect_outputs_with_costs(
         request: &GetQuoteRequest,
         solver: &SolverEngine,
         cost_context: &CostContext,
@@ -464,7 +469,7 @@ impl QuoteValidator {
             let (chain_id, evm_addr) = Self::extract_chain_and_address(asset_addr)?;
 
             // ALL assets must be supported for proper pricing
-            if !Self::is_token_supported(solver, chain_id, &evm_addr) {
+            if !Self::is_token_supported(solver, chain_id, &evm_addr).await {
                 return Err(QuoteError::UnsupportedAsset(format!(
                     "Output token not supported on chain {}: {}",
                     chain_id,

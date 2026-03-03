@@ -50,13 +50,13 @@ pub struct TokenInfo {
 ///
 /// Returns all supported tokens across all configured networks.
 pub async fn get_tokens(State(solver): State<Arc<SolverEngine>>) -> Json<TokensResponse> {
-    let networks = solver.token_manager().get_networks();
+    let networks = solver.token_manager().get_networks().await;
 
     let mut response = TokensResponse {
         networks: HashMap::new(),
     };
 
-    for (chain_id, network) in networks {
+    for (chain_id, network) in &networks {
         response.networks.insert(
             chain_id.to_string(),
             NetworkTokens {
@@ -86,7 +86,7 @@ pub async fn get_tokens_for_chain(
     Path(chain_id): Path<u64>,
     State(solver): State<Arc<SolverEngine>>,
 ) -> Result<Json<NetworkTokens>, StatusCode> {
-    let networks = solver.token_manager().get_networks();
+    let networks = solver.token_manager().get_networks().await;
 
     match networks.get(&chain_id) {
         Some(network) => Ok(Json(NetworkTokens {

@@ -271,6 +271,7 @@ mod tests {
             auth: None,
             quote: Some(QuoteConfig {
                 validity_seconds: 300, // 5 minutes
+                ..QuoteConfig::default()
             }),
         };
 

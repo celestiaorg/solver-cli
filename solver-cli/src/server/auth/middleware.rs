@@ -152,6 +152,8 @@ mod tests {
             access_token_expiry_hours: 1,
             refresh_token_expiry_hours: 720,
             issuer: "test".to_string(),
+            public_register_enabled: false,
+            admin: None,
         };
 
         let jwt_service = Arc::new(JwtService::new(config).unwrap());
@@ -183,6 +185,8 @@ mod tests {
             access_token_expiry_hours: 1,
             refresh_token_expiry_hours: 720,
             issuer: "test".to_string(),
+            public_register_enabled: false,
+            admin: None,
         };
 
         let jwt_service = Arc::new(JwtService::new(config).unwrap());
@@ -209,6 +213,8 @@ mod tests {
             access_token_expiry_hours: 1,
             refresh_token_expiry_hours: 720,
             issuer: "test".to_string(),
+            public_register_enabled: false,
+            admin: None,
         };
 
         let jwt_service = Arc::new(JwtService::new(config).unwrap());

@@ -112,14 +112,16 @@ pub async fn process_quote_request(
         .map_err(|e| QuoteError::Internal(format!("Failed to calculate cost context: {}", e)))?;
 
     // Check solver capabilities: networks only (token support is enforced during collection below)
-    QuoteValidator::validate_supported_networks(&request, solver)?;
+    QuoteValidator::validate_supported_networks(&request, solver).await?;
 
     // Validate and collect assets with cost-adjusted amounts
     let _supported_inputs =
-        QuoteValidator::validate_and_collect_inputs_with_costs(&request, solver, &cost_context)?;
+        QuoteValidator::validate_and_collect_inputs_with_costs(&request, solver, &cost_context)
+            .await?;
 
     let supported_outputs =
-        QuoteValidator::validate_and_collect_outputs_with_costs(&request, solver, &cost_context)?;
+        QuoteValidator::validate_and_collect_outputs_with_costs(&request, solver, &cost_context)
+            .await?;
 
     // Check destination balances for cost-adjusted output amounts
     QuoteValidator::ensure_destination_balances_with_costs(
