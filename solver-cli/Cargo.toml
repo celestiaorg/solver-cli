@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [features]
 default = ["solver-runtime"]
-solver-runtime = ["solver-service", "solver-config"]
+solver-runtime = ["solver-config", "centralized-settlement"]
 integration = []
 
 [dependencies]
@@ -63,10 +63,8 @@ uuid = { version = "1.6", features = ["v4", "serde"] }
 # Unix process management
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.28", features = ["signal", "process"] }
-solver-config = { path = "../oif/oif-solver/crates/solver-config", optional = true }
-
-# OIF solver components (optional, for solver runtime)
-solver-service = { path = "../oif/oif-solver/crates/solver-service", optional = true }
+solver-config = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
+centralized-settlement = { path = "../centralized-settlement", optional = true }
 rebalancer = { path = "../rebalancer" }
 
 [dev-dependencies]
