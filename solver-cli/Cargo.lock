@@ -4389,6 +4389,7 @@ dependencies = [
  "clap",
  "hex",
  "reqwest",
+ "rustls",
  "serde",
  "sha2",
  "tokio",

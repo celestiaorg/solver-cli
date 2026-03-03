@@ -57,14 +57,27 @@ gcloud kms keys versions list \
 
 The service uses Google ADC. Common options:
 
-1. Local/service account JSON:
+1. Local user OAuth ADC (recommended for local dev):
+
+```bash
+gcloud auth application-default login
+gcloud auth application-default set-quota-project "$PROJECT_ID"
+gcloud auth application-default print-access-token
+```
+
+2. Service account JSON ADC:
 
 ```bash
 export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+gcloud auth application-default print-access-token
 ```
 
-2. Workload Identity / GCE / GKE metadata credentials:
+3. Workload Identity / GCE / GKE metadata credentials:
 - no env var needed, ADC resolves from environment metadata.
+
+Important:
+- `gcloud auth login` is not sufficient by itself for ADC.
+- You need `gcloud auth application-default login` (or a service account / metadata identity).
 
 ## 3) Grant minimal IAM permissions
 
@@ -122,6 +135,32 @@ gcloud kms keys versions get-public-key 1 \
 ```
 
 ## 6) Troubleshooting
+
+- `None of the possible sources detected for Google OAuth token`
+  - the process cannot find ADC credentials.
+  - fix with one of:
+    - `gcloud auth application-default login`
+    - `export GOOGLE_APPLICATION_CREDENTIALS=/abs/path/service-account.json`
+    - run on GCE/GKE/Cloud Run with attached workload identity.
+
+- `token source error: not found token source`
+  - same root cause as above: no ADC token source available to the process.
+  - verify in the same shell/session used to start rebalancer:
+
+```bash
+echo "$GOOGLE_APPLICATION_CREDENTIALS"
+ls -l ~/.config/gcloud/application_default_credentials.json
+gcloud auth application-default print-access-token
+```
+
+- `make rebalancer-start` still cannot see credentials
+  - `make` does not automatically load `.env`; export credentials in the active shell first.
+  - example:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/abs/path/service-account.json
+make rebalancer-start
+```
 
 - `Failed to initialize gcp_kms signer for chain ...`
   - ADC credentials not available

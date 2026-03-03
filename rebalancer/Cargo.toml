@@ -26,6 +26,7 @@ bech32 = "0.11"
 clap = { version = "4.4", features = ["derive", "env"] }
 hex = "0.4"
 reqwest = { version = "0.12", features = ["json"] }
+rustls = { version = "0.23", default-features = false, features = ["std", "aws_lc_rs"] }
 serde = { version = "1.0", features = ["derive"] }
 sha2 = "0.10"
 tokio = { version = "1.34", features = ["full"] }
