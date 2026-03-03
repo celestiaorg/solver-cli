@@ -1090,7 +1090,7 @@ impl QuoteGenerator {
                 "token": solver_types::utils::address_to_bytes32_hex(&output_token_address),
                 "amount": amount.clone(),
                 "recipient": solver_types::utils::address_to_bytes32_hex(&recipient_address),
-                "call": output.calldata.clone(),
+                "callbackData": output.calldata.clone(),
                 "context": "0x" // Context is typically empty for standard flows
             }));
         }
@@ -1371,7 +1371,7 @@ impl QuoteGenerator {
                 {"name": "token", "type": "bytes32"},
                 {"name": "amount", "type": "uint256"},
                 {"name": "recipient", "type": "bytes32"},
-                {"name": "call", "type": "bytes"},
+                {"name": "callbackData", "type": "bytes"},
                 {"name": "context", "type": "bytes"}
             ]
         })
@@ -1411,7 +1411,7 @@ impl QuoteGenerator {
                 {"name": "token", "type": "bytes32"},
                 {"name": "amount", "type": "uint256"},
                 {"name": "recipient", "type": "bytes32"},
-                {"name": "call", "type": "bytes"},
+                {"name": "callbackData", "type": "bytes"},
                 {"name": "context", "type": "bytes"}
             ]
         })

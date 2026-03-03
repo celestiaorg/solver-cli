@@ -44,9 +44,6 @@ use solver_delivery::DeliveryService;
 use solver_types::standards::eip7683::LockType;
 use solver_types::{AssetLockReference, LockKind, OrderInput, QuoteError, Transaction};
 
-/// Canonical Permit2 address — identical on every chain that has it deployed.
-const PERMIT2_CANONICAL: &str = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
-
 /// Detects EIP-3009 support by checking for RECEIVE_WITH_AUTHORIZATION_TYPEHASH on-chain.
 async fn detect_eip3009_via_rpc(
     chain_id: u64,
