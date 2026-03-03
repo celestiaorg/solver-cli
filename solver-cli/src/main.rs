@@ -5,6 +5,8 @@ mod rebalancer;
 mod solver;
 mod state;
 mod utils;
+#[cfg(feature = "solver-runtime")]
+mod server;
 
 use clap::{Parser, Subcommand};
 use tracing::Level;

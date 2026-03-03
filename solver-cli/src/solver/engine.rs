@@ -21,6 +21,8 @@ pub async fn run_solver_from_config(config_path: &Path) -> Result<()> {
 
 #[cfg(feature = "solver-runtime")]
 async fn run_solver_from_config_impl(config_path: &Path) -> Result<()> {
+    use std::sync::Arc;
+
     use centralized_settlement::build_solver_with_centralized;
     use solver_config::Config;
 
@@ -38,10 +40,39 @@ async fn run_solver_from_config_impl(config_path: &Path) -> Result<()> {
     let solver = build_solver_with_centralized(&config)
         .await
         .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let solver = Arc::new(solver);
 
     tracing::info!("Solver engine built successfully");
 
-    solver.run().await.map_err(|e| anyhow::anyhow!("{}", e))?;
+    let api_enabled = config.api.as_ref().is_some_and(|api| api.enabled);
+
+    if api_enabled {
+        let api_config = config.api.as_ref().unwrap().clone();
+        let api_solver = Arc::clone(&solver);
+
+        tracing::info!(
+            "Starting solver with API server on {}:{}",
+            api_config.host,
+            api_config.port
+        );
+
+        let solver_task = solver.run();
+        let api_task = crate::server::start_server(api_config, api_solver);
+
+        tokio::select! {
+            result = solver_task => {
+                tracing::info!("Solver finished");
+                result.map_err(|e| anyhow::anyhow!("{}", e))?;
+            }
+            result = api_task => {
+                tracing::info!("API server finished");
+                result.map_err(|e| anyhow::anyhow!("{}", e))?;
+            }
+        }
+    } else {
+        tracing::info!("Starting solver (no API server)");
+        solver.run().await.map_err(|e| anyhow::anyhow!("{}", e))?;
+    }
 
     tracing::info!("Solver stopped");
     Ok(())

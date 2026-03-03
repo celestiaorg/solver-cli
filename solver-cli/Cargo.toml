@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [features]
 default = ["solver-runtime"]
-solver-runtime = ["solver-config", "centralized-settlement"]
+solver-runtime = ["solver-config", "centralized-settlement", "axum", "tower", "tower-http", "jsonwebtoken", "once_cell", "secp256k1", "rust_decimal", "alloy-primitives", "alloy-sol-types", "futures", "solver-account", "solver-core", "solver-delivery", "solver-discovery", "solver-order", "solver-pricing", "solver-settlement", "solver-storage", "solver-types"]
 integration = []
 
 [dependencies]
@@ -64,7 +64,26 @@ uuid = { version = "1.6", features = ["v4", "serde"] }
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.28", features = ["signal", "process"] }
 solver-config = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
+solver-account = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
+solver-core = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
+solver-delivery = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
+solver-discovery = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
+solver-order = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
+solver-pricing = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
+solver-settlement = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
+solver-storage = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", optional = true }
+solver-types = { git = "https://github.com/celestiaorg/oif-solver", tag = "v0.1.0", features = ["oif-interfaces"], optional = true }
 centralized-settlement = { path = "../centralized-settlement", optional = true }
+axum = { version = "0.8", optional = true }
+futures = { version = "0.3", optional = true }
+tower = { version = "0.5", optional = true }
+tower-http = { version = "0.6.6", features = ["cors", "normalize-path"], optional = true }
+jsonwebtoken = { version = "9.3.1", optional = true }
+once_cell = { version = "1.20", optional = true }
+secp256k1 = { version = "0.31", features = ["recovery"], optional = true }
+rust_decimal = { version = "1.35", features = ["serde", "serde-with-str"], optional = true }
+alloy-primitives = { version = "1.0.37", features = ["std", "serde"], optional = true }
+alloy-sol-types = { version = "1.0.37", optional = true }
 rebalancer = { path = "../rebalancer" }
 
 [dev-dependencies]
