@@ -126,12 +126,12 @@ pub struct GcpKmsRemoteSignerBackend {
 
 impl GcpKmsRemoteSignerBackend {
     async fn load_signer(&self, chain: &ChainConfig) -> Result<TxSigner> {
-        let keyring_ref = GcpKeyRingRef {
+        let keyring = GcpKeyRingRef {
             google_project_id: self.project_id.clone(),
             location: self.location.clone(),
             name: self.keyring.clone(),
         };
-        let key_specifier = KeySpecifier::new(keyring_ref, &self.key_name, self.key_version.into());
+        let key_specifier = KeySpecifier::new(keyring, &self.key_name, self.key_version.into());
 
         let kms_client = GoogleApi::from_function(
             KeyManagementServiceClient::new,

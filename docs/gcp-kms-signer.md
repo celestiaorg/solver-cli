@@ -39,6 +39,7 @@ gcloud kms keys create "$KEY_NAME" \
   --keyring "$KEYRING" \
   --purpose "asymmetric-signing" \
   --default-algorithm "ec-sign-secp256k1-sha256" \
+  --protection-level "hsm" \
   --project "$PROJECT_ID"
 ```
 
