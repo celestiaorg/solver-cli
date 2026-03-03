@@ -75,8 +75,8 @@ pub use validation::QuoteValidator;
 use solver_config::Config;
 use solver_core::SolverEngine;
 use solver_types::{
-	CostContext, GetQuoteRequest, GetQuoteResponse, Quote, QuoteError, QuoteWithCostContext,
-	StorageKey,
+    CostContext, GetQuoteRequest, GetQuoteResponse, Quote, QuoteError, QuoteWithCostContext,
+    StorageKey,
 };
 
 use std::time::Duration;
@@ -87,64 +87,64 @@ use tracing::info;
 /// This is the main HTTP API entry point that orchestrates the quote processing
 /// pipeline by delegating to specialized modules.
 pub async fn process_quote_request(
-	request: GetQuoteRequest,
-	solver: &SolverEngine,
-	config: &Config,
+    request: GetQuoteRequest,
+    solver: &SolverEngine,
+    config: &Config,
 ) -> Result<GetQuoteResponse, QuoteError> {
-	info!(
-		"Processing quote request with {} inputs",
-		request.intent.inputs.len()
-	);
+    info!(
+        "Processing quote request with {} inputs",
+        request.intent.inputs.len()
+    );
 
-	// Use the new validation architecture to get ValidatedQuoteContext
-	let validated_context = QuoteValidator::validate_quote_request(&request, solver)?;
+    // Use the new validation architecture to get ValidatedQuoteContext
+    let validated_context = QuoteValidator::validate_quote_request(&request, solver)?;
 
-	let cost_profit_service = solver_core::engine::cost_profit::CostProfitService::new(
-		solver.pricing().clone(),
-		solver.delivery().clone(),
-		solver.token_manager().clone(),
-		solver.storage().clone(),
-	);
+    let cost_profit_service = solver_core::engine::cost_profit::CostProfitService::new(
+        solver.pricing().clone(),
+        solver.delivery().clone(),
+        solver.token_manager().clone(),
+        solver.storage().clone(),
+    );
 
-	let cost_context = cost_profit_service
-		.calculate_cost_context(&request, &validated_context, config)
-		.await
-		.map_err(|e| QuoteError::Internal(format!("Failed to calculate cost context: {}", e)))?;
+    let cost_context = cost_profit_service
+        .calculate_cost_context(&request, &validated_context, config)
+        .await
+        .map_err(|e| QuoteError::Internal(format!("Failed to calculate cost context: {}", e)))?;
 
-	// Check solver capabilities: networks only (token support is enforced during collection below)
-	QuoteValidator::validate_supported_networks(&request, solver)?;
+    // Check solver capabilities: networks only (token support is enforced during collection below)
+    QuoteValidator::validate_supported_networks(&request, solver)?;
 
-	// Validate and collect assets with cost-adjusted amounts
-	let _supported_inputs =
-		QuoteValidator::validate_and_collect_inputs_with_costs(&request, solver, &cost_context)?;
+    // Validate and collect assets with cost-adjusted amounts
+    let _supported_inputs =
+        QuoteValidator::validate_and_collect_inputs_with_costs(&request, solver, &cost_context)?;
 
-	let supported_outputs =
-		QuoteValidator::validate_and_collect_outputs_with_costs(&request, solver, &cost_context)?;
+    let supported_outputs =
+        QuoteValidator::validate_and_collect_outputs_with_costs(&request, solver, &cost_context)?;
 
-	// Check destination balances for cost-adjusted output amounts
-	QuoteValidator::ensure_destination_balances_with_costs(
-		solver,
-		&supported_outputs,
-		&validated_context,
-		&cost_context,
-	)
-	.await?;
+    // Check destination balances for cost-adjusted output amounts
+    QuoteValidator::ensure_destination_balances_with_costs(
+        solver,
+        &supported_outputs,
+        &validated_context,
+        &cost_context,
+    )
+    .await?;
 
-	// Generate quotes using the business logic layer with embedded costs
-	let settlement_service = solver.settlement();
-	let delivery_service = solver.delivery();
-	let quote_generator = QuoteGenerator::new(settlement_service.clone(), delivery_service.clone());
+    // Generate quotes using the business logic layer with embedded costs
+    let settlement_service = solver.settlement();
+    let delivery_service = solver.delivery();
+    let quote_generator = QuoteGenerator::new(settlement_service.clone(), delivery_service.clone());
 
-	let quotes = quote_generator
-		.generate_quotes_with_costs(&request, &validated_context, &cost_context, config)
-		.await?;
+    let quotes = quote_generator
+        .generate_quotes_with_costs(&request, &validated_context, &cost_context, config)
+        .await?;
 
-	// Persist quotes and cost contexts
-	store_quotes(solver, &quotes, &cost_context).await;
+    // Persist quotes and cost contexts
+    store_quotes(solver, &quotes, &cost_context).await;
 
-	info!("Generated and stored {} quote options", quotes.len());
+    info!("Generated and stored {} quote options", quotes.len());
 
-	Ok(GetQuoteResponse { quotes })
+    Ok(GetQuoteResponse { quotes })
 }
 
 /// Stores generated quotes with their cost contexts.
@@ -152,52 +152,52 @@ pub async fn process_quote_request(
 /// Each quote is stored together with its cost context as a QuoteWithCostContext structure.
 /// Storage errors are logged but do not fail the request.
 async fn store_quotes(solver: &SolverEngine, quotes: &[Quote], cost_context: &CostContext) {
-	let storage = solver.storage();
-	let now = std::time::SystemTime::now()
-		.duration_since(std::time::UNIX_EPOCH)
-		.unwrap_or_default()
-		.as_secs();
+    let storage = solver.storage();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
 
-	for quote in quotes {
-		// Calculate TTL from valid_until timestamp
-		let ttl = if quote.valid_until > now {
-			Duration::from_secs(quote.valid_until - now)
-		} else {
-			// Quote is already expired, store with minimal TTL
-			Duration::from_secs(1)
-		};
+    for quote in quotes {
+        // Calculate TTL from valid_until timestamp
+        let ttl = if quote.valid_until > now {
+            Duration::from_secs(quote.valid_until - now)
+        } else {
+            // Quote is already expired, store with minimal TTL
+            Duration::from_secs(1)
+        };
 
-		// Create combined structure with quote and cost context
-		let quote_with_context = QuoteWithCostContext {
-			quote: quote.clone(),
-			cost_context: cost_context.clone(),
-		};
+        // Create combined structure with quote and cost context
+        let quote_with_context = QuoteWithCostContext {
+            quote: quote.clone(),
+            cost_context: cost_context.clone(),
+        };
 
-		// Store the combined structure in a single I/O operation
-		if let Err(e) = storage
-			.store_with_ttl(
-				StorageKey::Quotes.as_str(),
-				&quote.quote_id,
-				&quote_with_context,
-				None, // No indexes needed
-				Some(ttl),
-			)
-			.await
-		{
-			tracing::warn!(
-				"Failed to store quote with context {}: {}",
-				quote.quote_id,
-				e
-			);
-		} else {
-			tracing::debug!(
-				"Stored quote {} with cost context, TTL {:?} (valid_until: {})",
-				quote.quote_id,
-				ttl,
-				quote.valid_until
-			);
-		}
-	}
+        // Store the combined structure in a single I/O operation
+        if let Err(e) = storage
+            .store_with_ttl(
+                StorageKey::Quotes.as_str(),
+                &quote.quote_id,
+                &quote_with_context,
+                None, // No indexes needed
+                Some(ttl),
+            )
+            .await
+        {
+            tracing::warn!(
+                "Failed to store quote with context {}: {}",
+                quote.quote_id,
+                e
+            );
+        } else {
+            tracing::debug!(
+                "Stored quote {} with cost context, TTL {:?} (valid_until: {})",
+                quote.quote_id,
+                ttl,
+                quote.valid_until
+            );
+        }
+    }
 }
 
 /// Retrieves a stored quote by its ID.
@@ -205,23 +205,22 @@ async fn store_quotes(solver: &SolverEngine, quotes: &[Quote], cost_context: &Co
 /// This function looks up a previously generated quote in storage.
 /// Quotes are automatically expired based on their TTL.
 pub async fn get_quote_by_id(quote_id: &str, solver: &SolverEngine) -> Result<Quote, QuoteError> {
-	let storage = solver.storage();
+    let storage = solver.storage();
 
-	match storage
-		.retrieve::<QuoteWithCostContext>(StorageKey::Quotes.as_str(), quote_id)
-		.await
-	{
-		Ok(quote_with_context) => {
-			tracing::debug!("Retrieved quote {} from storage", quote_id);
-			Ok(quote_with_context.quote)
-		},
-		Err(e) => {
-			tracing::warn!("Failed to retrieve quote {}: {}", quote_id, e);
-			Err(QuoteError::InvalidRequest(format!(
-				"Quote not found: {}",
-				quote_id
-			)))
-		},
-	}
+    match storage
+        .retrieve::<QuoteWithCostContext>(StorageKey::Quotes.as_str(), quote_id)
+        .await
+    {
+        Ok(quote_with_context) => {
+            tracing::debug!("Retrieved quote {} from storage", quote_id);
+            Ok(quote_with_context.quote)
+        }
+        Err(e) => {
+            tracing::warn!("Failed to retrieve quote {}: {}", quote_id, e);
+            Err(QuoteError::InvalidRequest(format!(
+                "Quote not found: {}",
+                quote_id
+            )))
+        }
+    }
 }
-

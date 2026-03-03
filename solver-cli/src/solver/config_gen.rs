@@ -58,11 +58,7 @@ http = "{}"
                     .output_settler_simple
                     .as_deref()
                     .unwrap_or(""),
-                chain
-                    .contracts
-                    .permit2
-                    .as_deref()
-                    .unwrap_or(""),
+                chain.contracts.permit2.as_deref().unwrap_or(""),
                 chain.chain_id,
                 chain.rpc,
             ));

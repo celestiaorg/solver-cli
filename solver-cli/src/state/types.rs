@@ -261,5 +261,4 @@ impl SolverState {
     pub fn all_chains_deployed(&self) -> bool {
         !self.chains.is_empty() && self.chains.values().all(|c| c.contracts.is_complete())
     }
-
 }

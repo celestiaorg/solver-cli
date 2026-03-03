@@ -91,4 +91,3 @@ pub fn format_token_amount(amount: U256, decimals: u8) -> String {
         format!("{}.{}", whole, trimmed)
     }
 }
-

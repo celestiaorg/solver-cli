@@ -33,5 +33,5 @@
 //! - **Amount Authorization**: Explicit token amounts and recipients
 
 pub mod payloads {
-	pub mod permit2;
+    pub mod permit2;
 }

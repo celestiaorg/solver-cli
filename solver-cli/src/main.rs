@@ -2,11 +2,11 @@ mod chain;
 mod commands;
 mod deployment;
 mod rebalancer;
+#[cfg(feature = "solver-runtime")]
+mod server;
 mod solver;
 mod state;
 mod utils;
-#[cfg(feature = "solver-runtime")]
-mod server;
 
 use clap::{Parser, Subcommand};
 use tracing::Level;

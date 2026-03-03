@@ -140,7 +140,16 @@ impl IntentCommand {
                 expiry,
             } => {
                 Self::submit(
-                    IntentSubmitParams { dir, amount, asset, from, to, wait, timeout, expiry },
+                    IntentSubmitParams {
+                        dir,
+                        amount,
+                        asset,
+                        from,
+                        to,
+                        wait,
+                        timeout,
+                        expiry,
+                    },
                     output,
                 )
                 .await
@@ -167,7 +176,16 @@ impl IntentCommand {
     }
 
     async fn submit(params: IntentSubmitParams, output: OutputFormat) -> Result<()> {
-        let IntentSubmitParams { dir, amount, asset, from, to, wait, timeout, expiry } = params;
+        let IntentSubmitParams {
+            dir,
+            amount,
+            asset,
+            from,
+            to,
+            wait,
+            timeout,
+            expiry,
+        } = params;
         let out = OutputFormatter::new(output);
         let project_dir = dir.unwrap_or_else(|| env::current_dir().unwrap());
         let state_mgr = StateManager::new(&project_dir);
