@@ -1856,33 +1856,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "centralized-settlement"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "alloy-provider",
- "alloy-rpc-types",
- "alloy-sol-types",
- "async-trait",
- "serde_json",
- "sha3",
- "solver-account",
- "solver-config",
- "solver-core",
- "solver-delivery",
- "solver-discovery",
- "solver-order",
- "solver-pricing",
- "solver-settlement",
- "solver-storage",
- "solver-types",
- "thiserror 2.0.18",
- "tokio",
- "toml",
- "tracing",
-]
-
-[[package]]
 name = "cfg-if"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5001,12 +4974,13 @@ version = "0.1.0"
 dependencies = [
  "alloy",
  "alloy-primitives",
+ "alloy-provider",
+ "alloy-rpc-types",
  "alloy-sol-types",
  "anyhow",
  "assert_cmd",
  "async-trait",
  "axum",
- "centralized-settlement",
  "chrono",
  "clap",
  "colored",
@@ -5029,6 +5003,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
+ "sha3",
  "solver-account",
  "solver-config",
  "solver-core",

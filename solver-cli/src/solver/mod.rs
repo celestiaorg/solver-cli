@@ -1,4 +1,6 @@
 mod config_gen;
+#[cfg(feature = "solver-runtime")]
+mod centralized;
 mod engine;
 mod runner;
 
