@@ -79,6 +79,17 @@ cp .env.example .env
 
 See [Deploy New Token](docs/deploy-new-token.md) for detailed environment setup.
 
+Oracle operator signer defaults to env-backed config. Generated `.config/oracle.toml` now contains:
+
+```toml
+operator_address = "0x..."
+
+[signer]
+type = "env"
+```
+
+When `type = "env"`, the operator loads `ORACLE_OPERATOR_PK` at runtime (for example via `.env`).
+
 ## Make Commands
 
 

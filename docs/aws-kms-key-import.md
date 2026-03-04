@@ -2,9 +2,9 @@
 
 This guide shows how to:
 1. import an existing EVM private key into AWS KMS, and
-2. configure your signer to use that solver key via KMS (e.g. `type = "aws_kms"` in rebalancer service).
+2. configure your signer to use that solver key via KMS (e.g. `type = "aws_kms"` in rebalancer/oracle services).
 
-It is written for this repo's AWS KMS signer configuration of the rebalancer service, which supports:
+It is written for this repo's AWS KMS signer configuration, which supports:
 - `type = "aws_kms"`
 - `key_id`
 - `region`
@@ -18,11 +18,15 @@ It is written for this repo's AWS KMS signer configuration of the rebalancer ser
 
 ## Important behavior in this repo
 
-At startup, the service enforces signer/account match:
+At startup, the rebalancer enforces signer/account match:
 - signer address from KMS
 - `account` in `[[chains]]` config
 
 If they differ, startup fails with `Signer/account mismatch`.
+
+At startup, the oracle operator enforces signer/operator match:
+- signer address from KMS
+- `operator_address` in `oracle.toml`
 
 ## 1) Prepare key and expected address
 
@@ -137,7 +141,9 @@ aws kms import-key-material \
 
 ## 7) Configure signer to use the solver key via KMS
 
-In your service config, for each chain that should use KMS:
+### Rebalancer (`.config/rebalancer.toml`)
+
+In rebalancer config, for each chain that should use KMS:
 
 ```toml
 [[chains]]
@@ -154,6 +160,29 @@ region = "us-east-1"
 ```
 
 You can also use an alias for `key_id` (for example `alias/solver-eden`).
+
+### Oracle Operator (`.config/oracle.toml`)
+
+Oracle operator uses a single top-level signer across all chains:
+
+```toml
+operator_address = "0x<must-match-derived-address>"
+
+[signer]
+type = "aws_kms"
+key_id = "arn:aws:kms:us-east-1:123456789012:key/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+region = "us-east-1"
+
+[[chains]]
+name = "eden"
+chain_id = 3735928814
+rpc_url = "https://ev-reth-eden-testnet.binarybuilders.services:8545/"
+oracle_address = "0x..."
+output_settler_address = "0x..."
+input_settler_address = "0x..."
+```
+
+If you use `type = "env"` in oracle config, it loads `ORACLE_OPERATOR_PK`.
 
 ## 8) AWS credentials at runtime
 

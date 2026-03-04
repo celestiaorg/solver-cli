@@ -215,7 +215,7 @@ solver: solver-start
 
 ## operator-start: Start the oracle operator service
 operator-start:
-	@cd oracle-operator && ORACLE_CONFIG=../.config/oracle.toml RUST_LOG=info cargo run --release
+	@. ./.env && cd oracle-operator && ORACLE_CONFIG=../.config/oracle.toml RUST_LOG=info cargo run --release
 .PHONY: operator-start
 
 # Alias for convenience

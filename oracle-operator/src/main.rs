@@ -8,6 +8,7 @@ use tracing_subscriber::util::SubscriberInitExt;
 
 mod config;
 mod operator;
+mod signer;
 mod state;
 
 use config::OracleConfig;
