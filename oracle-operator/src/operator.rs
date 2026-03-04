@@ -165,15 +165,17 @@ impl OracleOperator {
         let operator_signer = TxSigner::new(&config.signer)
             .await
             .context("Failed to load operator signer")?;
-        let expected_operator_address: AlloyAddress = config
+
+        let expected_address: AlloyAddress = config
             .operator_address
             .parse()
             .with_context(|| format!("Invalid operator_address: {}", config.operator_address))?;
-        if operator_signer.address != expected_operator_address {
+
+        if operator_signer.address != expected_address {
             anyhow::bail!(
                 "Signer/operator mismatch: signer={} operator_address={}",
                 operator_signer.address,
-                expected_operator_address
+                expected_address
             );
         }
 
