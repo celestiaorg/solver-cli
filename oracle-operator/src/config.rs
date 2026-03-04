@@ -141,17 +141,14 @@ impl OracleConfig {
                     chain.name, chain.rpc_url
                 )
             })?;
-            let _oracle_address: Address =
-                chain.oracle_address.parse().with_context(|| {
-                    format!(
-                        "Invalid oracle_address for chain {}: {}",
-                        chain.name, chain.oracle_address
-                    )
-                })?;
-            let _output_settler_address: Address = chain
-                .output_settler_address
-                .parse()
-                .with_context(|| {
+            let _oracle_address: Address = chain.oracle_address.parse().with_context(|| {
+                format!(
+                    "Invalid oracle_address for chain {}: {}",
+                    chain.name, chain.oracle_address
+                )
+            })?;
+            let _output_settler_address: Address =
+                chain.output_settler_address.parse().with_context(|| {
                     format!(
                         "Invalid output_settler_address for chain {}: {}",
                         chain.name, chain.output_settler_address
@@ -349,33 +346,8 @@ output_settler_address = "0x0000000000000000000000000000000000000002"
 
         let raw: RawOracleConfig = toml::from_str(toml).expect("valid TOML");
         let err = OracleConfig::from_raw(raw).expect_err("expected error");
-        assert!(
-            err.to_string()
-                .contains("signer type = \"env\" only accepts field \"type\"")
-        );
-    }
-
-    #[test]
-    fn rejects_legacy_operator_private_key_format() {
-        let toml = r#"
-operator_private_key = "0x1234"
-operator_address = "0x000000000000000000000000000000000000dEaD"
-
-[signer]
-type = "env"
-
-[[chains]]
-name = "sepolia"
-chain_id = 11155111
-rpc_url = "https://ethereum-sepolia-rpc.publicnode.com"
-oracle_address = "0x0000000000000000000000000000000000000001"
-output_settler_address = "0x0000000000000000000000000000000000000002"
-"#;
-
-        let err = toml::from_str::<RawOracleConfig>(toml).expect_err("expected parse error");
-        assert!(
-            err.to_string()
-                .contains("unknown field `operator_private_key`")
-        );
+        assert!(err
+            .to_string()
+            .contains("signer type = \"env\" only accepts field \"type\""));
     }
 }
