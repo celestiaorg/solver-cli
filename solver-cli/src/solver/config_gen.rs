@@ -410,7 +410,7 @@ poll_interval_seconds = 3
     "local-oif-solver": {{
       "solver_id": "local-oif-solver",
       "adapter_id": "oif-v1",
-      "endpoint": "http://127.0.0.1:5001/api",
+      "endpoint": "http://127.0.0.1:5001/api/v1",
       "enabled": true,
       "headers": null,
       "name": "Local OIF Solver",
