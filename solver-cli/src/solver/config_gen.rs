@@ -101,6 +101,29 @@ decimals = {}
             output_oracles.push(format!("{} = [\"{}\"]", chain.chain_id, oracle));
         }
 
+        // Build mock price pairs from all configured tokens
+        let mut price_symbols: Vec<String> = state
+            .chains
+            .values()
+            .flat_map(|c| c.tokens.keys().cloned())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        price_symbols.sort();
+        let mock_prices = price_symbols
+            .iter()
+            .map(|sym| format!("\"{}/USD\" = \"1.0\"", sym))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        // Include OFAC list path if the file exists
+        let ofac_line = if std::path::Path::new(".config/ofac.json").exists() {
+            "ofac_list = \".config/ofac.json\"\n".to_string()
+        } else {
+            String::new()
+        };
+
+
         // Build routes (all-to-all)
         let mut routes = Vec::new();
         for &from_id in &chain_ids {
@@ -125,7 +148,7 @@ min_profitability_pct = 0.0
 commission_bps = 20
 rate_buffer_bps = 15
 monitoring_timeout_seconds = 28800
-
+{ofac_line}
 # ============================================================================
 # HTTP API
 # ============================================================================
@@ -257,6 +280,7 @@ output = {{ {output_oracles} }}
             account_section = account_section,
             networks_section = networks_section.trim(),
             chain_ids_str = chain_ids_str,
+            ofac_line = ofac_line,
             input_oracles = input_oracles.join(", "),
             output_oracles = output_oracles.join(", "),
             routes = routes.join("\n"),

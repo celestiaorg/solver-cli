@@ -5260,7 +5260,7 @@ dependencies = [
 [[package]]
 name = "solver-account"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "alloy-consensus",
  "alloy-network",
@@ -5272,7 +5272,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-kms",
  "hex",
- "solver-types",
+ "solver-types 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=070e2d5)",
  "thiserror 2.0.18",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
@@ -5319,9 +5319,9 @@ dependencies = [
  "solver-order",
  "solver-pricing",
  "solver-service",
- "solver-settlement 0.1.0",
- "solver-storage",
- "solver-types",
+ "solver-settlement 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=070e2d5)",
+ "solver-storage 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=070e2d5)",
+ "solver-types 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=070e2d5)",
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
@@ -5334,13 +5334,13 @@ dependencies = [
 [[package]]
 name = "solver-config"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "dotenvy",
  "regex",
  "rust_decimal",
  "serde",
- "solver-types",
+ "solver-types 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=070e2d5)",
  "thiserror 2.0.18",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
@@ -5349,7 +5349,7 @@ dependencies = [
 [[package]]
 name = "solver-core"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "alloy-primitives",
  "chrono",
@@ -5364,9 +5364,9 @@ dependencies = [
  "solver-discovery",
  "solver-order",
  "solver-pricing",
- "solver-settlement 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc)",
- "solver-storage",
- "solver-types",
+ "solver-settlement 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=070e2d5)",
+ "solver-storage 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=070e2d5)",
+ "solver-types 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=070e2d5)",
  "thiserror 2.0.18",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
@@ -5376,7 +5376,7 @@ dependencies = [
 [[package]]
 name = "solver-delivery"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "alloy-consensus",
  "alloy-network",
@@ -5395,7 +5395,7 @@ dependencies = [
  "serde",
  "serde_json",
  "solver-account",
- "solver-types",
+ "solver-types 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=070e2d5)",
  "thiserror 2.0.18",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
@@ -5405,7 +5405,7 @@ dependencies = [
 [[package]]
 name = "solver-discovery"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
@@ -5423,7 +5423,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "solver-types",
+ "solver-types 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=070e2d5)",
  "thiserror 2.0.18",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
@@ -5435,7 +5435,7 @@ dependencies = [
 [[package]]
 name = "solver-order"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
@@ -5445,7 +5445,7 @@ dependencies = [
  "hex",
  "serde",
  "serde_json",
- "solver-types",
+ "solver-types 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=070e2d5)",
  "thiserror 2.0.18",
  "toml 0.9.12+spec-1.1.0",
  "tracing",
@@ -5455,7 +5455,7 @@ dependencies = [
 [[package]]
 name = "solver-pricing"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "alloy-primitives",
  "async-trait",
@@ -5463,7 +5463,7 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
- "solver-types",
+ "solver-types 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=070e2d5)",
  "thiserror 2.0.18",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
@@ -5473,7 +5473,7 @@ dependencies = [
 [[package]]
 name = "solver-service"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "alloy-primitives",
  "alloy-signer",
@@ -5503,9 +5503,9 @@ dependencies = [
  "solver-discovery",
  "solver-order",
  "solver-pricing",
- "solver-settlement 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc)",
- "solver-storage",
- "solver-types",
+ "solver-settlement 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=070e2d5)",
+ "solver-storage 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=070e2d5)",
+ "solver-types 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=070e2d5)",
  "subtle",
  "thiserror 2.0.18",
  "tokio",
@@ -5529,8 +5529,33 @@ dependencies = [
  "serde_json",
  "sha3",
  "solver-settlement 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc)",
- "solver-storage",
- "solver-types",
+ "solver-storage 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc)",
+ "solver-types 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc)",
+ "tokio",
+ "toml 0.9.12+spec-1.1.0",
+ "tracing",
+]
+
+[[package]]
+name = "solver-settlement"
+version = "0.1.0"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
+dependencies = [
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-rpc-types",
+ "alloy-sol-types",
+ "alloy-transport",
+ "alloy-transport-http",
+ "async-trait",
+ "mockall",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha3",
+ "solver-storage 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=070e2d5)",
+ "solver-types 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=070e2d5)",
+ "thiserror 2.0.18",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
  "tracing",
@@ -5553,12 +5578,32 @@ dependencies = [
  "serde",
  "serde_json",
  "sha3",
- "solver-storage",
- "solver-types",
+ "solver-storage 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc)",
+ "solver-types 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc)",
  "thiserror 2.0.18",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
  "tracing",
+]
+
+[[package]]
+name = "solver-storage"
+version = "0.1.0"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "fs2",
+ "mockall",
+ "redis",
+ "serde",
+ "serde_json",
+ "solver-types 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=070e2d5)",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml 0.9.12+spec-1.1.0",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -5569,16 +5614,43 @@ dependencies = [
  "async-trait",
  "chrono",
  "fs2",
- "mockall",
  "redis",
  "serde",
  "serde_json",
- "solver-types",
+ "solver-types 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc)",
  "thiserror 2.0.18",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "solver-types"
+version = "0.1.0"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
+dependencies = [
+ "alloy-consensus",
+ "alloy-contract",
+ "alloy-primitives",
+ "alloy-provider",
+ "alloy-rpc-client",
+ "alloy-rpc-types",
+ "alloy-signer",
+ "alloy-sol-types",
+ "alloy-transport",
+ "async-trait",
+ "axum",
+ "bytes",
+ "hex",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml 0.9.12+spec-1.1.0",
+ "tracing",
+ "zeroize",
 ]
 
 [[package]]

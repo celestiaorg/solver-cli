@@ -5073,7 +5073,7 @@ dependencies = [
 [[package]]
 name = "solver-account"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "alloy-consensus",
  "alloy-network",
@@ -5142,7 +5142,7 @@ dependencies = [
 [[package]]
 name = "solver-config"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "dotenvy",
  "regex",
@@ -5157,7 +5157,7 @@ dependencies = [
 [[package]]
 name = "solver-core"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "alloy-primitives",
  "chrono",
@@ -5184,7 +5184,7 @@ dependencies = [
 [[package]]
 name = "solver-delivery"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "alloy-consensus",
  "alloy-network",
@@ -5213,7 +5213,7 @@ dependencies = [
 [[package]]
 name = "solver-discovery"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
@@ -5243,7 +5243,7 @@ dependencies = [
 [[package]]
 name = "solver-order"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
@@ -5263,7 +5263,7 @@ dependencies = [
 [[package]]
 name = "solver-pricing"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "alloy-primitives",
  "async-trait",
@@ -5281,7 +5281,7 @@ dependencies = [
 [[package]]
 name = "solver-service"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "alloy-primitives",
  "alloy-signer",
@@ -5328,7 +5328,7 @@ dependencies = [
 [[package]]
 name = "solver-settlement"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "alloy-primitives",
  "alloy-provider",
@@ -5353,7 +5353,7 @@ dependencies = [
 [[package]]
 name = "solver-storage"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5373,7 +5373,7 @@ dependencies = [
 [[package]]
 name = "solver-types"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=070e2d5#070e2d55d48bcf3b9cca513acb8053f8aecf5247"
 dependencies = [
  "alloy-consensus",
  "alloy-contract",

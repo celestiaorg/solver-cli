@@ -8,7 +8,7 @@ Adding a new ERC20 token (e.g. USDT) alongside USDC. Tokens route through **Cele
 - Foundry installed (`forge`, `cast`)
 - Deployer key:
   ```bash
-  PK=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
+  PK=52d441beb407f47811a09ed9d330320b2d336482512f26e9a5c5d3dacddc7b1e
   ```
 
 ---
@@ -37,14 +37,14 @@ Create `hyperlane/configs/warp-config-usdt.yaml`:
 anvil1:
   type: collateral
   token: "<MOCK_USDT>"
-  owner: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+  owner: "0x9f2CD91d150236BA9796124F3Dcda305C3a2086C"
   name: "USDT"
   symbol: "USDT"
   decimals: 6
 
 anvil2:
   type: synthetic
-  owner: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+  owner: "0x9f2CD91d150236BA9796124F3Dcda305C3a2086C"
   name: "USDT"
   symbol: "USDT"
   decimals: 6
@@ -120,20 +120,38 @@ docker run --rm \
 ### anvil2 ↔ Celestia
 
 ```bash
-cast send $HYP_SYNTHETIC \
+cast send $HYP_ANVIL \
   "enrollRemoteRouter(uint32,bytes32)" \
   69420 $CEL_USDT_TOKEN \
   --private-key $PK \
   --rpc-url http://127.0.0.1:8546
 
-HYP_SYNTHETIC_LOWER=$(echo $HYP_SYNTHETIC | tr '[:upper:]' '[:lower:]' | cut -c 3-)
+HYP_ANVIL_LOWER=$(echo $HYP_ANVIL | tr '[:upper:]' '[:lower:]' | cut -c 3-)
 docker run --rm \
   --network solver-cli_solver-net \
   --entrypoint bash \
   -v "$(pwd)/hyperlane:/home/hyperlane" \
   -w /home/hyperlane \
   ghcr.io/celestiaorg/hyperlane-init:local \
-  -c "hyp enroll-remote-router http://celestia-validator:26657 $CEL_USDT_TOKEN 31338 0x000000000000000000000000$HYP_SYNTHETIC_LOWER"
+  -c "hyp enroll-remote-router http://celestia-validator:26657 $CEL_USDT_TOKEN 31338 0x000000000000000000000000$HYP_ANVIL_LOWER"
+```
+
+
+```bash
+cast send $HYP_SEPOLIA \
+  "enrollRemoteRouter(uint32,bytes32)" \
+  69420 $CEL_USDT_TOKEN \
+  --private-key $PK \
+  --rpc-url $SEPOLIA_RPC
+
+HYP_SEPOLIA_LOWER=$(echo $HYP_SEPOLIA | tr '[:upper:]' '[:lower:]' | cut -c 3-)
+docker run --rm \
+  --network solver-cli_solver-net \
+  --entrypoint bash \
+  -v "$(pwd)/hyperlane:/home/hyperlane" \
+  -w /home/hyperlane \
+  ghcr.io/celestiaorg/hyperlane-init:local \
+  -c "hyp enroll-remote-router http://celestia-validator:26657 $CEL_USDT_TOKEN 11155111 0x000000000000000000000000$HYP_SEPOLIA_LOWER"
 ```
 
 > Domain IDs: `131337` = anvil1, `31338` = anvil2, `69420` = Celestia.
@@ -142,13 +160,17 @@ docker run --rm \
 
 ```bash
 make token-add CHAIN=anvil1 SYMBOL=USDT ADDRESS=$MOCK_USDT DECIMALS=6
-make token-add CHAIN=anvil2 SYMBOL=USDT ADDRESS=$HYP_SYNTHETIC DECIMALS=6
+make token-add CHAIN=anvil2 SYMBOL=USDT ADDRESS=$HYP_ANVIL DECIMALS=6
+make token-add CHAIN=sepolia SYMBOL=USDT ADDRESS=$HYP_SEPOLIA DECIMALS=6
+
 ```
 
 ## Step 6: Configure and fund
 
 ```bash
 make configure
+make mint SYMBOL=USDT TO=solver
+make mint SYMBOL=USDT TO=solver
 make mint SYMBOL=USDT TO=solver
 make mint SYMBOL=USDT TO=0x02120571E5804E46592f29B64fD01b1013f8fC18
 ```

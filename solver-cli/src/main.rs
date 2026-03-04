@@ -13,7 +13,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use commands::{
     account::AccountCommand, balances::BalancesCommand, chain::ChainCommand,
     configure::ConfigureCommand, deploy::DeployCommand, fund::FundCommand, init::InitCommand,
-    intent::IntentCommand, order::OrderCommand, rebalancer::RebalancerCommand,
+    intent::IntentCommand, ofac::OfacCommand, order::OrderCommand, rebalancer::RebalancerCommand,
     solver::SolverCommand, token::TokenCommand,
 };
 
@@ -77,6 +77,10 @@ enum Commands {
     /// Check token balances on all chains
     Balances(BalancesCommand),
 
+    /// OFAC sanctions list management
+    #[command(subcommand)]
+    Ofac(OfacCommand),
+
     /// Rebalancer service management
     #[command(subcommand)]
     Rebalancer(RebalancerCommand),
@@ -118,6 +122,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Intent(cmd) => cmd.run(cli.output).await,
         Commands::Order(cmd) => cmd.run(cli.output).await,
         Commands::Balances(cmd) => cmd.run(cli.output).await,
+        Commands::Ofac(cmd) => cmd.run(cli.output).await,
         Commands::Rebalancer(cmd) => cmd.run(cli.output).await,
         Commands::Account(cmd) => cmd.run().await,
     };
