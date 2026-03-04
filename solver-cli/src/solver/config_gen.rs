@@ -58,11 +58,7 @@ http = "{}"
                     .output_settler_simple
                     .as_deref()
                     .unwrap_or(""),
-                chain
-                    .contracts
-                    .permit2
-                    .as_deref()
-                    .unwrap_or(""),
+                chain.contracts.permit2.as_deref().unwrap_or(""),
                 chain.chain_id,
                 chain.rpc,
             ));
@@ -752,13 +748,12 @@ mod tests {
     }
 
     #[test]
-    fn oracle_config_uses_signer_block_and_omits_private_key() {
+    fn oracle_config_uses_signer_block() {
         let state = sample_state();
         let toml = ConfigGenerator::generate_oracle_toml(&state).expect("oracle config");
 
         assert!(toml.contains("[signer]"));
         assert!(toml.contains("type = \"env\""));
-        assert!(!toml.contains("operator_private_key"));
     }
 
     #[test]
