@@ -142,4 +142,24 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ from, to, amount, ...(token ? { token } : {}) }),
     }),
+
+  bridgePrepare: (from: string, to: string, token: string, address: string, amount: string) =>
+    json<{
+      warpToken: string
+      underlyingToken: string | null
+      celestiaDomainId: number
+      forwardingAddressBytes32: string
+      needsApproval: boolean
+    }>(`${BASE}/bridge/prepare`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to, token, address, amount }),
+    }),
+
+  bridge: (from: string, to: string, amount: string, token?: string) =>
+    json<{ success: boolean; message: string; txHash?: string }>(`${BASE}/bridge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to, amount, ...(token ? { token } : {}) }),
+    }),
 }

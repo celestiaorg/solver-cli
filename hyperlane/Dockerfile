@@ -17,14 +17,14 @@ FROM node:24-slim
 # Install the hyperlane CLI (used for EVM deployment)
 RUN npm install -g @hyperlane-xyz/cli
 
-# Install system packages and foundry
+# Install system packages
 RUN apt-get update && \
-    apt-get install -y curl git build-essential pkg-config libssl-dev
+    apt-get install -y git build-essential pkg-config libssl-dev
 
-RUN curl -L https://foundry.paradigm.xyz | bash && \
-    ~/.foundry/bin/foundryup
-
-ENV PATH="/root/.foundry/bin:$PATH"
+# Copy foundry binaries from official image (avoids flaky foundryup attestation checks)
+COPY --from=ghcr.io/foundry-rs/foundry:stable /usr/local/bin/forge /usr/local/bin/forge
+COPY --from=ghcr.io/foundry-rs/foundry:stable /usr/local/bin/cast /usr/local/bin/cast
+COPY --from=ghcr.io/foundry-rs/foundry:stable /usr/local/bin/anvil /usr/local/bin/anvil
 
 COPY --from=go-builder /home/hyperlane/hyp /usr/local/bin/hyp
 
