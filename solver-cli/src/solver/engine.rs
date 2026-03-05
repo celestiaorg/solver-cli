@@ -27,7 +27,7 @@ async fn run_solver_from_config_impl(config_path: &Path) -> Result<()> {
     use solver_config::Config;
     use solver_core::SolverFactories;
 
-    use super::centralized::create_settlement;
+    use solver_settlement::centralized::create_settlement;
 
     tracing::info!("Loading config from {}", config_path.display());
 

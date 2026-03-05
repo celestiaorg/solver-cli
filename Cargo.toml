@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "solver-cli",
+    "solver-settlement",
+]
+resolver = "2"

@@ -3,7 +3,7 @@ use alloy_provider::{DynProvider, Provider};
 use alloy_sol_types::{sol, SolCall};
 use async_trait::async_trait;
 use sha3::{Digest, Keccak256};
-use solver_settlement::{
+use upstream_solver_settlement::{
     utils::parse_oracle_config, OracleConfig, SettlementError, SettlementInterface,
 };
 use solver_types::{
