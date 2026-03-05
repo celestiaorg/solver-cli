@@ -540,6 +540,129 @@ app.post('/api/rebalance', async (req, res) => {
   }
 });
 
+// Bridge prepare: derive forwarding address + register, return contract info for wallet-side execution
+app.post('/api/bridge/prepare', async (req, res) => {
+  const { from, to, token = 'USDC', amount = '10000000', address } = req.body;
+  if (!from || !to) return res.status(400).json({ error: '"from" and "to" are required' });
+  if (!address) return res.status(400).json({ error: '"address" (user wallet) is required' });
+  try {
+    const warp = getWarpRouteConfig(token);
+    const src = warp.chains[from];
+    const dst = warp.chains[to];
+    if (!src) throw new Error(`Chain "${from}" not found in ${token} warp route`);
+    if (!dst) throw new Error(`Chain "${to}" not found in ${token} warp route`);
+
+    const forwardingBackend = process.env.FORWARDING_BACKEND || 'http://127.0.0.1:8080';
+    const recipientPadded = '0x000000000000000000000000' + address.replace('0x', '');
+
+    const addrResp = await fetch(
+      `${forwardingBackend}/forwarding-address?dest_domain=${dst.domainId}&dest_recipient=${recipientPadded}`
+    );
+    if (!addrResp.ok) throw new Error(`Failed to derive forwarding address: ${await addrResp.text()}`);
+    const { address: forwardAddr } = await addrResp.json();
+
+    const registerResp = await fetch(`${forwardingBackend}/forwarding-requests`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ forward_addr: forwardAddr, dest_domain: dst.domainId, dest_recipient: recipientPadded }),
+    });
+    if (!registerResp.ok) throw new Error(`Forwarding registration failed: ${await registerResp.text()}`);
+
+    const needsApproval = src.warpType === 'collateral';
+    res.json({
+      warpToken: src.warpToken,
+      underlyingToken: needsApproval ? src.underlying : null,
+      celestiaDomainId: warp.celestiaDomainId,
+      forwardingAddressBytes32: bech32ToBytes32(forwardAddr),
+      needsApproval,
+    });
+  } catch (err) {
+    res.status(500).json({ error: `Bridge prepare failed: ${err.message}` });
+  }
+});
+
+// Bridge: server-side user bridge via Celestia (uses USER_PK)
+app.post('/api/bridge', async (req, res) => {
+  const { from, to, amount = '10000000', token = 'USDC' } = req.body;
+  if (!from || !to) return res.status(400).json({ error: '"from" and "to" are required' });
+  try {
+    const warp = getWarpRouteConfig(token);
+    const src = warp.chains[from];
+    const dst = warp.chains[to];
+    if (!src) throw new Error(`Chain "${from}" not found in ${token} warp route`);
+    if (!dst) throw new Error(`Chain "${to}" not found in ${token} warp route`);
+
+    const underlyingToApprove = src.warpType === 'collateral' ? src.underlying : null;
+    const dstBalanceToken = dst.warpType === 'collateral' ? dst.underlying : dst.warpToken;
+
+    const userPk = process.env.USER_PK;
+    if (!userPk) throw new Error('USER_PK not set in .env');
+    const user = privateKeyToAccount(`0x${userPk.replace('0x', '')}`);
+
+    const srcChain = makeViemChain(src.chainId, from, src.rpc);
+    const dstChain = makeViemChain(dst.chainId, to, dst.rpc);
+    const srcWallet = createWalletClient({ account: user, chain: srcChain, transport: http(src.rpc) });
+    const srcPublic = createPublicClient({ chain: srcChain, transport: http(src.rpc) });
+    const dstPublic = createPublicClient({ chain: dstChain, transport: http(dst.rpc) });
+
+    const userPadded = '0x000000000000000000000000' + user.address.slice(2);
+    const amountBigInt = BigInt(amount);
+
+    const forwardingBackend = process.env.FORWARDING_BACKEND || 'http://127.0.0.1:8080';
+    const addrResp = await fetch(
+      `${forwardingBackend}/forwarding-address?dest_domain=${dst.domainId}&dest_recipient=${userPadded}`
+    );
+    if (!addrResp.ok) throw new Error(`Failed to derive forwarding address: ${await addrResp.text()}`);
+    const { address: forwardAddr } = await addrResp.json();
+
+    const registerResp = await fetch(`${forwardingBackend}/forwarding-requests`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ forward_addr: forwardAddr, dest_domain: dst.domainId, dest_recipient: userPadded }),
+    });
+    if (!registerResp.ok) throw new Error(`Forwarding registration failed: ${await registerResp.text()}`);
+
+    const initialDstBal = await dstPublic.readContract({
+      address: dstBalanceToken, abi: hypTokenAbi, functionName: 'balanceOf', args: [user.address],
+    });
+
+    if (underlyingToApprove) {
+      const approveHash = await srcWallet.writeContract({
+        address: underlyingToApprove, abi: erc20Abi,
+        functionName: 'approve', args: [src.warpToken, amountBigInt],
+      });
+      await srcPublic.waitForTransactionReceipt({ hash: approveHash });
+    }
+
+    const txHash = await srcWallet.writeContract({
+      address: src.warpToken, abi: hypTokenAbi,
+      functionName: 'transferRemote',
+      args: [warp.celestiaDomainId, bech32ToBytes32(forwardAddr), amountBigInt],
+      value: 0n,
+    });
+    await srcPublic.waitForTransactionReceipt({ hash: txHash });
+
+    let arrived = false;
+    for (let i = 1; i <= 12; i++) {
+      await new Promise(r => setTimeout(r, 5000));
+      const bal = await dstPublic.readContract({
+        address: dstBalanceToken, abi: hypTokenAbi, functionName: 'balanceOf', args: [user.address],
+      });
+      if (bal !== initialDstBal && bal > 0n) { arrived = true; break; }
+    }
+
+    res.json({
+      success: arrived,
+      message: arrived
+        ? `Bridged ${token} from ${from} to ${to}`
+        : `Bridge tx sent but tokens haven't arrived yet. Check Hyperlane relayer.`,
+      txHash,
+    });
+  } catch (err) {
+    res.status(500).json({ error: `Bridge failed: ${err.message}` });
+  }
+});
+
 // Quote: request quote from aggregator
 app.post('/api/quote', async (req, res) => {
   const { fromChainId, toChainId, amount, asset = 'USDC', address } = req.body;
