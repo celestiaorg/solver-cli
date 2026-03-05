@@ -265,35 +265,29 @@ output = {{ {output_oracles} }}
             anyhow::bail!("No chains configured");
         }
 
-        // Read operator private key from environment at generation time
-        let operator_private_key = std::env::var("ORACLE_OPERATOR_PK")
-            .context("Missing required environment variable: ORACLE_OPERATOR_PK")?;
-
-        // Ensure the key has 0x prefix
-        let operator_private_key = if operator_private_key.starts_with("0x") {
-            operator_private_key
-        } else {
-            format!("0x{}", operator_private_key)
-        };
-
         let operator_address = state
             .solver
             .operator_address
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("Operator address not configured"))?;
 
+        let mut chains: Vec<_> = state.chains.values().collect();
+        chains.sort_by_key(|chain| chain.chain_id);
+
         // Build chain configurations
         let mut chains_section = String::new();
-        for chain in state.chains.values() {
+        for chain in chains {
             chains_section.push_str(&format!(
                 r#"
 [[chains]]
+name = "{}"
 chain_id = {}
 rpc_url = "{}"
 oracle_address = "{}"
 output_settler_address = "{}"
 input_settler_address = "{}"
 "#,
+                chain.name,
                 chain.chain_id,
                 chain.rpc,
                 chain.contracts.oracle.as_deref().unwrap_or(""),
@@ -315,11 +309,12 @@ input_settler_address = "{}"
 # DO NOT EDIT MANUALLY - regenerate with 'solver-cli configure'
 # Supports {} chain(s)
 
-# Operator private key (signs attestations)
-operator_private_key = "{operator_private_key}"
-
 # Operator address (must match CentralizedOracle operator)
 operator_address = "{operator_address}"
+
+# Operator signer configuration (single signer used across all chains)
+[signer]
+type = "env"
 
 # Polling interval in seconds
 poll_interval_seconds = 3
@@ -327,7 +322,6 @@ poll_interval_seconds = 3
 # Chain configurations
 {chains_section}"#,
             state.chains.len(),
-            operator_private_key = operator_private_key,
             operator_address = operator_address,
             chains_section = chains_section.trim(),
         );
@@ -695,5 +689,80 @@ poll_interval_seconds = 3
             .context("Failed to write Hyperlane relayer config file")?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ConfigGenerator;
+    use crate::state::{ChainConfig, ContractAddresses, SolverState};
+    use std::collections::HashMap;
+
+    fn sample_state() -> SolverState {
+        let mut state = SolverState::default();
+        state.solver.operator_address =
+            Some("0x000000000000000000000000000000000000dEaD".to_string());
+
+        state.chains.insert(
+            3735928814,
+            ChainConfig {
+                name: "eden".to_string(),
+                chain_id: 3735928814,
+                rpc: "https://eden.example".to_string(),
+                contracts: ContractAddresses {
+                    oracle: Some("0x0000000000000000000000000000000000000001".to_string()),
+                    output_settler_simple: Some(
+                        "0x0000000000000000000000000000000000000002".to_string(),
+                    ),
+                    input_settler_escrow: Some(
+                        "0x0000000000000000000000000000000000000003".to_string(),
+                    ),
+                    ..Default::default()
+                },
+                tokens: HashMap::new(),
+                deployer: None,
+            },
+        );
+        state.chains.insert(
+            11155111,
+            ChainConfig {
+                name: "sepolia".to_string(),
+                chain_id: 11155111,
+                rpc: "https://sepolia.example".to_string(),
+                contracts: ContractAddresses {
+                    oracle: Some("0x0000000000000000000000000000000000000004".to_string()),
+                    output_settler_simple: Some(
+                        "0x0000000000000000000000000000000000000005".to_string(),
+                    ),
+                    input_settler_escrow: Some(
+                        "0x0000000000000000000000000000000000000006".to_string(),
+                    ),
+                    ..Default::default()
+                },
+                tokens: HashMap::new(),
+                deployer: None,
+            },
+        );
+
+        state
+    }
+
+    #[test]
+    fn oracle_config_uses_signer_block() {
+        let state = sample_state();
+        let toml = ConfigGenerator::generate_oracle_toml(&state).expect("oracle config");
+
+        assert!(toml.contains("[signer]"));
+        assert!(toml.contains("type = \"env\""));
+    }
+
+    #[test]
+    fn oracle_config_orders_chains_by_chain_id() {
+        let state = sample_state();
+        let toml = ConfigGenerator::generate_oracle_toml(&state).expect("oracle config");
+
+        let sepolia_idx = toml.find("chain_id = 11155111").expect("sepolia chain");
+        let eden_idx = toml.find("chain_id = 3735928814").expect("eden chain");
+        assert!(sepolia_idx < eden_idx);
     }
 }

@@ -10,6 +10,7 @@ alloy = { version = "1.0", features = [
     "full",
     "node-bindings",
     "signer-local",
+    "signer-aws",
 ] }
 alloy-primitives = "1.0"
 alloy-provider = { version = "1.0", features = ["ws"] }
