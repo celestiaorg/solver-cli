@@ -1,4 +1,4 @@
-SOLVER_CLI=solver-cli/target/release/solver-cli
+SOLVER_CLI=target/release/solver-cli
 FORCE_FLAG=$(if $(FORCE),--force,)
 
 ## help: Show available commands

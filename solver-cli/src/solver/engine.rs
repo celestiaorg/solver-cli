@@ -21,10 +21,13 @@ pub async fn run_solver_from_config(config_path: &Path) -> Result<()> {
 
 #[cfg(feature = "solver-runtime")]
 async fn run_solver_from_config_impl(config_path: &Path) -> Result<()> {
+    use std::collections::HashMap;
     use std::sync::Arc;
 
     use solver_config::Config;
-    use solver_service::{build_solver_from_config, server};
+    use solver_core::SolverFactories;
+
+    use solver_settlement::centralized::create_settlement;
 
     tracing::info!("Loading config from {}", config_path.display());
 
@@ -37,7 +40,65 @@ async fn run_solver_from_config_impl(config_path: &Path) -> Result<()> {
         config.networks.keys().collect::<Vec<_>>()
     );
 
-    let solver = build_solver_from_config(config.clone())
+    let mut storage_factories = HashMap::new();
+    for (name, factory) in solver_storage::get_all_implementations() {
+        storage_factories.insert(name.to_string(), factory);
+    }
+
+    let mut account_factories = HashMap::new();
+    for (name, factory) in solver_account::get_all_implementations() {
+        account_factories.insert(name.to_string(), factory);
+    }
+
+    let mut delivery_factories = HashMap::new();
+    for (name, factory) in solver_delivery::get_all_implementations() {
+        delivery_factories.insert(name.to_string(), factory);
+    }
+
+    let mut discovery_factories = HashMap::new();
+    for (name, factory) in solver_discovery::get_all_implementations() {
+        discovery_factories.insert(name.to_string(), factory);
+    }
+
+    let mut order_factories = HashMap::new();
+    for (name, factory) in solver_order::get_all_order_implementations() {
+        order_factories.insert(name.to_string(), factory);
+    }
+
+    let mut pricing_factories = HashMap::new();
+    for (name, factory) in solver_pricing::get_all_implementations() {
+        pricing_factories.insert(name.to_string(), factory);
+    }
+
+    let mut settlement_factories: HashMap<String, solver_settlement::SettlementFactory> =
+        HashMap::new();
+    for (name, factory) in solver_settlement::get_all_implementations() {
+        settlement_factories.insert(name.to_string(), factory);
+    }
+    settlement_factories.insert(
+        "centralized".to_string(),
+        create_settlement as solver_settlement::SettlementFactory,
+    );
+
+    let mut strategy_factories = HashMap::new();
+    for (name, factory) in solver_order::get_all_strategy_implementations() {
+        strategy_factories.insert(name.to_string(), factory);
+    }
+
+    let factories = SolverFactories {
+        storage_factories,
+        account_factories,
+        delivery_factories,
+        discovery_factories,
+        order_factories,
+        pricing_factories,
+        settlement_factories,
+        strategy_factories,
+    };
+
+    let dynamic_config = Arc::new(tokio::sync::RwLock::new(config.clone()));
+    let solver = solver_core::SolverBuilder::new(dynamic_config, config.clone())
+        .build(factories)
         .await
         .map_err(|e| anyhow::anyhow!("{}", e))?;
     let solver = Arc::new(solver);
@@ -57,7 +118,7 @@ async fn run_solver_from_config_impl(config_path: &Path) -> Result<()> {
         );
 
         let solver_task = solver.run();
-        let api_task = server::start_server(api_config, api_solver);
+        let api_task = solver_service::server::start_server(api_config, api_solver);
 
         tokio::select! {
             result = solver_task => {

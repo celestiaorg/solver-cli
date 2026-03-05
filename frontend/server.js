@@ -698,6 +698,7 @@ app.post('/api/quote', async (req, res) => {
         inputs: [{ user: userFrom, asset: assetFrom, amount: amount.toString() }],
         outputs: [{ receiver: userTo, asset: assetTo }],
         swapType: 'exact-input',
+        originSubmission: { mode: 'user', schemes: ['permit2'] },
       },
       supportedTypes: ['oif-escrow-v0'],
       solverOptions: { timeout: 60000, minQuotes: 1 },

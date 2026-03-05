@@ -10,7 +10,7 @@ const queryClient = new QueryClient()
 
 // Fetch chain configs from backend before initialising wagmi / AppKit,
 // so that MetaMask sees the correct anvil chains from the start.
-initWallet().then(() => {
+initWallet().catch(e => console.error('initWallet failed:', e)).then(() => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>

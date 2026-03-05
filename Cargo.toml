@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "solver-cli",
+    "solver-settlement",
+    "oracle-operator",
+    "rebalancer",
+]
+resolver = "2"

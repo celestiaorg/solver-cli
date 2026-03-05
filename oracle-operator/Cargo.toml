@@ -6,17 +6,17 @@ edition = "2021"
 [dependencies]
 
 # Ethereum
-alloy = { version = "0.8", features = [
+alloy = { version = "1.0", features = [
     "full",
     "node-bindings",
     "signer-local",
     "signer-aws",
 ] }
-alloy-primitives = "0.8"
-alloy-provider = { version = "0.8", features = ["ws"] }
-alloy-sol-types = "0.8"
-aws-config = { version = "=1.8.13", features = ["rt-tokio", "credentials-login"] }
-aws-sdk-kms = "1"
+alloy-primitives = "1.0"
+alloy-provider = { version = "1.0", features = ["ws"] }
+alloy-signer = "1.0"
+alloy-signer-local = "1.0"
+alloy-sol-types = "1.0"
 
 # Error handling
 anyhow = "1.0"

@@ -15,10 +15,8 @@ use tracing::{debug, error, info, warn};
 
 const LOG_QUERY_BLOCK_WINDOW: u64 = 10_000;
 
-/// Concrete HTTP provider type from ProviderBuilder::new().with_recommended_fillers().wallet(...).on_http(...).
-/// Stored so we can hold multiple providers in a HashMap without dyn Provider (which
-/// would require BoxTransport; our provider uses Http<Client>).
-/// with_recommended_fillers() adds ChainId, Gas, BlobGas, Nonce, and Wallet fillers.
+/// Concrete HTTP provider type from ProviderBuilder::new().wallet(...).connect_http(...).
+/// Stored so we can hold multiple providers in a HashMap without dyn Provider.
 type WalletHttpProvider = alloy::providers::fillers::FillProvider<
     alloy::providers::fillers::JoinFill<
         alloy::providers::fillers::JoinFill<
@@ -36,9 +34,7 @@ type WalletHttpProvider = alloy::providers::fillers::FillProvider<
         >,
         alloy::providers::fillers::WalletFiller<alloy::network::EthereumWallet>,
     >,
-    alloy::providers::RootProvider<alloy::transports::http::Http<reqwest::Client>>,
-    alloy::transports::http::Http<reqwest::Client>,
-    alloy::network::Ethereum,
+    alloy::providers::RootProvider,
 >;
 
 // Solidity interfaces
@@ -208,9 +204,8 @@ impl OracleOperator {
 
         for chain_config in &config.chains {
             let provider = ProviderBuilder::new()
-                .with_recommended_fillers()
                 .wallet(wallet.clone())
-                .on_http(chain_config.rpc_url.parse()?);
+                .connect_http(chain_config.rpc_url.parse()?);
 
             providers.insert(chain_config.chain_id, Arc::from(provider));
             info!(
@@ -313,7 +308,7 @@ impl OracleOperator {
                     b"OutputFilled(bytes32,bytes32,uint32,(bytes32,bytes32,uint256,bytes32,uint256,bytes32,bytes,bytes),uint256)"
                 )));
 
-            let logs = provider.get_logs(&filter).await?;
+            let logs: Vec<alloy::rpc::types::Log> = provider.get_logs(&filter).await?;
 
             debug!(
                 "Found {} OutputFilled events on chain {} for blocks {} to {}",
@@ -452,7 +447,7 @@ impl OracleOperator {
         };
 
         let decoded =
-            IOutputSettlerSimple::OutputFilled::decode_log(&prim_log, true).map_err(|e| {
+            IOutputSettlerSimple::OutputFilled::decode_log(&prim_log).map_err(|e| {
                 anyhow::anyhow!(
                     "Failed to decode OutputFilled for order {} on chain {}: {}",
                     hex::encode(order_id),
@@ -511,9 +506,10 @@ impl OracleOperator {
                     .to(input_settler)
                     .input(call_data.into());
 
-                match provider.call(&tx).await {
+                match provider.call(tx.clone()).await {
                     Ok(result) => {
                         // Result is a uint8 enum value
+                        let result: alloy::primitives::Bytes = result;
                         if result.len() >= 32 {
                             let status = result[31]; // Last byte of 32-byte response
                                                      // 1 = Deposited (order exists and is pending)
@@ -664,8 +660,7 @@ impl OracleOperator {
             .gas_limit(500_000);
 
         // Send transaction (wallet handles signing)
-        let pending = provider.send_transaction(tx).await?;
-        let receipt = pending.get_receipt().await?;
+        let receipt = provider.send_transaction(tx).await?.get_receipt().await?;
         let tx_hash = receipt.transaction_hash;
         let status = receipt.status();
 

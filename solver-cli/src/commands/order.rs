@@ -125,7 +125,16 @@ impl OrderCommand {
                 timeout,
             } => {
                 Self::submit(
-                    OrderSubmitParams { dir, amount, asset, from, to, aggregator_url, wait, timeout },
+                    OrderSubmitParams {
+                        dir,
+                        amount,
+                        asset,
+                        from,
+                        to,
+                        aggregator_url,
+                        wait,
+                        timeout,
+                    },
                     output,
                 )
                 .await
@@ -134,7 +143,16 @@ impl OrderCommand {
     }
 
     async fn submit(params: OrderSubmitParams, output: OutputFormat) -> Result<()> {
-        let OrderSubmitParams { dir, amount, asset, from, to, aggregator_url, wait, timeout } = params;
+        let OrderSubmitParams {
+            dir,
+            amount,
+            asset,
+            from,
+            to,
+            aggregator_url,
+            wait,
+            timeout,
+        } = params;
         let out = OutputFormatter::new(output);
         let project_dir = dir.unwrap_or_else(|| env::current_dir().unwrap());
         let state_mgr = StateManager::new(&project_dir);

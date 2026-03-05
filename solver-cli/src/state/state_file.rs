@@ -87,5 +87,4 @@ impl StateManager {
         self.save(&state).await?;
         Ok(state)
     }
-
 }

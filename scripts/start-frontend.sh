@@ -45,7 +45,8 @@ fi
 
 step "Starting frontend (Vite dev server on port 5173)..."
 cd frontend
-npx vite --host --force > ../logs/frontend-vite.log 2>&1 &
+rm -rf node_modules/.vite
+npx vite --host > ../logs/frontend-vite.log 2>&1 &
 FRONTEND_PID=$!
 echo "$FRONTEND_PID" > ../logs/frontend-vite.pid
 cd "$PROJECT_ROOT"
