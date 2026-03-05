@@ -27,7 +27,7 @@ solver-runtime = [
     "solver-discovery",
     "solver-order",
     "solver-pricing",
-    "solver-settlement",
+    "solver-settlement-impls",
     "solver-storage",
     "solver-types",
 ]
@@ -100,7 +100,7 @@ solver-discovery = { git = "https://github.com/celestiaorg/oif-solver", branch =
 solver-order = { git = "https://github.com/celestiaorg/oif-solver", branch = "jonas/fix-expose-api-server", optional = true }
 solver-pricing = { git = "https://github.com/celestiaorg/oif-solver", branch = "jonas/fix-expose-api-server", optional = true }
 solver-service = { git = "https://github.com/celestiaorg/oif-solver", branch = "jonas/fix-expose-api-server", optional = true }
-solver-settlement = { path = "../solver-settlement", optional = true }
+solver-settlement-impls = { path = "../solver-settlement", optional = true }
 solver-storage = { git = "https://github.com/celestiaorg/oif-solver", branch = "jonas/fix-expose-api-server", optional = true }
 solver-types = { git = "https://github.com/celestiaorg/oif-solver", branch = "jonas/fix-expose-api-server", features = ["oif-interfaces"], optional = true }
 
@@ -109,6 +109,6 @@ assert_cmd = "2.0"
 mockall = "0.13"
 predicates = "3.0"
 tempfile = "3.8"
-solver-settlement = { path = "../solver-settlement", features = ["testing"] }
+solver-settlement-impls = { path = "../solver-settlement", features = ["testing"] }
 solver-storage = { git = "https://github.com/celestiaorg/oif-solver", branch = "jonas/fix-expose-api-server", features = ["testing"] }
 

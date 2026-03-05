@@ -27,7 +27,7 @@ async fn run_solver_from_config_impl(config_path: &Path) -> Result<()> {
     use solver_config::Config;
     use solver_core::SolverFactories;
 
-    use solver_settlement::centralized::create_settlement;
+    use solver_settlement_impls::centralized::create_settlement;
 
     tracing::info!("Loading config from {}", config_path.display());
 
@@ -70,14 +70,14 @@ async fn run_solver_from_config_impl(config_path: &Path) -> Result<()> {
         pricing_factories.insert(name.to_string(), factory);
     }
 
-    let mut settlement_factories: HashMap<String, solver_settlement::SettlementFactory> =
+    let mut settlement_factories: HashMap<String, solver_settlement_impls::SettlementFactory> =
         HashMap::new();
-    for (name, factory) in solver_settlement::get_all_implementations() {
+    for (name, factory) in solver_settlement_impls::get_all_implementations() {
         settlement_factories.insert(name.to_string(), factory);
     }
     settlement_factories.insert(
         "centralized".to_string(),
-        create_settlement as solver_settlement::SettlementFactory,
+        create_settlement as solver_settlement_impls::SettlementFactory,
     );
 
     let mut strategy_factories = HashMap::new();
