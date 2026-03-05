@@ -10,12 +10,13 @@ alloy = { version = "0.8", features = [
     "full",
     "node-bindings",
     "signer-local",
+    "signer-aws",
 ] }
 alloy-primitives = "0.8"
 alloy-provider = { version = "0.8", features = ["ws"] }
-alloy-signer = "0.8"
-alloy-signer-local = "0.8"
 alloy-sol-types = "0.8"
+aws-config = { version = "=1.8.13", features = ["rt-tokio", "credentials-login"] }
+aws-sdk-kms = "1"
 
 # Error handling
 anyhow = "1.0"

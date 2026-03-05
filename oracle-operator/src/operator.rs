@@ -1,10 +1,8 @@
 use crate::config::{ChainConfig, OracleConfig};
+use crate::signer::TxSigner;
 use crate::state::StateManager;
-use alloy::network::EthereumWallet;
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy_primitives::{Address as AlloyAddress, Bytes, FixedBytes, U256};
-use alloy_signer::Signer;
-use alloy_signer_local::PrivateKeySigner;
 use alloy_sol_types::{sol, SolCall, SolEvent};
 use anyhow::{Context, Result};
 use sha3::{Digest, Keccak256};
@@ -156,20 +154,32 @@ struct FillEvent {
 
 pub struct OracleOperator {
     config: OracleConfig,
-    operator_signer: PrivateKeySigner,
+    operator_signer: TxSigner,
     providers: HashMap<u64, Arc<WalletHttpProvider>>,
     state: Arc<Mutex<StateManager>>,
 }
 
 impl OracleOperator {
     pub async fn new(config: OracleConfig, state_dir: &Path) -> Result<Self> {
-        // Parse operator signer
-        let operator_signer: PrivateKeySigner = config
-            .operator_private_key
-            .parse()
-            .context("Invalid operator private key")?;
+        // Load operator signer from config and enforce identity against configured operator.
+        let operator_signer = TxSigner::new(&config.signer)
+            .await
+            .context("Failed to load operator signer")?;
 
-        info!("Operator address: {:?}", operator_signer.address());
+        let expected_address: AlloyAddress = config
+            .operator_address
+            .parse()
+            .with_context(|| format!("Invalid operator_address: {}", config.operator_address))?;
+
+        if operator_signer.address != expected_address {
+            anyhow::bail!(
+                "Signer/operator mismatch: signer={} operator_address={}",
+                operator_signer.address,
+                expected_address
+            );
+        }
+
+        info!("Operator address: {:?}", operator_signer.address);
 
         // Load persistent state
         let state_manager = StateManager::new(state_dir)?;
@@ -182,7 +192,8 @@ impl OracleOperator {
                 .get(&chain.chain_id)
             {
                 info!(
-                    "Chain {}: resuming from block {}",
+                    "Chain {} ({}): resuming from block {}",
+                    chain.name,
                     chain.chain_id,
                     last_block + 1
                 );
@@ -193,7 +204,7 @@ impl OracleOperator {
         let mut providers: HashMap<u64, Arc<WalletHttpProvider>> = HashMap::new();
 
         // Create wallet with operator signer
-        let wallet = EthereumWallet::from(operator_signer.clone());
+        let wallet = operator_signer.wallet.clone();
 
         for chain_config in &config.chains {
             let provider = ProviderBuilder::new()
@@ -203,8 +214,8 @@ impl OracleOperator {
 
             providers.insert(chain_config.chain_id, Arc::from(provider));
             info!(
-                "Connected to chain {}: {}",
-                chain_config.chain_id, chain_config.rpc_url
+                "Connected to chain {} ({}): {}",
+                chain_config.name, chain_config.chain_id, chain_config.rpc_url
             );
         }
 
@@ -616,8 +627,7 @@ impl OracleOperator {
         let message_hash = keccak256_bytes(&message);
 
         // Sign with EIP-191 prefix (sign_message automatically applies it)
-        let signature = self.operator_signer.sign_message(&message_hash).await?;
-        let signature_bytes = signature.as_bytes();
+        let signature_bytes = self.operator_signer.sign_message(&message_hash).await?;
 
         debug!(
             "Signed attestation payload for order {} (fill on chain {}, submitting to escrow chain {})",
@@ -640,7 +650,7 @@ impl OracleOperator {
         let oracle_address: AlloyAddress = escrow_chain_config.oracle_address.parse()?;
 
         let call = ICentralizedOracle::submitAttestationCall {
-            signature: Bytes::from(signature_bytes.to_vec()),
+            signature: Bytes::from(signature_bytes),
             remoteChainId: U256::from(fill_chain_id),
             remoteOracle: FixedBytes::from(remote_oracle),
             application: FixedBytes::from(fill.application_id),
