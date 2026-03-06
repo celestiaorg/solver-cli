@@ -334,11 +334,11 @@ input_settler_address = "{}"
 # Operator address (must match CentralizedOracle operator)
 operator_address = "{operator_address}"
 
-# Operator signer configuration (single signer used across all chains)
-{signer_section}
-
 # Polling interval in seconds
 poll_interval_seconds = 3
+
+# Operator signer configuration (single signer used across all chains)
+{signer_section}
 
 # Chain configurations
 {chains_section}"#,

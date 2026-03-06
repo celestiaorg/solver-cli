@@ -4,7 +4,6 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use tokio::fs;
 
-use crate::chain::ChainClient;
 use crate::state::SolverState;
 
 /// Generates rebalancer configuration files
