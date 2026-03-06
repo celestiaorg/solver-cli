@@ -11,9 +11,10 @@ use tracing::Level;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use commands::{
-    balances::BalancesCommand, chain::ChainCommand, configure::ConfigureCommand,
-    deploy::DeployCommand, fund::FundCommand, init::InitCommand, intent::IntentCommand,
-    order::OrderCommand, rebalancer::RebalancerCommand, solver::SolverCommand, token::TokenCommand,
+    account::AccountCommand, balances::BalancesCommand, chain::ChainCommand,
+    configure::ConfigureCommand, deploy::DeployCommand, fund::FundCommand, init::InitCommand,
+    intent::IntentCommand, order::OrderCommand, rebalancer::RebalancerCommand,
+    solver::SolverCommand, token::TokenCommand,
 };
 
 #[derive(Parser)]
@@ -79,6 +80,10 @@ enum Commands {
     /// Rebalancer service management
     #[command(subcommand)]
     Rebalancer(RebalancerCommand),
+
+    /// Account utilities (print signing key address)
+    #[command(subcommand)]
+    Account(AccountCommand),
 }
 
 fn setup_logging(level: &str) -> anyhow::Result<()> {
@@ -114,6 +119,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Order(cmd) => cmd.run(cli.output).await,
         Commands::Balances(cmd) => cmd.run(cli.output).await,
         Commands::Rebalancer(cmd) => cmd.run(cli.output).await,
+        Commands::Account(cmd) => cmd.run().await,
     };
 
     if let Err(e) = result {

@@ -42,6 +42,13 @@ impl RebalancerConfigGenerator {
             Err(_) => 69420u64,
         };
 
+        let signer_inline = match crate::utils::RebalancerSignerConfig::from_env()? {
+            crate::utils::RebalancerSignerConfig::AwsKms { key_id, region } => {
+                format!("type = \"aws_kms\"\n  key_id = \"{key_id}\"\n  region = \"{region}\"")
+            }
+            crate::utils::RebalancerSignerConfig::Env => "type = \"env\"".to_string(),
+        };
+
         let mut chains_section = String::new();
         for chain in &chains {
             chains_section.push_str(&format!(
@@ -53,12 +60,13 @@ domain_id = {chain_id}
 rpc_url = "{rpc_url}"
 account = "{account}"
   [chains.signer]
-  type = "env"
+  {signer_inline}
 "#,
                 name = chain.name,
                 chain_id = chain.chain_id,
                 rpc_url = chain.rpc,
                 account = account,
+                signer_inline = signer_inline,
             ));
         }
 
@@ -243,16 +251,9 @@ fn derive_rebalancer_account(state: &SolverState) -> Result<String> {
         return normalize_address(address).context("Invalid solver.address in state");
     }
 
-    let fallback_pk = std::env::var("SOLVER_PRIVATE_KEY")
-        .or_else(|_| std::env::var("SEPOLIA_PK"))
-        .map_err(|_| {
-            anyhow::anyhow!(
-                "Missing solver address in state and no fallback key found (SOLVER_PRIVATE_KEY / SEPOLIA_PK)"
-            )
-        })?;
-    let address = ChainClient::address_from_pk(&fallback_pk)
-        .context("Invalid SOLVER_PRIVATE_KEY/SEPOLIA_PK for rebalancer account derivation")?;
-    Ok(format!("{:?}", address))
+    anyhow::bail!(
+        "Missing solver address in state. Run 'solver-cli configure' first to populate the solver address."
+    )
 }
 
 fn normalize_address(value: &str) -> Result<String> {

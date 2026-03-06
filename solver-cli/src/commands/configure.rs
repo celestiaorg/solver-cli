@@ -48,9 +48,30 @@ impl ConfigureCommand {
 
         print_kv("Chains configured", state.chains.len());
 
-        // Derive solver address from solver private key
-        let solver_pk = env_config.get_solver_pk()?;
-        let solver_address = ChainClient::address_from_pk(&solver_pk)?;
+        // Derive solver address based on SOLVER_SIGNER_TYPE (mirrors oracle-operator pattern).
+        let solver_address = match crate::utils::SolverSignerConfig::from_env()? {
+            crate::utils::SolverSignerConfig::AwsKms { key_id, region, endpoint } => {
+                use alloy::signers::aws::AwsSigner;
+                use alloy::signers::Signer;
+                use aws_sdk_kms::config::Region;
+                let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
+                    .region(Region::new(region));
+                if let Some(ep) = endpoint {
+                    loader = loader.endpoint_url(ep);
+                }
+                let sdk_config = loader.load().await;
+                let client = aws_sdk_kms::Client::new(&sdk_config);
+                let signer = AwsSigner::new(client, key_id, None)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("KMS initialization failed: {e}"))?;
+                Signer::address(&signer)
+            }
+            crate::utils::SolverSignerConfig::Env => {
+                let solver_pk = env_config.get_solver_pk()?;
+                ChainClient::address_from_pk(&solver_pk)?
+            }
+        };
+
         print_address("Solver address", &format!("{:?}", solver_address));
 
         // Update solver config in state

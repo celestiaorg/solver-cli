@@ -123,3 +123,99 @@ impl EnvConfig {
             .context("Missing required environment variable: SOLVER_PRIVATE_KEY")
     }
 }
+
+/// Solver signer configuration — mirrors the oracle-operator's SignerConfig.
+///
+/// Select the backend via SOLVER_SIGNER_TYPE in .env:
+///   - "env" (default): reads SOLVER_PRIVATE_KEY
+///   - "aws_kms": reads SOLVER_KMS_KEY_ID + SOLVER_KMS_REGION (+ optional SOLVER_KMS_ENDPOINT)
+#[derive(Debug, Clone)]
+pub enum SolverSignerConfig {
+    /// Local private key read from SOLVER_PRIVATE_KEY env var (default)
+    Env,
+    /// AWS KMS signing — private key never leaves the HSM
+    AwsKms {
+        key_id: String,
+        region: String,
+        /// Optional custom endpoint, e.g. for LocalStack (SOLVER_KMS_ENDPOINT)
+        endpoint: Option<String>,
+    },
+}
+
+impl SolverSignerConfig {
+    /// Load from SOLVER_SIGNER_TYPE (defaults to "env" if unset).
+    pub fn from_env() -> Result<Self> {
+        let signer_type = env::var("SOLVER_SIGNER_TYPE").unwrap_or_else(|_| "env".to_string());
+        match signer_type.as_str() {
+            "aws_kms" => {
+                let key_id = env::var("SOLVER_KMS_KEY_ID")
+                    .context("Missing required environment variable: SOLVER_KMS_KEY_ID")?;
+                let region = env::var("SOLVER_KMS_REGION")
+                    .context("Missing required environment variable: SOLVER_KMS_REGION")?;
+                let endpoint = env::var("SOLVER_KMS_ENDPOINT").ok();
+                Ok(Self::AwsKms { key_id, region, endpoint })
+            }
+            _ => Ok(Self::Env),
+        }
+    }
+}
+
+/// Rebalancer signer configuration.
+///
+/// Select the backend via REBALANCER_SIGNER_TYPE in .env:
+///   - "env" (default): reads REBALANCER_PRIVATE_KEY (or per-chain REBALANCER_<CHAIN>_PK)
+///   - "aws_kms": reads REBALANCER_KMS_KEY_ID + REBALANCER_KMS_REGION
+#[derive(Debug, Clone)]
+pub enum RebalancerSignerConfig {
+    Env,
+    AwsKms { key_id: String, region: String },
+}
+
+impl RebalancerSignerConfig {
+    pub fn from_env() -> Result<Self> {
+        let signer_type =
+            env::var("REBALANCER_SIGNER_TYPE").unwrap_or_else(|_| "env".to_string());
+        match signer_type.as_str() {
+            "aws_kms" => {
+                let key_id = env::var("REBALANCER_KMS_KEY_ID")
+                    .context("Missing required environment variable: REBALANCER_KMS_KEY_ID")?;
+                let region = env::var("REBALANCER_KMS_REGION")
+                    .context("Missing required environment variable: REBALANCER_KMS_REGION")?;
+                Ok(Self::AwsKms { key_id, region })
+            }
+            _ => Ok(Self::Env),
+        }
+    }
+}
+
+/// Oracle operator signer configuration.
+///
+/// Select the backend via ORACLE_SIGNER_TYPE in .env:
+///   - "env" (default): reads ORACLE_OPERATOR_PK
+///   - "aws_kms": reads ORACLE_KMS_KEY_ID + ORACLE_KMS_REGION (+ optional ORACLE_KMS_ENDPOINT)
+#[derive(Debug, Clone)]
+pub enum OracleSignerConfig {
+    Env,
+    AwsKms {
+        key_id: String,
+        region: String,
+        endpoint: Option<String>,
+    },
+}
+
+impl OracleSignerConfig {
+    pub fn from_env() -> Result<Self> {
+        let signer_type = env::var("ORACLE_SIGNER_TYPE").unwrap_or_else(|_| "env".to_string());
+        match signer_type.as_str() {
+            "aws_kms" => {
+                let key_id = env::var("ORACLE_KMS_KEY_ID")
+                    .context("Missing required environment variable: ORACLE_KMS_KEY_ID")?;
+                let region = env::var("ORACLE_KMS_REGION")
+                    .context("Missing required environment variable: ORACLE_KMS_REGION")?;
+                let endpoint = env::var("ORACLE_KMS_ENDPOINT").ok();
+                Ok(Self::AwsKms { key_id, region, endpoint })
+            }
+            _ => Ok(Self::Env),
+        }
+    }
+}

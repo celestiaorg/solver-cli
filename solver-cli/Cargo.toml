@@ -21,6 +21,7 @@ solver-runtime = [
     "sha3",
     "futures",
     "solver-account",
+    "solver-account?/kms",
     "solver-core",
     "solver-delivery",
     "solver-discovery",
@@ -39,6 +40,7 @@ alloy = { version = "1.0", features = [
     "full",
     "provider-http",
     "signer-local",
+    "signer-aws",
     "contract",
     "sol-types",
     "json-rpc",
@@ -47,6 +49,8 @@ alloy = { version = "1.0", features = [
 ] }
 anyhow = "1.0"
 async-trait = "0.1"
+aws-config = "1"
+aws-sdk-kms = "1"
 
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }

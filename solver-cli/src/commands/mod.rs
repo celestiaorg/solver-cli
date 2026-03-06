@@ -1,3 +1,4 @@
+pub mod account;
 pub mod balances;
 pub mod chain;
 pub mod configure;
