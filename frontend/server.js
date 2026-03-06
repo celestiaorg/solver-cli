@@ -442,8 +442,11 @@ app.post('/api/rebalance', async (req, res) => {
     const dstBalanceToken = dst.warpType === 'collateral' ? dst.underlying : dst.warpToken;
 
     // 2. Setup viem clients
-    const solverPk = process.env.SOLVER_PRIVATE_KEY;
-    if (!solverPk) throw new Error('SOLVER_PRIVATE_KEY not set in .env');
+    // BRIDGE_SIGNER_PK is a hot wallet key for the frontend bridge tool.
+    // Falls back to REBALANCER_PRIVATE_KEY, then SOLVER_PRIVATE_KEY.
+    // Required when solver/rebalancer use AWS KMS (which Node.js cannot sign with directly).
+    const solverPk = process.env.BRIDGE_SIGNER_PK || process.env.REBALANCER_PRIVATE_KEY || process.env.SOLVER_PRIVATE_KEY;
+    if (!solverPk) throw new Error('No bridge signer key found. Set BRIDGE_SIGNER_PK (or REBALANCER_PRIVATE_KEY / SOLVER_PRIVATE_KEY) in .env');
     const solver = privateKeyToAccount(`0x${solverPk.replace('0x', '')}`);
 
     const srcChain = makeViemChain(src.chainId, from, src.rpc);

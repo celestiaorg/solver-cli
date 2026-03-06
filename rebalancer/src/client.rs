@@ -41,6 +41,7 @@ sol! {
     #[sol(rpc)]
     interface IERC20 {
         function balanceOf(address account) external view returns (uint256);
+        function approve(address spender, uint256 amount) external returns (bool);
     }
 
     #[sol(rpc)]
@@ -149,6 +150,33 @@ impl ChainClient {
             .block_id(BlockId::Number(BlockNumberOrTag::Pending))
             .await
             .context("Failed to query pending account nonce")
+    }
+
+    pub async fn approve_erc20(
+        &self,
+        token: Address,
+        spender: Address,
+        amount: U256,
+    ) -> Result<TxHash> {
+        let call = IERC20::approveCall { spender, amount };
+        let call_data = Bytes::from(call.abi_encode());
+
+        let tx = TransactionRequest::default()
+            .to(token)
+            .input(call_data.into());
+
+        let pending = self
+            .provider
+            .send_transaction(tx)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to send ERC20 approve tx: token={} spender={} amount={}",
+                    token, spender, amount
+                )
+            })?;
+
+        Ok(*pending.tx_hash())
     }
 
     pub async fn quote_transfer_remote(

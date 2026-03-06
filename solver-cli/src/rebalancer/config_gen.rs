@@ -88,10 +88,11 @@ decimals = {decimals}
   chain_id = {chain_id}
   type = "erc20"
   address = "{address}"
-  collateral_token = "{address}"
+  collateral_token = "{collateral_token}"
 "#,
                     chain_id = token.chain_id,
-                    address = token.address
+                    address = token.address,
+                    collateral_token = token.collateral_token,
                 ));
             }
 
@@ -156,6 +157,9 @@ max_transfer_bps = 5000
 struct RebalancerTokenEntry {
     chain_id: u64,
     address: String,
+    /// Hyperlane warp token router address for `transferRemote` / `quoteTransferRemote`.
+    /// Falls back to `address` if no warp token is deployed.
+    collateral_token: String,
 }
 
 #[derive(Debug, Clone)]
@@ -168,15 +172,23 @@ struct RebalancerAsset {
 }
 
 fn collect_assets(state: &SolverState) -> Result<Vec<RebalancerAsset>> {
-    let mut by_symbol: BTreeMap<String, Vec<(u64, String, u8)>> = BTreeMap::new();
+    let mut by_symbol: BTreeMap<String, Vec<(u64, String, u8, String)>> = BTreeMap::new();
 
     for (chain_id, chain) in &state.chains {
+        let warp_token = chain
+            .contracts
+            .hyperlane
+            .as_ref()
+            .and_then(|h| h.warp_token.clone());
         for token in chain.tokens.values() {
             let normalized = token.symbol.to_ascii_uppercase();
+            // Use warp token address as collateral_token if available; otherwise fall back to ERC20
+            let collateral = warp_token.clone().unwrap_or_else(|| token.address.clone());
             by_symbol.entry(normalized).or_default().push((
                 *chain_id,
                 token.address.clone(),
                 token.decimals,
+                collateral,
             ));
         }
     }
@@ -187,11 +199,11 @@ fn collect_assets(state: &SolverState) -> Result<Vec<RebalancerAsset>> {
             continue;
         }
 
-        entries.sort_by_key(|(chain_id, _, _)| *chain_id);
+        entries.sort_by_key(|(chain_id, _, _, _)| *chain_id);
         let expected_decimals = entries[0].2;
         if entries
             .iter()
-            .any(|(_, _, decimals)| *decimals != expected_decimals)
+            .any(|(_, _, decimals, _)| *decimals != expected_decimals)
         {
             anyhow::bail!(
                 "Token {} has inconsistent decimals across chains, cannot generate rebalancer config",
@@ -199,7 +211,7 @@ fn collect_assets(state: &SolverState) -> Result<Vec<RebalancerAsset>> {
             );
         }
 
-        let chain_ids: Vec<u64> = entries.iter().map(|(chain_id, _, _)| *chain_id).collect();
+        let chain_ids: Vec<u64> = entries.iter().map(|(chain_id, _, _, _)| *chain_id).collect();
         let weights = equal_weight_distribution(&chain_ids, 1_000_000);
         let min_weights: Vec<(u64, f64)> = weights
             .iter()
@@ -216,7 +228,11 @@ fn collect_assets(state: &SolverState) -> Result<Vec<RebalancerAsset>> {
             decimals: expected_decimals,
             tokens: entries
                 .into_iter()
-                .map(|(chain_id, address, _)| RebalancerTokenEntry { chain_id, address })
+                .map(|(chain_id, address, _, collateral_token)| RebalancerTokenEntry {
+                    chain_id,
+                    address,
+                    collateral_token,
+                })
                 .collect(),
             weights,
             min_weights,
