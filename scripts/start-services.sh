@@ -59,3 +59,19 @@ else
   tail -5 logs/operator.log
   exit 1
 fi
+
+# ── Rebalancer ────────────────────────────────────────────────────────────────
+
+step "Starting Rebalancer..."
+make rebalancer > logs/rebalancer.log 2>&1 &
+REBALANCER_PID=$!
+echo "$REBALANCER_PID" > logs/rebalancer.pid
+sleep 3
+
+if kill -0 $REBALANCER_PID 2>/dev/null; then
+  success "Rebalancer running (PID: $REBALANCER_PID)"
+else
+  error "Rebalancer failed to start. Check logs/rebalancer.log"
+  tail -5 logs/rebalancer.log
+  exit 1
+fi

@@ -41,6 +41,7 @@ sol! {
     #[sol(rpc)]
     interface IERC20 {
         function balanceOf(address account) external view returns (uint256);
+        function approve(address spender, uint256 amount) external returns (bool);
     }
 
     #[sol(rpc)]
@@ -79,6 +80,7 @@ pub struct SubmittedTransfer {
 
 pub struct ChainClient {
     provider: DefaultProvider,
+    account: Address,
 }
 
 impl ChainClient {
@@ -104,11 +106,12 @@ impl ChainClient {
             );
         }
 
+        let account = signer.address;
         let provider = ProviderBuilder::new()
             .wallet(signer.wallet)
             .connect_http(rpc_url);
 
-        Ok(Self { provider })
+        Ok(Self { provider, account })
     }
 
     pub async fn token_balance(&self, token: Address, account: Address) -> Result<U256> {
@@ -149,6 +152,43 @@ impl ChainClient {
             .block_id(BlockId::Number(BlockNumberOrTag::Pending))
             .await
             .context("Failed to query pending account nonce")
+    }
+
+    async fn pending_nonce(&self) -> Result<u64> {
+        self.provider
+            .get_transaction_count(self.account)
+            .block_id(BlockId::Number(BlockNumberOrTag::Pending))
+            .await
+            .context("Failed to fetch pending nonce")
+    }
+
+    pub async fn approve_erc20(
+        &self,
+        token: Address,
+        spender: Address,
+        amount: U256,
+    ) -> Result<TxHash> {
+        let nonce = self.pending_nonce().await?;
+        let call = IERC20::approveCall { spender, amount };
+        let call_data = Bytes::from(call.abi_encode());
+
+        let tx = TransactionRequest::default()
+            .to(token)
+            .input(call_data.into())
+            .nonce(nonce);
+
+        let pending = self
+            .provider
+            .send_transaction(tx)
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to send ERC20 approve tx: token={} spender={} amount={}",
+                    token, spender, amount
+                )
+            })?;
+
+        Ok(*pending.tx_hash())
     }
 
     pub async fn quote_transfer_remote(
@@ -207,6 +247,7 @@ impl ChainClient {
         amount: U256,
         msg_value: U256,
     ) -> Result<SubmittedTransfer> {
+        let nonce = self.pending_nonce().await?;
         let recipient = address_to_bytes32(destination_recipient);
         let call = ITokenRouter::transferRemoteCall {
             _destination: destination_domain_id,
@@ -218,7 +259,8 @@ impl ChainClient {
         let tx = TransactionRequest::default()
             .to(source_router)
             .input(call_data.into())
-            .value(msg_value);
+            .value(msg_value)
+            .nonce(nonce);
 
         let (message_id, preview_error) = match self.provider.call(tx.clone()).await {
             Ok(raw) => {

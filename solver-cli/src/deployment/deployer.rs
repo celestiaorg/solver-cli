@@ -90,14 +90,31 @@ impl Deployer {
             self.build().await?;
         }
 
-        // Derive operator address from ORACLE_OPERATOR_PK
-        let operator_pk = std::env::var("ORACLE_OPERATOR_PK")
-            .context("Missing required environment variable: ORACLE_OPERATOR_PK")?;
-        let operator_address = format!("{:?}", ChainClient::address_from_pk(&operator_pk)?);
-        info!(
-            "Using operator address: {} (derived from ORACLE_OPERATOR_PK)",
-            operator_address
-        );
+        // Derive operator address from ORACLE_SIGNER_TYPE (env key or AWS KMS).
+        let operator_address = match crate::utils::OracleSignerConfig::from_env()? {
+            crate::utils::OracleSignerConfig::AwsKms { key_id, region, endpoint } => {
+                use alloy::signers::aws::AwsSigner;
+                use alloy::signers::Signer;
+                use aws_sdk_kms::config::Region;
+                let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
+                    .region(Region::new(region));
+                if let Some(ep) = endpoint {
+                    loader = loader.endpoint_url(ep);
+                }
+                let sdk_config = loader.load().await;
+                let client = aws_sdk_kms::Client::new(&sdk_config);
+                let signer = AwsSigner::new(client, key_id, None)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Oracle KMS initialization failed: {e}"))?;
+                format!("{:?}", Signer::address(&signer))
+            }
+            crate::utils::OracleSignerConfig::Env => {
+                let operator_pk = std::env::var("ORACLE_OPERATOR_PK")
+                    .context("Missing required environment variable: ORACLE_OPERATOR_PK")?;
+                format!("{:?}", ChainClient::address_from_pk(&operator_pk)?)
+            }
+        };
+        info!("Using operator address: {}", operator_address);
 
         // Try to load Hyperlane deployment artifacts
         let hyperlane_addresses = Self::load_hyperlane_addresses().ok();

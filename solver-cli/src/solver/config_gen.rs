@@ -15,15 +15,32 @@ impl ConfigGenerator {
             anyhow::bail!("No chains configured");
         }
 
-        // Read private key from environment at generation time
-        let solver_private_key = std::env::var("SOLVER_PRIVATE_KEY")
-            .context("Missing required environment variable: SOLVER_PRIVATE_KEY")?;
-
-        // Ensure the key has 0x prefix
-        let solver_private_key = if solver_private_key.starts_with("0x") {
-            solver_private_key
-        } else {
-            format!("0x{}", solver_private_key)
+        // Build account section based on SOLVER_SIGNER_TYPE.
+        let account_section = match crate::utils::SolverSignerConfig::from_env()? {
+            crate::utils::SolverSignerConfig::AwsKms {
+                key_id,
+                region,
+                endpoint,
+            } => {
+                let endpoint_line = endpoint
+                    .map(|ep| format!("endpoint = \"{ep}\"\n"))
+                    .unwrap_or_default();
+                format!(
+                    "[account]\nprimary = \"kms\"\n\n[account.implementations.kms]\nkey_id = \"{key_id}\"\nregion = \"{region}\"\n{endpoint_line}"
+                )
+            }
+            crate::utils::SolverSignerConfig::Env => {
+                let raw = std::env::var("SOLVER_PRIVATE_KEY")
+                    .context("Missing required environment variable: SOLVER_PRIVATE_KEY")?;
+                let key = if raw.starts_with("0x") {
+                    raw
+                } else {
+                    format!("0x{raw}")
+                };
+                format!(
+                    "[account]\nprimary = \"local\"\n\n[account.implementations.local]\nprivate_key = \"{key}\""
+                )
+            }
         };
 
         // Collect all chain IDs
@@ -148,11 +165,7 @@ cleanup_interval_seconds = 60
 # ============================================================================
 # ACCOUNT
 # ============================================================================
-[account]
-primary = "local"
-
-[account.implementations.local]
-private_key = "{solver_private_key}"
+{account_section}
 
 # ============================================================================
 # NETWORKS
@@ -231,7 +244,7 @@ output = {{ {output_oracles} }}
             chain_ids.len(),
             chain_ids_str,
             solver_id = state.solver.solver_id.as_deref().unwrap_or("solver-001"),
-            solver_private_key = solver_private_key,
+            account_section = account_section,
             networks_section = networks_section.trim(),
             chain_ids_str = chain_ids_str,
             input_oracles = input_oracles.join(", "),
@@ -304,6 +317,15 @@ input_settler_address = "{}"
             ));
         }
 
+        let signer_section = match crate::utils::OracleSignerConfig::from_env()? {
+            crate::utils::OracleSignerConfig::AwsKms { key_id, region, .. } => {
+                format!(
+                    "[signer]\ntype = \"aws_kms\"\nkey_id = \"{key_id}\"\nregion = \"{region}\""
+                )
+            }
+            crate::utils::OracleSignerConfig::Env => "[signer]\ntype = \"env\"".to_string(),
+        };
+
         let config = format!(
             r#"# Auto-generated oracle operator configuration
 # DO NOT EDIT MANUALLY - regenerate with 'solver-cli configure'
@@ -312,17 +334,17 @@ input_settler_address = "{}"
 # Operator address (must match CentralizedOracle operator)
 operator_address = "{operator_address}"
 
-# Operator signer configuration (single signer used across all chains)
-[signer]
-type = "env"
-
 # Polling interval in seconds
 poll_interval_seconds = 3
+
+# Operator signer configuration (single signer used across all chains)
+{signer_section}
 
 # Chain configurations
 {chains_section}"#,
             state.chains.len(),
             operator_address = operator_address,
+            signer_section = signer_section,
             chains_section = chains_section.trim(),
         );
 
@@ -496,13 +518,17 @@ poll_interval_seconds = 3
             anyhow::bail!("No chains configured");
         }
 
-        // Read signer keys from environment
-        let evm_signer_key = std::env::var("SOLVER_PRIVATE_KEY")
-            .context("Missing required environment variable: SOLVER_PRIVATE_KEY")?;
-        let evm_signer_key = if evm_signer_key.starts_with("0x") {
-            evm_signer_key
-        } else {
-            format!("0x{}", evm_signer_key)
+        // Build EVM signer config based on SOLVER_SIGNER_TYPE.
+        let evm_signer = match crate::utils::SolverSignerConfig::from_env()? {
+            crate::utils::SolverSignerConfig::AwsKms { key_id, region, .. } => {
+                serde_json::json!({ "type": "aws", "id": key_id, "region": region })
+            }
+            crate::utils::SolverSignerConfig::Env => {
+                let raw = std::env::var("SOLVER_PRIVATE_KEY")
+                    .context("Missing required environment variable: SOLVER_PRIVATE_KEY")?;
+                let key = if raw.starts_with("0x") { raw } else { format!("0x{raw}") };
+                serde_json::json!({ "type": "hexKey", "key": key })
+            }
         };
 
         let cosmos_signer_key = std::env::var("CELESTIA_SIGNER_KEY").unwrap_or_else(|_| {
@@ -558,10 +584,7 @@ poll_interval_seconds = 3
                 },
                 "protocol": "ethereum",
                 "rpcUrls": [{ "http": chain.rpc }],
-                "signer": {
-                    "type": "hexKey",
-                    "key": evm_signer_key
-                },
+                "signer": evm_signer.clone(),
                 "mailbox": mailbox,
                 "merkleTreeHook": merkle_tree_hook,
                 "validatorAnnounce": validator_announce,

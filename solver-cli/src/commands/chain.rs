@@ -45,6 +45,12 @@ pub enum ChainCommand {
         #[arg(long, default_value = "6")]
         decimals: u8,
 
+        /// Hyperlane warp token router address (HypERC20Collateral or HypERC20Synthetic).
+        /// Required for HypCollateral chains where the warp router differs from the ERC20.
+        /// Optional for HypSynthetic chains (the token address is used as fallback).
+        #[arg(long)]
+        warp_token: Option<String>,
+
         /// Project directory
         #[arg(long)]
         dir: Option<PathBuf>,
@@ -118,6 +124,7 @@ struct ChainAddParams {
     oracle: String,
     tokens: Vec<ParsedToken>,
     default_decimals: u8,
+    warp_token: Option<String>,
     dir: Option<PathBuf>,
 }
 
@@ -133,6 +140,7 @@ impl ChainCommand {
                 oracle,
                 token,
                 decimals,
+                warp_token,
                 dir,
             } => {
                 Self::add(
@@ -145,6 +153,7 @@ impl ChainCommand {
                         oracle,
                         tokens: token,
                         default_decimals: decimals,
+                        warp_token,
                         dir,
                     },
                     output,
@@ -166,6 +175,7 @@ impl ChainCommand {
             oracle,
             tokens,
             default_decimals,
+            warp_token,
             dir,
         } = params;
         let out = OutputFormatter::new(output);
@@ -200,17 +210,31 @@ impl ChainCommand {
         }
 
         // Build contracts struct
+        let hyperlane = warp_token.as_ref().map(|addr| {
+            crate::state::HyperlaneAddresses {
+                mailbox: None,
+                merkle_tree_hook: None,
+                validator_announce: None,
+                igp: None,
+                warp_token: Some(addr.clone()),
+                warp_token_type: Some("collateral".to_string()),
+            }
+        });
+
         let contracts = ContractAddresses {
             input_settler_escrow: Some(input_settler.clone()),
             output_settler_simple: Some(output_settler.clone()),
             oracle: Some(oracle.clone()),
-            permit2: None, // TODO: Add permit2 parameter to chain add command
-            hyperlane: None,
+            permit2: None,
+            hyperlane,
         };
 
         print_address("InputSettlerEscrow", &input_settler);
         print_address("OutputSettlerSimple", &output_settler);
         print_address("CentralizedOracle", &oracle);
+        if let Some(ref addr) = warp_token {
+            print_address("Warp token router", addr);
+        }
 
         // Build tokens map
         let mut token_map: HashMap<String, TokenInfo> = HashMap::new();

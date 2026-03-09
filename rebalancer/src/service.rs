@@ -499,6 +499,36 @@ impl RebalancerService {
                 );
             }
 
+            if source_token_config.asset_type == AssetType::Erc20 {
+                if let Some(erc20_address) = source_token_config.address {
+                    match source_client
+                        .approve_erc20(erc20_address, source_collateral_token, transfer_amount)
+                        .await
+                    {
+                        Ok(tx_hash) => {
+                            info!(
+                                "Asset {} ERC20 approve submitted: route {} -> {} token={} spender={} amount={} {} tx_hash={}",
+                                asset.symbol,
+                                source_chain.name,
+                                destination_chain.name,
+                                erc20_address,
+                                source_collateral_token,
+                                format_raw_u128(transfer.amount_raw, asset.decimals),
+                                asset.symbol,
+                                tx_hash,
+                            );
+                        }
+                        Err(err) => {
+                            warn!(
+                                "Asset {} route {} -> {} ERC20 approve failed; skipping transfer:\n{:#}",
+                                asset.symbol, source_chain.name, destination_chain.name, err
+                            );
+                            continue;
+                        }
+                    }
+                }
+            }
+
             match source_client
                 .submit_transfer_remote(
                     source_collateral_token,
