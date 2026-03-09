@@ -50,7 +50,11 @@ impl FundCommand {
 
         // Derive solver address from whichever signer is configured (env key or AWS KMS).
         let solver_address = match crate::utils::SolverSignerConfig::from_env()? {
-            crate::utils::SolverSignerConfig::AwsKms { key_id, region, endpoint } => {
+            crate::utils::SolverSignerConfig::AwsKms {
+                key_id,
+                region,
+                endpoint,
+            } => {
                 use alloy::signers::aws::AwsSigner;
                 use alloy::signers::Signer;
                 use aws_sdk_kms::config::Region;

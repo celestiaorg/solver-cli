@@ -446,15 +446,14 @@ impl OracleOperator {
             })?,
         };
 
-        let decoded =
-            IOutputSettlerSimple::OutputFilled::decode_log(&prim_log).map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to decode OutputFilled for order {} on chain {}: {}",
-                    hex::encode(order_id),
-                    source_chain_id,
-                    e
-                )
-            })?;
+        let decoded = IOutputSettlerSimple::OutputFilled::decode_log(&prim_log).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to decode OutputFilled for order {} on chain {}: {}",
+                hex::encode(order_id),
+                source_chain_id,
+                e
+            )
+        })?;
 
         let output = &decoded.output;
         let application_id = output.settler.0;
