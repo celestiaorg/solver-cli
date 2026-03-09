@@ -123,7 +123,9 @@ decimals = {}
 
 [solver]
 id = "{solver_id}"
-min_profitability_pct = -1000.0  # Allow massive losses for testing
+min_profitability_pct = 0.0
+commission_bps = 20
+rate_buffer_bps = 15
 monitoring_timeout_seconds = 28800
 
 # ============================================================================
@@ -516,7 +518,11 @@ poll_interval_seconds = 3
             crate::utils::SolverSignerConfig::Env => {
                 let raw = std::env::var("SOLVER_PRIVATE_KEY")
                     .context("Missing required environment variable: SOLVER_PRIVATE_KEY")?;
-                let key = if raw.starts_with("0x") { raw } else { format!("0x{raw}") };
+                let key = if raw.starts_with("0x") {
+                    raw
+                } else {
+                    format!("0x{raw}")
+                };
                 serde_json::json!({ "type": "hexKey", "key": key })
             }
         };
