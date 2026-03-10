@@ -106,6 +106,10 @@ pub struct ContractAddresses {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct HyperlaneAddresses {
+    /// Hyperlane domain ID (may differ from EVM chain ID)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain_id: Option<u64>,
+
     /// Hyperlane mailbox address
     pub mailbox: Option<String>,
 

@@ -213,6 +213,7 @@ impl ChainCommand {
         let hyperlane = warp_token
             .as_ref()
             .map(|addr| crate::state::HyperlaneAddresses {
+                domain_id: None,
                 mailbox: None,
                 merkle_tree_hook: None,
                 validator_announce: None,
