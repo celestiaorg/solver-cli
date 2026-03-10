@@ -234,7 +234,7 @@ impl OracleOperator {
 
             // Periodically save state to disk
             poll_count += 1;
-            if poll_count % save_interval == 0 {
+            if poll_count.is_multiple_of(save_interval) {
                 let mut state = self.state.lock().await;
                 if let Err(e) = state.save_if_dirty() {
                     error!("Failed to save state: {}", e);

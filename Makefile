@@ -12,6 +12,30 @@ build:
 	@cd solver-cli && cargo build --release --features solver-runtime
 .PHONY: build
 
+## fmt: Format all Rust workspace crates with rustfmt
+fmt:
+	@cargo fmt --all
+.PHONY: fmt
+
+## fmt-check: Check Rust formatting across the workspace
+fmt-check:
+	@cargo fmt --all --check
+.PHONY: fmt-check
+
+## lint: Run clippy across the Rust workspace
+lint:
+	@cargo clippy --workspace --all-targets --all-features -- -D warnings
+.PHONY: lint
+
+## test-rust: Run Rust workspace tests
+test-rust:
+	@cargo test --workspace --all-targets
+.PHONY: test-rust
+
+## ci-rust: Run the full Rust quality suite locally
+ci-rust: fmt-check lint test-rust
+.PHONY: ci-rust
+
 # ============================================================================
 # Docker Image Builds
 # ============================================================================
