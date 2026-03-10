@@ -234,7 +234,7 @@ impl OracleOperator {
 
             // Periodically save state to disk
             poll_count += 1;
-            if poll_count % save_interval == 0 {
+            if poll_count.is_multiple_of(save_interval) {
                 let mut state = self.state.lock().await;
                 if let Err(e) = state.save_if_dirty() {
                     error!("Failed to save state: {}", e);
@@ -446,15 +446,14 @@ impl OracleOperator {
             })?,
         };
 
-        let decoded =
-            IOutputSettlerSimple::OutputFilled::decode_log(&prim_log).map_err(|e| {
-                anyhow::anyhow!(
-                    "Failed to decode OutputFilled for order {} on chain {}: {}",
-                    hex::encode(order_id),
-                    source_chain_id,
-                    e
-                )
-            })?;
+        let decoded = IOutputSettlerSimple::OutputFilled::decode_log(&prim_log).map_err(|e| {
+            anyhow::anyhow!(
+                "Failed to decode OutputFilled for order {} on chain {}: {}",
+                hex::encode(order_id),
+                source_chain_id,
+                e
+            )
+        })?;
 
         let output = &decoded.output;
         let application_id = output.settler.0;

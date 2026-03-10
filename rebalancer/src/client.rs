@@ -177,16 +177,12 @@ impl ChainClient {
             .input(call_data.into())
             .nonce(nonce);
 
-        let pending = self
-            .provider
-            .send_transaction(tx)
-            .await
-            .with_context(|| {
-                format!(
-                    "Failed to send ERC20 approve tx: token={} spender={} amount={}",
-                    token, spender, amount
-                )
-            })?;
+        let pending = self.provider.send_transaction(tx).await.with_context(|| {
+            format!(
+                "Failed to send ERC20 approve tx: token={} spender={} amount={}",
+                token, spender, amount
+            )
+        })?;
 
         Ok(*pending.tx_hash())
     }

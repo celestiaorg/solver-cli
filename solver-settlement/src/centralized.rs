@@ -1,19 +1,19 @@
-use alloy_primitives::{hex, Address as AlloyAddress, FixedBytes, U256};
+use alloy_primitives::{Address as AlloyAddress, FixedBytes, U256, hex};
 use alloy_provider::{DynProvider, Provider};
-use alloy_sol_types::{sol, SolCall};
+use alloy_sol_types::{SolCall, sol};
 use async_trait::async_trait;
 use sha3::{Digest, Keccak256};
-use upstream_solver_settlement::{
-    utils::parse_oracle_config, OracleConfig, SettlementError, SettlementInterface,
-};
 use solver_types::{
-    create_http_provider, standards::eip7683::Eip7683OrderData, with_0x_prefix, Address,
-    ConfigSchema, Field, FieldType, FillProof, NetworksConfig, Order, ProviderError, Schema,
-    Transaction, TransactionHash, TransactionReceipt, TransactionType,
+    Address, ConfigSchema, Field, FieldType, FillProof, NetworksConfig, Order, ProviderError,
+    Schema, Transaction, TransactionHash, TransactionReceipt, TransactionType,
+    create_http_provider, standards::eip7683::Eip7683OrderData, with_0x_prefix,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::{debug, info, warn};
+use upstream_solver_settlement::{
+    OracleConfig, SettlementError, SettlementInterface, utils::parse_oracle_config,
+};
 
 sol! {
     interface ICentralizedOracle {
@@ -376,7 +376,7 @@ impl SettlementInterface for CentralizedSettlement {
             .logs()
             .iter()
             .map(|log| solver_types::Log {
-                address: solver_types::Address(log.address().0 .0.to_vec()),
+                address: solver_types::Address(log.address().0.0.to_vec()),
                 topics: log
                     .topics()
                     .iter()
@@ -462,13 +462,13 @@ impl SettlementInterface for CentralizedSettlement {
         };
 
         debug!(
-			"Checking isProven: chain={}, remote_chain={}, remote_oracle=0x{}, settler=0x{}, hash=0x{}",
-			origin_chain_id,
-			destination_chain_id,
-			hex::encode(remote_oracle),
-			hex::encode(output_settler),
-			hex::encode(payload_hash)
-		);
+            "Checking isProven: chain={}, remote_chain={}, remote_oracle=0x{}, settler=0x{}, hash=0x{}",
+            origin_chain_id,
+            destination_chain_id,
+            hex::encode(remote_oracle),
+            hex::encode(output_settler),
+            hex::encode(payload_hash)
+        );
 
         match self
             .check_is_proven(
@@ -504,10 +504,10 @@ impl SettlementInterface for CentralizedSettlement {
         let payload_hash = self.compute_payload_hash(order, &solver_array, timestamp)?;
 
         info!(
-			"Fill confirmed for order {}, waiting for oracle operator attestation (payload_hash=0x{})",
-			order.id,
-			hex::encode(payload_hash)
-		);
+            "Fill confirmed for order {}, waiting for oracle operator attestation (payload_hash=0x{})",
+            order.id,
+            hex::encode(payload_hash)
+        );
 
         Ok(None)
     }

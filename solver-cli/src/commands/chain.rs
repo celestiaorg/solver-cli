@@ -210,16 +210,16 @@ impl ChainCommand {
         }
 
         // Build contracts struct
-        let hyperlane = warp_token.as_ref().map(|addr| {
-            crate::state::HyperlaneAddresses {
+        let hyperlane = warp_token
+            .as_ref()
+            .map(|addr| crate::state::HyperlaneAddresses {
                 mailbox: None,
                 merkle_tree_hook: None,
                 validator_announce: None,
                 igp: None,
                 warp_token: Some(addr.clone()),
                 warp_token_type: Some("collateral".to_string()),
-            }
-        });
+            });
 
         let contracts = ContractAddresses {
             input_settler_escrow: Some(input_settler.clone()),

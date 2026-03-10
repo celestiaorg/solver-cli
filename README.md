@@ -288,11 +288,23 @@ Ensure your solver address has native tokens on all chains for gas.
 ## Development
 
 ```bash
-# Build CLI
-cd solver-cli && cargo build --release
+# Rustup will honor .rust-toolchain.toml automatically in this repo.
+# To preinstall it explicitly:
+rustup toolchain install 1.91.1 --component rustfmt --component clippy
 
-# Run tests
-cd solver-cli && cargo test
+# Format all workspace crates
+make fmt
+
+# Run the same Rust quality checks as CI
+make ci-rust
+
+# Build the main CLI
+make build
+
+# Run individual checks
+make fmt-check
+make lint
+make test-rust
 
 # Build contracts
 cd oif/oif-contracts && forge build

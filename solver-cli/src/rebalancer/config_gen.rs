@@ -211,7 +211,10 @@ fn collect_assets(state: &SolverState) -> Result<Vec<RebalancerAsset>> {
             );
         }
 
-        let chain_ids: Vec<u64> = entries.iter().map(|(chain_id, _, _, _)| *chain_id).collect();
+        let chain_ids: Vec<u64> = entries
+            .iter()
+            .map(|(chain_id, _, _, _)| *chain_id)
+            .collect();
         let weights = equal_weight_distribution(&chain_ids, 1_000_000);
         let min_weights: Vec<(u64, f64)> = weights
             .iter()
@@ -228,11 +231,13 @@ fn collect_assets(state: &SolverState) -> Result<Vec<RebalancerAsset>> {
             decimals: expected_decimals,
             tokens: entries
                 .into_iter()
-                .map(|(chain_id, address, _, collateral_token)| RebalancerTokenEntry {
-                    chain_id,
-                    address,
-                    collateral_token,
-                })
+                .map(
+                    |(chain_id, address, _, collateral_token)| RebalancerTokenEntry {
+                        chain_id,
+                        address,
+                        collateral_token,
+                    },
+                )
                 .collect(),
             weights,
             min_weights,
