@@ -63,7 +63,10 @@ account = "{account}"
 "#,
                 name = chain.name,
                 chain_id = chain.chain_id,
-                domain_id = chain.contracts.hyperlane.as_ref()
+                domain_id = chain
+                    .contracts
+                    .hyperlane
+                    .as_ref()
                     .and_then(|h| h.domain_id)
                     .unwrap_or_else(|| hyperlane_domain_id(chain.chain_id)),
                 rpc_url = chain.rpc,
