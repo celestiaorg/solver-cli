@@ -50,7 +50,11 @@ impl ConfigureCommand {
 
         // Derive solver address based on SOLVER_SIGNER_TYPE (mirrors oracle-operator pattern).
         let solver_address = match crate::utils::SolverSignerConfig::from_env()? {
-            crate::utils::SolverSignerConfig::AwsKms { key_id, region, endpoint } => {
+            crate::utils::SolverSignerConfig::AwsKms {
+                key_id,
+                region,
+                endpoint,
+            } => {
                 use alloy::signers::aws::AwsSigner;
                 use alloy::signers::Signer;
                 use aws_sdk_kms::config::Region;

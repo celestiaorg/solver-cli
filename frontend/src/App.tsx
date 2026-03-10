@@ -162,7 +162,13 @@ export default function App() {
       const raw    = Math.round(parseFloat(amount) * 10 ** selectedTokenDecimals).toString()
       const resp   = await api.quote(fromId, toId, raw, asset,
         isConnected && connectedAddress ? connectedAddress : undefined)
-      if (!resp.quotes?.length) throw new Error('No quotes returned. Is the solver running?')
+      if (!resp.quotes?.length) {
+        const meta = (resp as any).metadata
+        const allFailed = meta && meta.solvers_queried > 0 && meta.solvers_responded_success === 0
+        throw new Error(allFailed
+          ? 'SOLVER_REJECTED: No solver could fill this transfer — the amount is likely too small to cover gas and bridging fees. Try a larger amount.'
+          : 'No quotes returned. Is the solver running? (make solver)')
+      }
       setQuote(resp.quotes[0]); setStep('quoted')
     } catch (err: any) { setError(err.message); setStep('error') }
   }
@@ -634,15 +640,38 @@ export default function App() {
               })()}
 
               {/* Error */}
-              {error && (
-                <div className="flex items-start gap-2.5 bg-red-500/[0.06] border border-red-500/20 rounded-xl px-4 py-3 animate-fade-in">
-                  <svg className="shrink-0 mt-0.5" width="13" height="13" viewBox="0 0 24 24" fill="none">
-                    <circle cx="12" cy="12" r="10" stroke="#f87171" strokeWidth="2"/>
-                    <path d="M12 8v4m0 4h.01" stroke="#f87171" strokeWidth="2" strokeLinecap="round"/>
-                  </svg>
-                  <p className="text-xs text-red-400 leading-relaxed">{error}</p>
-                </div>
-              )}
+              {error && (() => {
+                const isSolverRejected = error.startsWith('SOLVER_REJECTED:')
+                const isSolverOffline  = error.startsWith('SOLVER_OFFLINE:')
+                const displayMsg = error.replace(/^SOLVER_(REJECTED|OFFLINE):\s*/, '')
+                return (
+                  <div className={`flex items-start gap-2.5 rounded-xl px-4 py-3 animate-fade-in border ${
+                    isSolverRejected
+                      ? 'bg-amber-500/[0.06] border-amber-500/20'
+                      : 'bg-red-500/[0.06] border-red-500/20'
+                  }`}>
+                    <svg className="shrink-0 mt-0.5" width="13" height="13" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke={isSolverRejected ? '#f59e0b' : '#f87171'} strokeWidth="2"/>
+                      <path d="M12 8v4m0 4h.01" stroke={isSolverRejected ? '#f59e0b' : '#f87171'} strokeWidth="2" strokeLinecap="round"/>
+                    </svg>
+                    <div className="flex flex-col gap-1">
+                      <p className={`text-xs leading-relaxed ${isSolverRejected ? 'text-amber-400' : 'text-red-400'}`}>
+                        {displayMsg}
+                      </p>
+                      {isSolverRejected && (
+                        <p className="text-[11px] text-amber-500/70">
+                          Tip: increase the amount or check that the solver has sufficient inventory.
+                        </p>
+                      )}
+                      {isSolverOffline && (
+                        <p className="text-[11px] text-red-500/70">
+                          Run <code className="font-mono bg-surface-3 px-1 rounded">make solver</code> to start the solver.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
 
               {/* CTA */}
               {routeType === 'fast' ? (

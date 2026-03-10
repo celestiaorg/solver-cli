@@ -153,7 +153,11 @@ impl SolverSignerConfig {
                 let region = env::var("SOLVER_KMS_REGION")
                     .context("Missing required environment variable: SOLVER_KMS_REGION")?;
                 let endpoint = env::var("SOLVER_KMS_ENDPOINT").ok();
-                Ok(Self::AwsKms { key_id, region, endpoint })
+                Ok(Self::AwsKms {
+                    key_id,
+                    region,
+                    endpoint,
+                })
             }
             _ => Ok(Self::Env),
         }
@@ -173,8 +177,7 @@ pub enum RebalancerSignerConfig {
 
 impl RebalancerSignerConfig {
     pub fn from_env() -> Result<Self> {
-        let signer_type =
-            env::var("REBALANCER_SIGNER_TYPE").unwrap_or_else(|_| "env".to_string());
+        let signer_type = env::var("REBALANCER_SIGNER_TYPE").unwrap_or_else(|_| "env".to_string());
         match signer_type.as_str() {
             "aws_kms" => {
                 let key_id = env::var("REBALANCER_KMS_KEY_ID")
@@ -213,7 +216,11 @@ impl OracleSignerConfig {
                 let region = env::var("ORACLE_KMS_REGION")
                     .context("Missing required environment variable: ORACLE_KMS_REGION")?;
                 let endpoint = env::var("ORACLE_KMS_ENDPOINT").ok();
-                Ok(Self::AwsKms { key_id, region, endpoint })
+                Ok(Self::AwsKms {
+                    key_id,
+                    region,
+                    endpoint,
+                })
             }
             _ => Ok(Self::Env),
         }

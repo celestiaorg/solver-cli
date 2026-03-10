@@ -1,8 +1,8 @@
 [workspace]
 members = [
-    "solver-cli",
-    "solver-settlement",
     "oracle-operator",
     "rebalancer",
+    "solver-cli",
+    "solver-settlement",
 ]
 resolver = "2"

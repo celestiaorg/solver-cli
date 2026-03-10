@@ -34,7 +34,11 @@ impl AccountCommand {
 
 async fn print_solver_address() -> Result<()> {
     match SolverSignerConfig::from_env()? {
-        SolverSignerConfig::AwsKms { key_id, region, endpoint } => {
+        SolverSignerConfig::AwsKms {
+            key_id,
+            region,
+            endpoint,
+        } => {
             use alloy::signers::aws::AwsSigner;
             use alloy::signers::Signer;
             use aws_sdk_kms::config::Region;
@@ -56,7 +60,11 @@ async fn print_solver_address() -> Result<()> {
 
             let raw = env::var("SOLVER_PRIVATE_KEY")
                 .context("Missing required environment variable: SOLVER_PRIVATE_KEY")?;
-            let pk = if raw.starts_with("0x") { raw } else { format!("0x{raw}") };
+            let pk = if raw.starts_with("0x") {
+                raw
+            } else {
+                format!("0x{raw}")
+            };
             let addr = ChainClient::address_from_pk(&pk)?;
             println!("{addr:?}");
         }

@@ -92,7 +92,11 @@ impl Deployer {
 
         // Derive operator address from ORACLE_SIGNER_TYPE (env key or AWS KMS).
         let operator_address = match crate::utils::OracleSignerConfig::from_env()? {
-            crate::utils::OracleSignerConfig::AwsKms { key_id, region, endpoint } => {
+            crate::utils::OracleSignerConfig::AwsKms {
+                key_id,
+                region,
+                endpoint,
+            } => {
                 use alloy::signers::aws::AwsSigner;
                 use alloy::signers::Signer;
                 use aws_sdk_kms::config::Region;
