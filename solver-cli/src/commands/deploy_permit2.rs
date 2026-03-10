@@ -86,7 +86,10 @@ impl DeployPermit2Command {
                 .context("Failed to get code at Permit2 address")?;
 
             if !existing_code.is_empty() {
-                print_kv("  Permit2", &format!("{} (already deployed)", PERMIT2_ADDRESS));
+                print_kv(
+                    "  Permit2",
+                    format!("{} (already deployed)", PERMIT2_ADDRESS),
+                );
             } else {
                 // Need to inject bytecode — fetch from mainnet if we don't have it yet
                 if mainnet_bytecode.is_none() {
@@ -94,8 +97,10 @@ impl DeployPermit2Command {
                         "  Fetching Permit2 bytecode from {}...",
                         self.mainnet_rpc
                     ));
-                    let mainnet_url: reqwest::Url =
-                        self.mainnet_rpc.parse().context("Invalid mainnet RPC URL")?;
+                    let mainnet_url: reqwest::Url = self
+                        .mainnet_rpc
+                        .parse()
+                        .context("Invalid mainnet RPC URL")?;
                     let mainnet_provider = ProviderBuilder::new().connect_http(mainnet_url);
                     let code = mainnet_provider
                         .get_code_at(permit2_addr)
@@ -127,7 +132,7 @@ impl DeployPermit2Command {
 
                 print_kv(
                     "  Permit2",
-                    &format!("{} (bytecode injected)", PERMIT2_ADDRESS),
+                    format!("{} (bytecode injected)", PERMIT2_ADDRESS),
                 );
             }
 
