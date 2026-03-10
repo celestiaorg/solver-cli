@@ -12,9 +12,9 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 use commands::{
     account::AccountCommand, balances::BalancesCommand, chain::ChainCommand,
-    configure::ConfigureCommand, deploy::DeployCommand, fund::FundCommand, init::InitCommand,
-    intent::IntentCommand, order::OrderCommand, rebalancer::RebalancerCommand,
-    solver::SolverCommand, token::TokenCommand,
+    configure::ConfigureCommand, deploy::DeployCommand, deploy_permit2::DeployPermit2Command,
+    fund::FundCommand, init::InitCommand, intent::IntentCommand, order::OrderCommand,
+    rebalancer::RebalancerCommand, solver::SolverCommand, token::TokenCommand,
 };
 
 #[derive(Parser)]
@@ -47,6 +47,9 @@ enum Commands {
 
     /// Deploy contracts to all configured chains
     Deploy(DeployCommand),
+
+    /// Deploy (or inject) Permit2 to configured chains
+    DeployPermit2(DeployPermit2Command),
 
     /// Generate solver configuration
     Configure(ConfigureCommand),
@@ -110,6 +113,7 @@ async fn main() -> anyhow::Result<()> {
     let result = match cli.command {
         Commands::Init(cmd) => cmd.run(cli.output).await,
         Commands::Deploy(cmd) => cmd.run(cli.output).await,
+        Commands::DeployPermit2(cmd) => cmd.run(cli.output).await,
         Commands::Configure(cmd) => cmd.run(cli.output).await,
         Commands::Fund(cmd) => cmd.run(cli.output).await,
         Commands::Chain(cmd) => cmd.run(cli.output).await,

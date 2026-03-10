@@ -172,6 +172,9 @@ impl DeployCommand {
             if let Some(addr) = &chain.contracts.oracle {
                 print_address("CentralizedOracle", addr);
             }
+            if let Some(addr) = &chain.contracts.permit2 {
+                print_address("Permit2", addr);
+            }
             for (symbol, token) in &chain.tokens {
                 print_address(&format!("Token ({})", symbol), &token.address);
             }
