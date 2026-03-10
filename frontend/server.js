@@ -221,6 +221,24 @@ function isOriginChain(chainName, hypAddresses) {
   return data && data.mock_usdc;
 }
 
+// ── Error helpers ────────────────────────────────────────────────────────────
+
+/**
+ * Map raw aggregator error messages to user-friendly descriptions.
+ * The aggregator returns generic strings; we enrich them with actionable context.
+ */
+function mapAggregatorQuoteError(msg) {
+  if (typeof msg !== 'string') return JSON.stringify(msg);
+  const lower = msg.toLowerCase();
+  if (lower.includes('all solvers failed')) {
+    return 'SOLVER_REJECTED: No solver could fill this transfer — the amount is likely too small to cover gas and bridging fees. Try a larger amount.';
+  }
+  if (lower.includes('no solvers available')) {
+    return 'SOLVER_OFFLINE: No solvers are available for this route. Make sure the solver is running (make solver).';
+  }
+  return msg;
+}
+
 // ── Express App ──────────────────────────────────────────────────────────────
 
 const app = express();
@@ -718,7 +736,10 @@ app.post('/api/quote', async (req, res) => {
     });
 
     const data = await response.json();
-    if (!response.ok) throw new Error(data.message || data.error || JSON.stringify(data));
+    if (!response.ok) {
+      const rawMsg = data.message || data.error || JSON.stringify(data);
+      throw new Error(mapAggregatorQuoteError(rawMsg));
+    }
     console.log(`[quote] Got ${data.quotes?.length ?? 0} quotes`);
     res.json(data);
   } catch (err) {

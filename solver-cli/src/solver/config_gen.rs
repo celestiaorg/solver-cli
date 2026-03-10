@@ -103,21 +103,6 @@ decimals = {}
             output_oracles.push(format!("{} = [\"{}\"]", chain.chain_id, oracle));
         }
 
-        // Build mock price pairs from all configured tokens
-        let mut price_symbols: Vec<String> = state
-            .chains
-            .values()
-            .flat_map(|c| c.tokens.keys().cloned())
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect();
-        price_symbols.sort();
-        let mock_prices = price_symbols
-            .iter()
-            .map(|sym| format!("\"{}/USD\" = \"1.0\"", sym))
-            .collect::<Vec<_>>()
-            .join("\n");
-
         // Build routes (all-to-all)
         let mut routes = Vec::new();
         for &from_id in &chain_ids {
@@ -138,7 +123,9 @@ decimals = {}
 
 [solver]
 id = "{solver_id}"
-min_profitability_pct = -1000.0  # Allow massive losses for testing
+min_profitability_pct = 0.0
+commission_bps = 20
+rate_buffer_bps = 15
 monitoring_timeout_seconds = 28800
 
 # ============================================================================
@@ -214,12 +201,17 @@ max_gas_price_gwei = 100
 # PRICING
 # ============================================================================
 [pricing]
-primary = "mock"
+primary = "defillama"
+fallbacks = ["coingecko"]
 
-[pricing.implementations.mock]
-# Mock prices for testing (auto-generated from configured tokens)
-[pricing.implementations.mock.pair_prices]
-{mock_prices}
+[pricing.implementations.defillama]
+# base_url = "https://coins.llama.fi"  # default
+# cache_duration_seconds = 60          # default
+
+[pricing.implementations.coingecko]
+# api_key = ""        # optional, omit for free tier
+# cache_duration_seconds = 60
+# rate_limit_delay_ms = 1200           # free tier default
 
 # ============================================================================
 # SETTLEMENT
