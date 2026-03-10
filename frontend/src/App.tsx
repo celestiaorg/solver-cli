@@ -91,8 +91,6 @@ export default function App() {
   const [slowLoading, setSlowLoading] = useState(false)
   const [slowMsg, setSlowMsg]         = useState('')
 
-  const [faucetLoading, setFaucetLoading] = useState<string | null>(null)
-  const [faucetMsg, setFaucetMsg]         = useState('')
   const [rebalanceLoading, setRebalanceLoading] = useState<string | null>(null)
   const [rebalanceMsg, setRebalanceMsg]         = useState('')
   const [rebalanceToken, setRebalanceToken]     = useState('USDC')
@@ -225,18 +223,7 @@ export default function App() {
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
 
-  // ── Faucet ────────────────────────────────────────────────────────────────
 
-  const handleFaucet = async (chainName: string, type: 'gas' | 'token', symbol?: string) => {
-    const key = `${chainName}-${type}${symbol ? `-${symbol}` : ''}`
-    setFaucetLoading(key); setFaucetMsg('')
-    try {
-      const r = await api.faucet(chainName, type,
-        isConnected && connectedAddress ? connectedAddress : undefined, symbol)
-      setFaucetMsg(`Sent ${r.amount} on ${chainName}`); loadBalances()
-    } catch (err: any) { setFaucetMsg(`Error: ${err.message}`) }
-    finally { setFaucetLoading(null) }
-  }
 
   // ── Rebalance ─────────────────────────────────────────────────────────────
 
@@ -843,63 +830,6 @@ export default function App() {
             {/* ── Tools tab (Faucet + Bridge + System) ────────────────────── */}
             {rightTab === 'tools' && (
               <div className="divide-y divide-border/60 flex-1 overflow-y-auto">
-
-                {/* Faucet */}
-                <div className="p-5">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-bold text-white">Faucet</span>
-                    <span className="text-[11px] text-gray-600">
-                      {isConnected
-                        ? <span className="text-brand-light font-mono">{truncAddr(connectedAddress!)}</span>
-                        : config ? <span className="font-mono">{truncAddr(config.userAddress)}</span> : '—'
-                      }
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-gray-600 mb-3">Claim testnet gas and tokens.</p>
-                  {config && chainEntries.map(([chainId, chain]) => {
-                    if (!config.faucetChains?.includes(chain.name)) return null
-                    return (
-                      <div key={chainId} className="mb-3 last:mb-0">
-                        <div className="mb-1.5"><ChainBadge name={chain.name} /></div>
-                        <div className="flex gap-1.5">
-                          <button
-                            onClick={() => handleFaucet(chain.name, 'gas')}
-                            disabled={faucetLoading !== null}
-                            className="flex-1 py-2 px-2 rounded-lg text-[11px] font-semibold
-                              bg-surface-2 border border-border hover:border-border-light
-                              text-gray-400 hover:text-white transition-all
-                              disabled:opacity-40 disabled:cursor-not-allowed
-                              flex items-center justify-center gap-1"
-                          >
-                            {faucetLoading === `${chain.name}-gas` ? <Spinner size={10} /> : null}
-                            1 ETH
-                          </button>
-                          {Object.keys(chain.tokens).map(sym => (
-                            <button key={sym}
-                              onClick={() => handleFaucet(chain.name, 'token', sym)}
-                              disabled={faucetLoading !== null}
-                              className="flex-1 py-2 px-2 rounded-lg text-[11px] font-semibold
-                                bg-surface-2 border border-border hover:border-border-light
-                                text-gray-400 hover:text-white transition-all
-                                disabled:opacity-40 disabled:cursor-not-allowed
-                                flex items-center justify-center gap-1"
-                            >
-                              {faucetLoading === `${chain.name}-token-${sym}` ? <Spinner size={10} /> : null}
-                              10 {sym}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  })}
-                  {faucetMsg && (
-                    <div className={`mt-2 text-[11px] px-3 py-2 rounded-lg animate-fade-in ${
-                      faucetMsg.startsWith('Error')
-                        ? 'bg-red-500/[0.06] text-red-400 border border-red-500/15'
-                        : 'bg-emerald-500/[0.06] text-emerald-400 border border-emerald-500/15'
-                    }`}>{faucetMsg}</div>
-                  )}
-                </div>
 
                 {/* Bridge */}
                 <div className="p-5">

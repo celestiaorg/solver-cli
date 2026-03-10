@@ -18,7 +18,6 @@ export interface Config {
   chains: Record<string, ChainInfo>
   userAddress: string
   solverAddress: string
-  faucetChains?: string[]
 }
 
 export interface BalanceEntry {
@@ -128,13 +127,6 @@ export const api = {
     }),
 
   orderStatus: (id: string) => json<OrderStatus>(`${BASE}/order/${id}`),
-
-  faucet: (chainName: string, type: 'gas' | 'token', address?: string, symbol?: string) =>
-    json<{ success: boolean; hash: string; amount: string }>(`${BASE}/faucet`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chainName, type, ...(address ? { address } : {}), ...(symbol ? { symbol } : {}) }),
-    }),
 
   rebalance: (from: string, to: string, amount?: string, token?: string) =>
     json<{ success: boolean; message: string; txHash?: string }>(`${BASE}/rebalance`, {
