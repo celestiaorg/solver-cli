@@ -128,13 +128,6 @@ export const api = {
 
   orderStatus: (id: string) => json<OrderStatus>(`${BASE}/order/${id}`),
 
-  rebalance: (from: string, to: string, amount?: string, token?: string) =>
-    json<{ success: boolean; message: string; txHash?: string }>(`${BASE}/rebalance`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to, amount, ...(token ? { token } : {}) }),
-    }),
-
   bridgePrepare: (from: string, to: string, token: string, address: string, amount: string) =>
     json<{
       warpToken: string

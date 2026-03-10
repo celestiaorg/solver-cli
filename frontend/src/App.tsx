@@ -91,11 +91,6 @@ export default function App() {
   const [slowLoading, setSlowLoading] = useState(false)
   const [slowMsg, setSlowMsg]         = useState('')
 
-  const [rebalanceLoading, setRebalanceLoading] = useState<string | null>(null)
-  const [rebalanceMsg, setRebalanceMsg]         = useState('')
-  const [rebalanceToken, setRebalanceToken]     = useState('USDC')
-  const [rebalanceFrom, setRebalanceFrom]       = useState('anvil1')
-  const [rebalanceTo, setRebalanceTo]           = useState('anvil2')
   const [rightTab, setRightTab]                 = useState<'balances' | 'tools'>('balances')
 
   const pollRef = useRef<ReturnType<typeof setInterval>>()
@@ -224,17 +219,6 @@ export default function App() {
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
 
 
-
-  // ── Rebalance ─────────────────────────────────────────────────────────────
-
-  const handleRebalance = async () => {
-    setRebalanceLoading('bridge'); setRebalanceMsg('')
-    try {
-      const r = await api.rebalance(rebalanceFrom, rebalanceTo, undefined, rebalanceToken)
-      setRebalanceMsg(r.message); loadBalances()
-    } catch (err: any) { setRebalanceMsg(`Error: ${err.message}`) }
-    finally { setRebalanceLoading(null) }
-  }
 
   const resetFlowState = () => {
     setStep('idle'); setQuote(null); setOrderId(''); setOrderStatus(null); setError(''); setSlowMsg('')
@@ -827,70 +811,9 @@ export default function App() {
               </div>
             )}
 
-            {/* ── Tools tab (Faucet + Bridge + System) ────────────────────── */}
+            {/* ── Tools tab (System) ─────────────────────────────────────── */}
             {rightTab === 'tools' && (
               <div className="divide-y divide-border/60 flex-1 overflow-y-auto">
-
-                {/* Bridge */}
-                <div className="p-5">
-                  <span className="text-xs font-bold text-white block mb-1">Bridge</span>
-                  <p className="text-[11px] text-gray-600 mb-3">Move solver tokens via Hyperlane.</p>
-                  <div className="space-y-2 mb-2">
-                    <select
-                      value={rebalanceToken}
-                      onChange={e => setRebalanceToken(e.target.value)}
-                      className="w-full bg-surface-2 border border-border rounded-xl px-3 py-2.5 text-white text-xs
-                        font-semibold outline-none cursor-pointer transition-colors"
-                    >
-                      {config && Object.values(config.chains).flatMap(c => Object.keys(c.tokens))
-                        .filter((s, i, a) => a.indexOf(s) === i && s !== 'ETH')
-                        .map(sym => <option key={sym} value={sym}>{sym}</option>)
-                      }
-                    </select>
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={rebalanceFrom}
-                        onChange={e => setRebalanceFrom(e.target.value)}
-                        className="flex-1 bg-surface-2 border border-border rounded-xl px-3 py-2.5 text-white text-xs
-                          font-semibold outline-none cursor-pointer transition-colors"
-                      >
-                        {chainEntries.map(([id, c]) => (
-                          <option key={id} value={c.name} disabled={c.name === rebalanceTo}>{c.name}</option>
-                        ))}
-                      </select>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-gray-600 shrink-0">
-                        <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                      <select
-                        value={rebalanceTo}
-                        onChange={e => setRebalanceTo(e.target.value)}
-                        className="flex-1 bg-surface-2 border border-border rounded-xl px-3 py-2.5 text-white text-xs
-                          font-semibold outline-none cursor-pointer transition-colors"
-                      >
-                        {chainEntries.map(([id, c]) => (
-                          <option key={id} value={c.name} disabled={c.name === rebalanceFrom}>{c.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleRebalance}
-                    disabled={rebalanceLoading !== null || rebalanceFrom === rebalanceTo}
-                    className="w-full py-2.5 rounded-xl text-xs font-semibold transition-all
-                      bg-surface-2 border border-border hover:border-border-light text-gray-400 hover:text-white
-                      disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                  >
-                    {rebalanceLoading === 'bridge' ? <Spinner size={11} /> : null}
-                    Bridge {rebalanceToken}
-                  </button>
-                  {rebalanceMsg && (
-                    <div className={`mt-2 text-[11px] px-3 py-2 rounded-lg animate-fade-in ${
-                      rebalanceMsg.startsWith('Error')
-                        ? 'bg-red-500/[0.06] text-red-400 border border-red-500/15'
-                        : 'bg-emerald-500/[0.06] text-emerald-400 border border-emerald-500/15'
-                    }`}>{rebalanceMsg}</div>
-                  )}
-                </div>
 
                 {/* System */}
                 <div className="p-5">
