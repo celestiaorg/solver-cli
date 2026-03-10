@@ -214,7 +214,7 @@ fund-user:
 
 ## mint: Mint tokens on a chain (SYMBOL=USDC, CHAIN=anvil1, TO=user, AMOUNT=10000000)
 mint: build
-	@$(SOLVER_CLI) token mint \
+	@unset CHAIN; $(SOLVER_CLI) token mint \
 		--chain $(or $(CHAIN),anvil1) \
 		--symbol $(or $(SYMBOL),USDC) \
 		--to $(or $(TO),user) \
