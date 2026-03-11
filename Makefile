@@ -307,166 +307,6 @@ balances: build
 .PHONY: balances
 
 # ============================================================================
-# Bridge Test (Hyperlane warp route e2e)
-# ============================================================================
-
-## rebalance: Move solver USDC from anvil1 -> Celestia -> anvil2 via Hyperlane + forwarding
-FORWARDING_BACKEND ?= http://127.0.0.1:8080
-REBALANCE_AMOUNT ?= 10000000
-
-rebalance:
-	@echo ""
-	@echo "═══════════════════════════════════════════════════════════════"
-	@echo "  Rebalance: anvil1 -> Celestia -> anvil2"
-	@echo "═══════════════════════════════════════════════════════════════"
-	@echo ""
-	@. ./.env && \
-		ADDRESSES=$$(cat .config/hyperlane-addresses.json) && \
-		MOCK_USDC=$$(echo $$ADDRESSES | jq -r '.anvil1.mock_usdc') && \
-		ANVIL1_WARP=$$(echo $$ADDRESSES | jq -r '.anvil1.warp_token') && \
-		ANVIL2_WARP=$$(echo $$ADDRESSES | jq -r '.anvil2.warp_token') && \
-		SOLVER_ADDR=$$(cast wallet address --private-key $$SOLVER_PRIVATE_KEY) && \
-		SOLVER_ADDR_PADDED=$$(printf '0x000000000000000000000000%s' $${SOLVER_ADDR#0x}) && \
-		echo "  Solver address:          $$SOLVER_ADDR" && \
-		echo "  MockERC20 (anvil1):      $$MOCK_USDC" && \
-		echo "  HypCollateral (anvil1):  $$ANVIL1_WARP" && \
-		echo "  HypSynthetic (anvil2):   $$ANVIL2_WARP" && \
-		echo "  Amount:                  $(REBALANCE_AMOUNT) (raw)" && \
-		echo "" && \
-		echo "Step 1: Check initial balances..." && \
-		ANVIL1_BAL=$$(cast call $$MOCK_USDC "balanceOf(address)" $$SOLVER_ADDR --rpc-url $$ANVIL1_RPC 2>/dev/null | cast to-dec 2>/dev/null || echo "0") && \
-		ANVIL2_BAL=$$(cast call $$ANVIL2_WARP "balanceOf(address)" $$SOLVER_ADDR --rpc-url $$ANVIL2_RPC 2>/dev/null | cast to-dec 2>/dev/null || echo "0") && \
-		echo "  Anvil1 USDC:  $$ANVIL1_BAL" && \
-		echo "  Anvil2 USDC: $$ANVIL2_BAL" && \
-		echo "" && \
-		echo "Step 2: Derive Celestia forwarding address (dest: anvil2)..." && \
-		FORWARD_ADDR=$$(docker exec forwarding-relayer forwarding-relayer derive-address \
-			--dest-domain 31338 \
-			--dest-recipient $$SOLVER_ADDR_PADDED) && \
-		echo "  Forwarding address: $$FORWARD_ADDR" && \
-		echo "" && \
-		echo "Step 3: Register forwarding request with backend..." && \
-		REGISTER_RESP=$$(curl -sf -X POST $(FORWARDING_BACKEND)/forwarding-requests \
-			-H "Content-Type: application/json" \
-			-d "{\"forward_addr\": \"$$FORWARD_ADDR\", \"dest_domain\": 31338, \"dest_recipient\": \"$$SOLVER_ADDR_PADDED\"}") && \
-		echo "  Response: $$REGISTER_RESP" && \
-		echo "" && \
-		echo "Step 4: Approve HypCollateral to spend solver USDC..." && \
-		cast send $$MOCK_USDC "approve(address,uint256)" $$ANVIL1_WARP $(REBALANCE_AMOUNT) \
-			--rpc-url $$ANVIL1_RPC --private-key $$SOLVER_PRIVATE_KEY > /dev/null && \
-		echo "  Done" && \
-		echo "" && \
-		echo "Step 5: Send USDC to Celestia via HypCollateral.transferRemote(69420, ...)..." && \
-		FORWARD_ADDR_HEX=$$(python3 scripts/bech32_to_bytes32.py "$$FORWARD_ADDR") && \
-		echo "  Forwarding addr (bytes32): $$FORWARD_ADDR_HEX" && \
-		cast send $$ANVIL1_WARP "transferRemote(uint32,bytes32,uint256)" \
-			69420 $$FORWARD_ADDR_HEX $(REBALANCE_AMOUNT) \
-			--rpc-url $$ANVIL1_RPC --private-key $$SOLVER_PRIVATE_KEY --value 0 > /dev/null && \
-		echo "  Sent! anvil1 -> Celestia -> anvil2" && \
-		echo "" && \
-		echo "Step 6: Waiting for Hyperlane relayer + Celestia forwarding (60s)..." && \
-		for i in $$(seq 1 12); do \
-			sleep 5; \
-			BAL=$$(cast call $$ANVIL2_WARP "balanceOf(address)" $$SOLVER_ADDR --rpc-url $$ANVIL2_RPC 2>/dev/null | cast to-dec 2>/dev/null || echo "0"); \
-			printf "  [%2ds] Anvil2 USDC balance: %s\n" $$((i * 5)) "$$BAL"; \
-			if [ "$$BAL" != "$$ANVIL2_BAL" ] && [ "$$BAL" != "0" ]; then \
-				echo ""; \
-				echo "  Tokens arrived!"; \
-				break; \
-			fi; \
-		done && \
-		echo "" && \
-		echo "Step 7: Final balances..." && \
-		ANVIL1_BAL_AFTER=$$(cast call $$MOCK_USDC "balanceOf(address)" $$SOLVER_ADDR --rpc-url $$ANVIL1_RPC | cast to-dec) && \
-		ANVIL2_BAL_AFTER=$$(cast call $$ANVIL2_WARP "balanceOf(address)" $$SOLVER_ADDR --rpc-url $$ANVIL2_RPC | cast to-dec) && \
-		echo "  Anvil1 USDC:  $$ANVIL1_BAL -> $$ANVIL1_BAL_AFTER" && \
-		echo "  Anvil2 USDC: $$ANVIL2_BAL -> $$ANVIL2_BAL_AFTER" && \
-		echo "" && \
-		if [ "$$ANVIL2_BAL_AFTER" != "$$ANVIL2_BAL" ]; then \
-			echo "  Rebalance complete — tokens moved anvil1 -> Celestia -> anvil2"; \
-		else \
-			echo "  Rebalance failed — tokens did not arrive on anvil2"; \
-			echo "     Check logs: make logs SVC=relayer"; \
-			echo "                 make logs SVC=forwarding-relayer"; \
-		fi && \
-		echo ""
-.PHONY: rebalance
-
-## rebalance-back: Move solver USDC from anvil2 -> Celestia -> anvil1 via Hyperlane + forwarding
-rebalance-back:
-	@echo ""
-	@echo "═══════════════════════════════════════════════════════════════"
-	@echo "  Rebalance Back: anvil2 -> Celestia -> anvil1"
-	@echo "═══════════════════════════════════════════════════════════════"
-	@echo ""
-	@. ./.env && \
-		ADDRESSES=$$(cat .config/hyperlane-addresses.json) && \
-		MOCK_USDC=$$(echo $$ADDRESSES | jq -r '.anvil1.mock_usdc') && \
-		ANVIL1_WARP=$$(echo $$ADDRESSES | jq -r '.anvil1.warp_token') && \
-		ANVIL2_WARP=$$(echo $$ADDRESSES | jq -r '.anvil2.warp_token') && \
-		SOLVER_ADDR=$$(cast wallet address --private-key $$SOLVER_PRIVATE_KEY) && \
-		SOLVER_ADDR_PADDED=$$(printf '0x000000000000000000000000%s' $${SOLVER_ADDR#0x}) && \
-		echo "  Solver address:          $$SOLVER_ADDR" && \
-		echo "  MockERC20 (anvil1):      $$MOCK_USDC" && \
-		echo "  HypCollateral (anvil1):  $$ANVIL1_WARP" && \
-		echo "  HypSynthetic (anvil2):   $$ANVIL2_WARP" && \
-		echo "  Amount:                  $(REBALANCE_AMOUNT) (raw)" && \
-		echo "" && \
-		echo "Step 1: Check initial balances..." && \
-		ANVIL1_BAL=$$(cast call $$MOCK_USDC "balanceOf(address)" $$SOLVER_ADDR --rpc-url $$ANVIL1_RPC 2>/dev/null | cast to-dec 2>/dev/null || echo "0") && \
-		ANVIL2_BAL=$$(cast call $$ANVIL2_WARP "balanceOf(address)" $$SOLVER_ADDR --rpc-url $$ANVIL2_RPC 2>/dev/null | cast to-dec 2>/dev/null || echo "0") && \
-		echo "  Anvil1 USDC:  $$ANVIL1_BAL" && \
-		echo "  Anvil2 USDC: $$ANVIL2_BAL" && \
-		echo "" && \
-		echo "Step 2: Derive Celestia forwarding address (dest: anvil1)..." && \
-		FORWARD_ADDR=$$(docker exec forwarding-relayer forwarding-relayer derive-address \
-			--dest-domain 131337 \
-			--dest-recipient $$SOLVER_ADDR_PADDED) && \
-		echo "  Forwarding address: $$FORWARD_ADDR" && \
-		echo "" && \
-		echo "Step 3: Register forwarding request with backend..." && \
-		REGISTER_RESP=$$(curl -sf -X POST $(FORWARDING_BACKEND)/forwarding-requests \
-			-H "Content-Type: application/json" \
-			-d "{\"forward_addr\": \"$$FORWARD_ADDR\", \"dest_domain\": 131337, \"dest_recipient\": \"$$SOLVER_ADDR_PADDED\"}") && \
-		echo "  Response: $$REGISTER_RESP" && \
-		echo "" && \
-		echo "Step 4: Send USDC to Celestia via HypSynthetic.transferRemote(69420, ...)..." && \
-		FORWARD_ADDR_HEX=$$(python3 scripts/bech32_to_bytes32.py "$$FORWARD_ADDR") && \
-		echo "  Forwarding addr (bytes32): $$FORWARD_ADDR_HEX" && \
-		cast send $$ANVIL2_WARP "transferRemote(uint32,bytes32,uint256)" \
-			69420 $$FORWARD_ADDR_HEX $(REBALANCE_AMOUNT) \
-			--rpc-url $$ANVIL2_RPC --private-key $$SOLVER_PRIVATE_KEY --value 0 > /dev/null && \
-		echo "  Sent! anvil2 -> Celestia -> anvil1" && \
-		echo "" && \
-		echo "Step 5: Waiting for Hyperlane relayer + Celestia forwarding (60s)..." && \
-		for i in $$(seq 1 12); do \
-			sleep 5; \
-			BAL=$$(cast call $$MOCK_USDC "balanceOf(address)" $$SOLVER_ADDR --rpc-url $$ANVIL1_RPC 2>/dev/null | cast to-dec 2>/dev/null || echo "0"); \
-			printf "  [%2ds] Anvil1 USDC balance: %s\n" $$((i * 5)) "$$BAL"; \
-			if [ "$$BAL" != "$$ANVIL1_BAL" ] && [ "$$BAL" != "0" ]; then \
-				echo ""; \
-				echo "  Tokens arrived!"; \
-				break; \
-			fi; \
-		done && \
-		echo "" && \
-		echo "Step 6: Final balances..." && \
-		ANVIL1_BAL_AFTER=$$(cast call $$MOCK_USDC "balanceOf(address)" $$SOLVER_ADDR --rpc-url $$ANVIL1_RPC | cast to-dec) && \
-		ANVIL2_BAL_AFTER=$$(cast call $$ANVIL2_WARP "balanceOf(address)" $$SOLVER_ADDR --rpc-url $$ANVIL2_RPC | cast to-dec) && \
-		echo "  Anvil1 USDC:  $$ANVIL1_BAL -> $$ANVIL1_BAL_AFTER" && \
-		echo "  Anvil2 USDC: $$ANVIL2_BAL -> $$ANVIL2_BAL_AFTER" && \
-		echo "" && \
-		if [ "$$ANVIL1_BAL_AFTER" != "$$ANVIL1_BAL" ]; then \
-			echo "  Rebalance complete — tokens moved anvil2 -> Celestia -> anvil1"; \
-		else \
-			echo "  Rebalance failed — tokens did not arrive on anvil1"; \
-			echo "     Check logs: make logs SVC=relayer"; \
-			echo "                 make logs SVC=forwarding-relayer"; \
-		fi && \
-		echo ""
-.PHONY: rebalance-back
-
-# ============================================================================
 # Full Setup & Lifecycle
 # ============================================================================
 
@@ -502,6 +342,46 @@ frontend:
 mvp:
 	@./mvp.sh
 .PHONY: mvp
+
+OIF_SERVICES=oif-aggregator oif-solver oif-oracle oif-rebalancer oif-frontend-api oif-frontend
+
+## service-install: Install all OIF systemd units (requires root). Re-run after repo moves.
+service-install:
+	@REPO=$(shell pwd); \
+	for f in scripts/systemd/oif*.service scripts/systemd/oif.target; do \
+		dest=/etc/systemd/system/$$(basename $$f); \
+		sed "s|/root/solver-cli|$$REPO|g" $$f > $$dest; \
+		echo "  Installed $$dest"; \
+	done
+	@systemctl daemon-reload
+	@systemctl enable $(OIF_SERVICES) oif.target
+	@echo "All units installed. Run: make service-start"
+.PHONY: service-install
+
+## service-start: Start all OIF services
+service-start:
+	@systemctl start oif.target
+.PHONY: service-start
+
+## service-stop: Stop all OIF services
+service-stop:
+	@systemctl stop oif.target
+.PHONY: service-stop
+
+## service-restart: Restart all or one service (SVC=oif-solver to target one)
+service-restart:
+	@systemctl restart $(or $(SVC),oif.target)
+.PHONY: service-restart
+
+## service-status: Show status of all OIF services
+service-status:
+	@systemctl status $(OIF_SERVICES) --no-pager || true
+.PHONY: service-status
+
+## service-logs: Follow logs (SVC=oif-solver for one service, default shows all)
+service-logs:
+	@journalctl -u $(or $(SVC),"oif-*") -f
+.PHONY: service-logs
 
 ## clean: Remove generated files and Docker volumes
 clean:

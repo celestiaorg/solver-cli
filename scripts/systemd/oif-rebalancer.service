@@ -1,0 +1,17 @@
+[Unit]
+Description=OIF Rebalancer
+After=network.target
+PartOf=oif.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/solver-cli
+EnvironmentFile=/root/solver-cli/.env
+ExecStart=/root/solver-cli/target/release/solver-cli rebalancer start
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=oif.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=OIF Frontend API
+After=network.target
+PartOf=oif.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/solver-cli/frontend
+EnvironmentFile=/root/solver-cli/.env
+ExecStart=node /root/solver-cli/frontend/server.js
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=oif.target
