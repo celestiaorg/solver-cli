@@ -502,20 +502,32 @@ impl RebalancerService {
             if source_token_config.asset_type == AssetType::Erc20 {
                 if let Some(erc20_address) = source_token_config.address {
                     match source_client
-                        .approve_erc20(erc20_address, source_collateral_token, transfer_amount)
+                        .ensure_allowance(erc20_address, source_collateral_token, transfer_amount)
                         .await
                     {
-                        Ok(tx_hash) => {
+                        Ok(Some(tx_hash)) => {
                             info!(
-                                "Asset {} ERC20 approve submitted: route {} -> {} token={} spender={} amount={} {} tx_hash={}",
+                                "Asset {} ERC20 approve submitted: route {} -> {} token={} spender={} tx_hash={}",
                                 asset.symbol,
                                 source_chain.name,
                                 destination_chain.name,
                                 erc20_address,
                                 source_collateral_token,
-                                format_raw_u128(transfer.amount_raw, asset.decimals),
-                                asset.symbol,
                                 tx_hash,
+                            );
+                            // Wait for approval to be mined before submitting transferRemote
+                            if let Err(err) = source_client.wait_for_tx(tx_hash).await {
+                                warn!(
+                                    "Asset {} route {} -> {} ERC20 approve tx not confirmed; skipping transfer:\n{:#}",
+                                    asset.symbol, source_chain.name, destination_chain.name, err
+                                );
+                                continue;
+                            }
+                        }
+                        Ok(None) => {
+                            debug!(
+                                "Asset {} route {} -> {}: allowance already sufficient, skipping approve",
+                                asset.symbol, source_chain.name, destination_chain.name,
                             );
                         }
                         Err(err) => {

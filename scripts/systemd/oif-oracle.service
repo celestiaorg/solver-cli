@@ -10,7 +10,7 @@ EnvironmentFile=/root/solver-cli/.env
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=ORACLE_CONFIG=/root/solver-cli/.config/oracle.toml
 Environment=RUST_LOG=info
-ExecStart=/root/solver-cli/oracle-operator/target/release/oracle-operator
+ExecStart=/root/solver-cli/target/release/oracle-operator
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

@@ -132,7 +132,7 @@ function parseWarpRouteYaml(yamlContent) {
 function getWarpRouteConfig(token) {
   const state = readState();
   const hypAddresses = readHyperlaneAddresses();
-  if (!hypAddresses) throw new Error('Hyperlane not deployed — hyperlane-addresses.json not found');
+  if (!hypAddresses) return null;
 
   const celestiaDomainId = hypAddresses.celestiadev?.domain_id || 69420;
 
@@ -449,6 +449,7 @@ app.post('/api/bridge/prepare', async (req, res) => {
   if (!address) return res.status(400).json({ error: '"address" (user wallet) is required' });
   try {
     const warp = getWarpRouteConfig(token);
+    if (!warp) return res.status(503).json({ error: 'Slow route unavailable: Hyperlane not deployed on this network' });
     const src = warp.chains[from];
     const dst = warp.chains[to];
     if (!src) throw new Error(`Chain "${from}" not found in ${token} warp route`);
