@@ -52,7 +52,6 @@ impl Deployer {
             input_settler_escrow: deployment.input_settler().cloned(),
             output_settler_simple: deployment.output_settler().cloned(),
             oracle: deployment.oracle().cloned(),
-            permit2: deployment.permit2().cloned(),
             hyperlane: None,
         };
 

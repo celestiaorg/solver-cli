@@ -327,7 +327,6 @@ mod tests {
                     "0x0000000000000000000000000000000000000102".to_string(),
                 ),
                 oracle: Some("0x0000000000000000000000000000000000000103".to_string()),
-                permit2: Some("0x0000000000000000000000000000000000000104".to_string()),
                 hyperlane: Some(HyperlaneAddresses {
                     domain_id: None,
                     mailbox: None,
@@ -362,7 +361,6 @@ mod tests {
                     "0x0000000000000000000000000000000000000202".to_string(),
                 ),
                 oracle: Some("0x0000000000000000000000000000000000000203".to_string()),
-                permit2: Some("0x0000000000000000000000000000000000000204".to_string()),
                 hyperlane: Some(HyperlaneAddresses {
                     domain_id: None,
                     mailbox: None,

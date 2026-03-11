@@ -59,7 +59,6 @@ impl ConfigGenerator {
 [networks.{}]
 input_settler_address = "{}"
 output_settler_address = "{}"
-permit2_address = "{}"
 
 [[networks.{}.rpc_urls]]
 http = "{}"
@@ -75,7 +74,6 @@ http = "{}"
                     .output_settler_simple
                     .as_deref()
                     .unwrap_or(""),
-                chain.contracts.permit2.as_deref().unwrap_or(""),
                 chain.chain_id,
                 chain.rpc,
             ));

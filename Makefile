@@ -221,6 +221,21 @@ mint: build
 		--amount $(or $(AMOUNT),10000000)
 .PHONY: mint
 
+## fund-address: Fund any address with ETH and USDC on anvil1
+## Usage: make fund-address ADDR=0x... ETH=10 USDC=100000000
+fund-address:
+	@[ -n "$(ADDR)" ] || (echo "Error: ADDR is required. Usage: make fund-address ADDR=0x..."; exit 1)
+	@. ./.env && \
+		echo "Funding $(ADDR) on anvil1..." && \
+		cast send --rpc-url $$ANVIL1_RPC --private-key $$ANVIL1_PK --value $(or $(ETH),10)ether $(ADDR) && \
+		echo "  Sent $(or $(ETH),10) ETH" && \
+		cast send --rpc-url $$ANVIL1_RPC --private-key $$ANVIL1_PK \
+			$$(cat .config/state.json | python3 -c "import sys,json; chains=json.load(sys.stdin)['chains']; print(next(c['tokens']['USDC']['address'] for c in chains.values() if c['name']=='anvil1'))") \
+			"mint(address,uint256)" $(ADDR) $(or $(USDC),100000000) && \
+		echo "  Minted $(or $(USDC),100000000) USDC (raw units)" && \
+		echo "Done."
+.PHONY: fund-address
+
 # ============================================================================
 # Services
 # ============================================================================
@@ -239,7 +254,7 @@ solver: solver-start
 
 ## operator-start: Start the oracle operator service
 operator-start:
-	@cd oracle-operator && ORACLE_CONFIG=../.config/oracle.toml RUST_LOG=info cargo run --release
+	@set -a && . ./.env && set +a && cd oracle-operator && ORACLE_CONFIG=../.config/oracle.toml RUST_LOG=info cargo run --release
 .PHONY: operator-start
 
 # Alias for convenience
