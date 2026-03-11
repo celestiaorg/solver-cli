@@ -12,6 +12,12 @@ build:
 	@cd solver-cli && cargo build --release --features solver-runtime
 .PHONY: build
 
+## build-all: Build all service binaries (solver-cli, oracle-operator, oif-aggregator)
+build-all: build
+	@cd oracle-operator && cargo build --release
+	@cd oif/oif-aggregator && cargo build --release
+.PHONY: build-all
+
 ## fmt: Format all Rust workspace crates with rustfmt
 fmt:
 	@cargo fmt --all

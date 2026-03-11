@@ -7,6 +7,7 @@ PartOf=oif.target
 Type=simple
 WorkingDirectory=/root/solver-cli/frontend
 EnvironmentFile=/root/solver-cli/.env
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStart=node /root/solver-cli/frontend/server.js
 Restart=on-failure
 RestartSec=5

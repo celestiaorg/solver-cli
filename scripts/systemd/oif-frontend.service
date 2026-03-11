@@ -6,6 +6,7 @@ PartOf=oif.target
 [Service]
 Type=simple
 WorkingDirectory=/root/solver-cli/frontend
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ExecStartPre=npm install --silent
 ExecStart=npx vite --host
 Restart=on-failure
