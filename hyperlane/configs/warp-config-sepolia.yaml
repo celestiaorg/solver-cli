@@ -1,0 +1,6 @@
+sepolia:
+  type: synthetic
+  owner: "0x9f2CD91d150236BA9796124F3Dcda305C3a2086C"
+  name: "USDC"
+  symbol: "USDC"
+  decimals: 6
