@@ -258,7 +258,7 @@ export default function App() {
 
   const startPolling = (id: string) => {
     if (pollRef.current) clearInterval(pollRef.current)
-    const deadline = Date.now() + 60_000
+    const deadline = Date.now() + 120_000
     pollRef.current = setInterval(async () => {
       const expired = Date.now() > deadline
       if (expired) {
@@ -272,7 +272,7 @@ export default function App() {
         setOrderStatus(s)
         loadBalances()
         const n = normalizeStatus(s.status)
-        const isDone = n === 'finalized' || n === 'executed' || n === 'settling' || n === 'settled' || n === 'failed' || n === 'refunded' || !!s.fillTransaction
+        const isDone = n === 'finalized' || n === 'executed' || n === 'settling' || n === 'settled' || n === 'failed' || n === 'refunded'
         if (isDone) { clearInterval(pollRef.current); setStep('done') }
       } catch {}
     }, 1000)
