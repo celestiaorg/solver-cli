@@ -70,14 +70,16 @@ export interface OrderResponse {
 }
 
 export interface OrderStatus {
-  id: string
-  status: 'pending' | 'accepted' | 'finalized' | 'failed'
-  createdAt: number
-  updatedAt: number
+  orderId: string
+  status: 'created' | 'pending' | 'executing' | 'executed' | 'settling' | 'settled' | 'finalized' | 'failed' | 'refunded' | string
+  createdAt: string
+  updatedAt: string
+  fillTransaction?: { hash: string; chainId: number } | Record<string, unknown>
   settlement?: {
-    status: string
-    fillTransaction?: { hash: string; chainId: number }
-    claimTransaction?: { hash: string; chainId: number }
+    settlementType?: string
+    sourceChainId?: string
+    destinationChainId?: string
+    recipient?: string
   }
 }
 

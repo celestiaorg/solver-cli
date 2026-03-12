@@ -145,13 +145,15 @@ impl ConfigureCommand {
             aggregator_config_path
         ));
 
-        // Generate rebalancer config
+        // Generate rebalancer config (optional — skipped if token coverage is insufficient)
         let rebalancer_config_path = project_dir.join(".config/rebalancer.toml");
-        RebalancerConfigGenerator::write_config(&state, &rebalancer_config_path).await?;
-        print_success(&format!(
-            "Rebalancer config written to {:?}",
-            rebalancer_config_path
-        ));
+        match RebalancerConfigGenerator::write_config(&state, &rebalancer_config_path).await {
+            Ok(()) => print_success(&format!(
+                "Rebalancer config written to {:?}",
+                rebalancer_config_path
+            )),
+            Err(e) => print_info(&format!("Skipping rebalancer config: {e}")),
+        }
 
         // Generate Hyperlane relayer config
         let hyperlane_config_path = project_dir.join(".config/hyperlane-relayer.json");

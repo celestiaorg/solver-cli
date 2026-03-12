@@ -230,11 +230,11 @@ function isOriginChain(chainName, hypAddresses) {
 function mapAggregatorQuoteError(msg) {
   if (typeof msg !== 'string') return JSON.stringify(msg);
   const lower = msg.toLowerCase();
-  if (lower.includes('all solvers failed')) {
-    return 'SOLVER_REJECTED: No solver could fill this transfer — the amount is likely too small to cover gas and bridging fees. Try a larger amount.';
+  if (lower.includes('all solvers failed') || lower.includes('no quotes')) {
+    return `SOLVER_REJECTED: ${msg}`;
   }
-  if (lower.includes('no solvers available')) {
-    return 'SOLVER_OFFLINE: No solvers are available for this route. Make sure the solver is running (make solver).';
+  if (lower.includes('no solvers available') || lower.includes('solver offline')) {
+    return `SOLVER_OFFLINE: ${msg}`;
   }
   return msg;
 }
@@ -265,12 +265,28 @@ app.get('/api/config', (_req, res) => {
     const user = getUserAccount();
     const chains = {};
 
+    // Build warp route fallback tokens (same logic as /api/balances)
+    const warpTokenByChainName = {};
+    try {
+      for (const symbol of ['USDC']) {
+        const warp = getWarpRouteConfig(symbol);
+        if (!warp) continue;
+        for (const [chainName, info] of Object.entries(warp.chains)) {
+          if (!warpTokenByChainName[chainName]) warpTokenByChainName[chainName] = {};
+          const queryAddr = info.warpType === 'collateral' ? info.underlying : info.warpToken;
+          if (queryAddr) warpTokenByChainName[chainName][symbol] = { address: queryAddr, symbol, decimals: 6, token_type: 'erc20' };
+        }
+      }
+    } catch {}
+
     for (const [chainId, chain] of Object.entries(state.chains)) {
+      const warpFallback = warpTokenByChainName[chain.name] ?? {};
+      const tokens = Object.keys(chain.tokens).length > 0 ? chain.tokens : warpFallback;
       chains[chainId] = {
         name: chain.name,
         chainId: chain.chain_id,
         rpc: chain.rpc,
-        tokens: chain.tokens,
+        tokens,
         contracts: chain.contracts || {},
       };
     }
@@ -308,12 +324,32 @@ app.get('/api/balances', async (req, res) => {
     console.log(`[balances] user=${userAddress} solver=${state.solver?.address}`);
     const result = {};
 
+    // Build warp route fallback: chainName -> symbol -> { address, decimals }
+    // Used when state.json tokens are missing (e.g. race condition or testnet chains)
+    const warpTokenByChainName = {};
+    try {
+      for (const symbol of ['USDC']) {
+        const warp = getWarpRouteConfig(symbol);
+        if (!warp) continue;
+        for (const [chainName, info] of Object.entries(warp.chains)) {
+          if (!warpTokenByChainName[chainName]) warpTokenByChainName[chainName] = {};
+          // For balance queries: collateral chain → underlying ERC20; synthetic → warpToken
+          const queryAddr = info.warpType === 'collateral' ? info.underlying : info.warpToken;
+          if (queryAddr) warpTokenByChainName[chainName][symbol] = { address: queryAddr, decimals: 6 };
+        }
+      }
+    } catch {}
+
     const promises = Object.entries(state.chains).map(async ([chainId, chain]) => {
       const client = createPublicClient({ transport: http(chain.rpc) });
       const chainBal = { user: {}, solver: {} };
 
+      // Merge state tokens with warp route fallback (state takes precedence)
+      const warpFallback = warpTokenByChainName[chain.name] ?? {};
+      const tokensToQuery = { ...warpFallback, ...chain.tokens };
+
       // Token balances
-      for (const [symbol, token] of Object.entries(chain.tokens)) {
+      for (const [symbol, token] of Object.entries(tokensToQuery)) {
         try {
           const userBal = await client.readContract({
             address: token.address, abi: erc20Abi,

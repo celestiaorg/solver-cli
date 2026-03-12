@@ -213,7 +213,7 @@ fund-user:
 		cast send --rpc-url $$ANVIL1_RPC --private-key $$ANVIL1_PK --value 10ether $$USER_ADDR 2>/dev/null && \
 		if [ ! -z "$$ANVIL2_RPC" ]; then \
 			echo "  Funding on Anvil2 (10 ETH)..." && \
-			cast send --rpc-url $$ANVIL2_RPC --private-key $$ANVIL2_PK --value 10ether $$USER_ADDR 2>/dev/null; \
+			cast send --rpc-url $$ANVIL2_RPC --private-key $$ANVIL2_PK --value 10ether $$USER_ADDR; \
 		fi && \
 		echo "User funded"
 .PHONY: fund-user

@@ -60,14 +60,17 @@ function CopyableAddress({ address, className }: { address: string; className?: 
     } catch { fallbackCopy(address); done() }
   }
   return (
-    <span className="inline-flex items-center gap-1">
+    <span className="inline-flex items-center gap-1 group/addr relative">
       <span className={className ?? 'font-mono text-gray-400 text-[11px]'}>{truncAddr(address)}</span>
-      <button onClick={handleCopy} title={address} className="text-gray-700 hover:text-gray-400 transition-colors shrink-0">
+      <button onClick={handleCopy} className="text-gray-700 hover:text-gray-400 transition-colors shrink-0">
         {copied
           ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
           : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         }
       </button>
+      <span className="pointer-events-none absolute bottom-full right-0 mb-1.5 hidden group-hover/addr:flex items-center bg-surface-3 border border-border/60 rounded-lg px-2.5 py-1.5 z-50 shadow-xl">
+        <span className="font-mono text-[10px] text-gray-200 whitespace-nowrap">{address}</span>
+      </span>
     </span>
   )
 }
@@ -86,6 +89,7 @@ const CHAIN_GRADIENTS: Record<string, string> = {
   anvil2:   'from-cyan-400 to-blue-500',
   sepolia:  'from-amber-400 to-orange-500',
   arbitrum: 'from-sky-400 to-blue-500',
+  eden:     'from-purple-500 to-violet-700',
 }
 
 function ChainBadge({ name }: { name: string }) {
@@ -127,6 +131,7 @@ export default function App() {
 
   const [slowLoading, setSlowLoading] = useState(false)
   const [slowMsg, setSlowMsg]         = useState('')
+  const [timedOut, setTimedOut]       = useState(false)
 
   const [rightTab, setRightTab]                 = useState<'balances' | 'tools'>('balances')
 
@@ -190,14 +195,26 @@ export default function App() {
       const fromId = config!.chains[fromChain].chainId
       const toId   = config!.chains[toChain].chainId
       const raw    = Math.round(parseFloat(amount) * 10 ** selectedTokenDecimals).toString()
-      const resp   = await api.quote(fromId, toId, raw, asset,
-        isConnected && connectedAddress ? connectedAddress : undefined)
+      let resp: any
+      try {
+        resp = await api.quote(fromId, toId, raw, asset,
+          isConnected && connectedAddress ? connectedAddress : undefined)
+      } catch (fetchErr: any) {
+        const msg: string = fetchErr?.message ?? ''
+        // Only treat as network error if msg hasn't already been categorized by server.js
+        const alreadyCategorized = msg.startsWith('SOLVER_REJECTED:') || msg.startsWith('SOLVER_OFFLINE:')
+        const isNetworkErr = !alreadyCategorized && (fetchErr?.name === 'TypeError' || msg.toLowerCase().includes('econnrefused') || msg.toLowerCase().includes('fetch failed'))
+        throw new Error(isNetworkErr
+          ? 'SOLVER_OFFLINE: Cannot reach the aggregator. Make sure the solver and aggregator are running (make solver && make aggregator).'
+          : fetchErr.message)
+      }
       if (!resp.quotes?.length) {
         const meta = (resp as any).metadata
+        const detail: string = (resp as any).error || (resp as any).message || ''
         const allFailed = meta && meta.solvers_queried > 0 && meta.solvers_responded_success === 0
         throw new Error(allFailed
-          ? 'SOLVER_REJECTED: No solver could fill this transfer — the amount is likely too small to cover gas and bridging fees. Try a larger amount.'
-          : 'No quotes returned. Is the solver running? (make solver)')
+          ? `SOLVER_REJECTED: ${detail || 'No solver could fill this transfer.'}`
+          : 'SOLVER_OFFLINE: No quotes returned. Is the solver running? (make solver)')
       }
       setQuote(resp.quotes[0]); setStep('quoted')
     } catch (err: any) { setError(err.message); setStep('error') }
@@ -243,12 +260,19 @@ export default function App() {
     if (pollRef.current) clearInterval(pollRef.current)
     const deadline = Date.now() + 60_000
     pollRef.current = setInterval(async () => {
+      const expired = Date.now() > deadline
+      if (expired) {
+        setTimedOut(true)
+        clearInterval(pollRef.current)
+        setStep('done')
+        return
+      }
       try {
         const s = await api.orderStatus(id)
         setOrderStatus(s)
         loadBalances()
         const n = normalizeStatus(s.status)
-        const isDone = n === 'finalized' || n === 'claimed' || n === 'failed' || s.settlement?.fillTransaction || Date.now() > deadline
+        const isDone = n === 'finalized' || n === 'executed' || n === 'settling' || n === 'settled' || n === 'failed' || n === 'refunded' || !!s.fillTransaction
         if (isDone) { clearInterval(pollRef.current); setStep('done') }
       } catch {}
     }, 1000)
@@ -259,7 +283,7 @@ export default function App() {
 
 
   const resetFlowState = () => {
-    setStep('idle'); setQuote(null); setOrderId(''); setOrderStatus(null); setError(''); setSlowMsg('')
+    setStep('idle'); setQuote(null); setOrderId(''); setOrderStatus(null); setError(''); setSlowMsg(''); setTimedOut(false)
   }
 
   // ── Slow route (Celestia bridge, user → user) ─────────────────────────────
@@ -603,8 +627,8 @@ export default function App() {
               {/* Order status (fast route only) */}
               {routeType === 'fast' && (step === 'polling' || step === 'done') && orderStatus && (() => {
                 const status = normalizeStatus(orderStatus.status)
-                const ok     = status === 'finalized' || status === 'claimed'
-                const fail   = status === 'failed'
+                const ok     = status === 'finalized' || status === 'executed' || status === 'settling' || status === 'settled'
+                const fail   = status === 'failed' || status === 'refunded'
                 return (
                   <div className={`rounded-xl p-4 border animate-fade-in ${
                     ok   ? 'bg-emerald-500/[0.06] border-emerald-500/20'
@@ -627,16 +651,10 @@ export default function App() {
                           <CopyableAddress address={orderId} />
                         </div>
                       )}
-                      {orderStatus.settlement?.fillTransaction && (
+                      {orderStatus.fillTransaction && (
                         <div className="flex justify-between">
                           <span className="text-[11px] text-gray-600">Fill tx</span>
-                          <CopyableAddress address={orderStatus.settlement.fillTransaction.hash} />
-                        </div>
-                      )}
-                      {orderStatus.settlement?.claimTransaction && (
-                        <div className="flex justify-between">
-                          <span className="text-[11px] text-gray-600">Claim tx</span>
-                          <CopyableAddress address={orderStatus.settlement.claimTransaction.hash} className="font-mono text-emerald-400 text-[11px]" />
+                          <CopyableAddress address={(orderStatus.fillTransaction as any).hash ?? orderId} />
                         </div>
                       )}
                     </div>
@@ -715,25 +733,71 @@ export default function App() {
                     <Spinner size={16} /> Awaiting settlement…
                   </button>
                 ) : step === 'done' ? (
-                  <button
-                    onClick={resetFlowState}
-                    className="w-full py-4 rounded-xl font-bold text-[15px] transition-all duration-200
-                      bg-gradient-to-r from-brand to-purple-500 hover:from-brand-light hover:to-purple-400
-                      text-white hover:shadow-brand active:scale-[0.99]">
-                    New Transfer
-                  </button>
+                  <>
+                    {timedOut && (
+                      <div className="flex items-start gap-2.5 bg-amber-500/[0.06] border border-amber-500/20 rounded-xl px-4 py-3 animate-fade-in">
+                        <svg className="shrink-0 mt-0.5" width="13" height="13" viewBox="0 0 24 24" fill="none">
+                          <circle cx="12" cy="12" r="10" stroke="#f59e0b" strokeWidth="2"/>
+                          <path d="M12 8v4m0 4h.01" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round"/>
+                        </svg>
+                        <p className="text-xs text-amber-400 leading-relaxed">
+                          Settlement is taking longer than expected — check your balances to see if the transfer completed.
+                        </p>
+                      </div>
+                    )}
+                    <button
+                      onClick={resetFlowState}
+                      className="w-full py-4 rounded-xl font-bold text-[15px] transition-all duration-200
+                        bg-gradient-to-r from-brand to-purple-500 hover:from-brand-light hover:to-purple-400
+                        text-white hover:shadow-brand active:scale-[0.99]">
+                      New Transfer
+                    </button>
+                  </>
                 ) : null
               ) : (
                 // ── Slow route: direct Celestia bridge ─────────────────────
                 <>
-                  {slowMsg && (
+                  {/* Step progress (while loading) */}
+                  {slowLoading && (() => {
+                    const steps = [
+                      { label: 'Preparing route',       match: 'Preparing' },
+                      { label: 'Approving token',       match: 'Approving' },
+                      { label: 'Submitting transaction', match: 'Submitting' },
+                    ]
+                    const activeIdx = steps.findIndex(s => slowMsg.includes(s.match))
+                    return (
+                      <div className="bg-surface-0/60 border border-border/50 rounded-xl px-4 py-3 space-y-2 animate-fade-in">
+                        {steps.map((s, i) => {
+                          const isDone    = activeIdx > i
+                          const isCurrent = activeIdx === i
+                          return (
+                            <div key={s.label} className={`flex items-center gap-2.5 text-[11px] transition-colors ${
+                              isCurrent ? 'text-white' : isDone ? 'text-emerald-400' : 'text-gray-700'
+                            }`}>
+                              {isCurrent
+                                ? <Spinner size={10} />
+                                : isDone
+                                  ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                  : <span className="w-2.5 h-2.5 rounded-full border border-current opacity-30 shrink-0" />
+                              }
+                              {s.label}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
+
+                  {/* Result message (after loading) */}
+                  {slowMsg && !slowLoading && (
                     <div className={`text-[11px] px-3 py-2.5 rounded-xl animate-fade-in border ${
                       slowMsg.startsWith('Error')
                         ? 'bg-red-500/[0.06] text-red-400 border-red-500/15'
                         : 'bg-emerald-500/[0.06] text-emerald-400 border-emerald-500/15'
                     }`}>{slowMsg}</div>
                   )}
-                  {slowMsg && !slowMsg.startsWith('Error') ? (
+
+                  {slowMsg && !slowLoading && !slowMsg.startsWith('Error') ? (
                     <button
                       onClick={resetFlowState}
                       className="w-full py-4 rounded-xl font-bold text-[15px] transition-all duration-200
@@ -750,10 +814,7 @@ export default function App() {
                         text-white disabled:opacity-20 disabled:cursor-not-allowed
                         hover:shadow-[0_0_24px_rgba(14,165,233,0.28)] active:scale-[0.99]"
                     >
-                      {slowLoading
-                        ? <span className="flex items-center justify-center gap-2.5"><Spinner size={16} /> Bridging…</span>
-                        : 'Bridge via Celestia'
-                      }
+                      Bridge via Celestia
                     </button>
                   )}
                 </>
@@ -800,7 +861,10 @@ export default function App() {
                         </div>
                         <div className="rounded-lg overflow-hidden border border-border/50 text-[11px]">
                           <div className="flex items-center justify-between px-3 py-1.5 bg-surface-0/50">
-                            <span className="text-gray-600">You</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-gray-600">You</span>
+                              {(connectedAddress || config?.userAddress) && <CopyableAddress address={connectedAddress ?? config!.userAddress} />}
+                            </div>
                             <div className="flex gap-2.5 tabular-nums">
                               {asset && cb.balances.user[asset] && (
                                 <span className="text-gray-300 font-mono">
@@ -817,7 +881,10 @@ export default function App() {
                             </div>
                           </div>
                           <div className="flex items-center justify-between px-3 py-1.5 bg-surface-0/30 border-t border-border/40">
-                            <span className="text-gray-600">Solver</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-gray-600">Solver</span>
+                              {config?.solverAddress && <CopyableAddress address={config.solverAddress} />}
+                            </div>
                             <div className="flex gap-2.5 tabular-nums">
                               {asset && cb.balances.solver[asset] && (
                                 <span className="text-gray-300 font-mono">
