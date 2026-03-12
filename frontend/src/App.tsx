@@ -323,6 +323,7 @@ export default function App() {
           args: [prep.celestiaDomainId, prep.forwardingAddressBytes32 as `0x${string}`, BigInt(rawAmount)],
           chainId: fromId,
           value: 0n,
+          gas: 3_000_000n,
         })
 
         setSlowMsg(`Submitted (${txHash.slice(0, 10)}…). Tokens arrive in ~2 min via Celestia.`)
