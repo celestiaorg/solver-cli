@@ -241,15 +241,15 @@ export default function App() {
 
   const startPolling = (id: string) => {
     if (pollRef.current) clearInterval(pollRef.current)
+    const deadline = Date.now() + 60_000
     pollRef.current = setInterval(async () => {
       try {
         const s = await api.orderStatus(id)
         setOrderStatus(s)
         loadBalances()
         const n = normalizeStatus(s.status)
-        if (n === 'finalized' || n === 'failed' || s.settlement?.fillTransaction) {
-          clearInterval(pollRef.current); setStep('done')
-        }
+        const isDone = n === 'finalized' || n === 'claimed' || n === 'failed' || s.settlement?.fillTransaction || Date.now() > deadline
+        if (isDone) { clearInterval(pollRef.current); setStep('done') }
       } catch {}
     }, 1000)
   }
@@ -603,7 +603,7 @@ export default function App() {
               {/* Order status (fast route only) */}
               {routeType === 'fast' && (step === 'polling' || step === 'done') && orderStatus && (() => {
                 const status = normalizeStatus(orderStatus.status)
-                const ok     = status === 'finalized'
+                const ok     = status === 'finalized' || status === 'claimed'
                 const fail   = status === 'failed'
                 return (
                   <div className={`rounded-xl p-4 border animate-fade-in ${
