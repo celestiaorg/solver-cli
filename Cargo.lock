@@ -5260,7 +5260,7 @@ dependencies = [
 [[package]]
 name = "solver-account"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2dd99c92b68caa1ae9d6f0ed07704507350de04f#2dd99c92b68caa1ae9d6f0ed07704507350de04f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "alloy-consensus",
  "alloy-network",
@@ -5334,7 +5334,7 @@ dependencies = [
 [[package]]
 name = "solver-config"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2dd99c92b68caa1ae9d6f0ed07704507350de04f#2dd99c92b68caa1ae9d6f0ed07704507350de04f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "dotenvy",
  "regex",
@@ -5349,7 +5349,7 @@ dependencies = [
 [[package]]
 name = "solver-core"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2dd99c92b68caa1ae9d6f0ed07704507350de04f#2dd99c92b68caa1ae9d6f0ed07704507350de04f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "alloy-primitives",
  "chrono",
@@ -5364,7 +5364,7 @@ dependencies = [
  "solver-discovery",
  "solver-order",
  "solver-pricing",
- "solver-settlement 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=2dd99c92b68caa1ae9d6f0ed07704507350de04f)",
+ "solver-settlement 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc)",
  "solver-storage",
  "solver-types",
  "thiserror 2.0.18",
@@ -5376,7 +5376,7 @@ dependencies = [
 [[package]]
 name = "solver-delivery"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2dd99c92b68caa1ae9d6f0ed07704507350de04f#2dd99c92b68caa1ae9d6f0ed07704507350de04f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "alloy-consensus",
  "alloy-network",
@@ -5405,7 +5405,7 @@ dependencies = [
 [[package]]
 name = "solver-discovery"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2dd99c92b68caa1ae9d6f0ed07704507350de04f#2dd99c92b68caa1ae9d6f0ed07704507350de04f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
@@ -5435,7 +5435,7 @@ dependencies = [
 [[package]]
 name = "solver-order"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2dd99c92b68caa1ae9d6f0ed07704507350de04f#2dd99c92b68caa1ae9d6f0ed07704507350de04f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
@@ -5455,7 +5455,7 @@ dependencies = [
 [[package]]
 name = "solver-pricing"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2dd99c92b68caa1ae9d6f0ed07704507350de04f#2dd99c92b68caa1ae9d6f0ed07704507350de04f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "alloy-primitives",
  "async-trait",
@@ -5473,7 +5473,7 @@ dependencies = [
 [[package]]
 name = "solver-service"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2dd99c92b68caa1ae9d6f0ed07704507350de04f#2dd99c92b68caa1ae9d6f0ed07704507350de04f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "alloy-primitives",
  "alloy-signer",
@@ -5503,7 +5503,7 @@ dependencies = [
  "solver-discovery",
  "solver-order",
  "solver-pricing",
- "solver-settlement 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=2dd99c92b68caa1ae9d6f0ed07704507350de04f)",
+ "solver-settlement 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc)",
  "solver-storage",
  "solver-types",
  "subtle",
@@ -5528,7 +5528,7 @@ dependencies = [
  "async-trait",
  "serde_json",
  "sha3",
- "solver-settlement 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=2dd99c92b68caa1ae9d6f0ed07704507350de04f)",
+ "solver-settlement 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc)",
  "solver-storage",
  "solver-types",
  "tokio",
@@ -5539,7 +5539,7 @@ dependencies = [
 [[package]]
 name = "solver-settlement"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2dd99c92b68caa1ae9d6f0ed07704507350de04f#2dd99c92b68caa1ae9d6f0ed07704507350de04f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "alloy-primitives",
  "alloy-provider",
@@ -5564,7 +5564,7 @@ dependencies = [
 [[package]]
 name = "solver-storage"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2dd99c92b68caa1ae9d6f0ed07704507350de04f#2dd99c92b68caa1ae9d6f0ed07704507350de04f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5584,7 +5584,7 @@ dependencies = [
 [[package]]
 name = "solver-types"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2dd99c92b68caa1ae9d6f0ed07704507350de04f#2dd99c92b68caa1ae9d6f0ed07704507350de04f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "alloy-consensus",
  "alloy-contract",
