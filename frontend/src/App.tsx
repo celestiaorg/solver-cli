@@ -350,11 +350,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-surface-0 flex items-center justify-center">
         <div className="flex flex-col items-center gap-5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-brand to-purple-400 flex items-center justify-center shadow-brand">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="white"/>
-            </svg>
-          </div>
+          <img src="/celestia-logo.svg" className="w-12 h-12" alt="Celestia" />
           <div className="flex items-center gap-2 text-gray-500 text-sm">
             <Spinner size={13} /> Connecting to solver…
           </div>
@@ -390,12 +386,7 @@ export default function App() {
 
           {/* Logo */}
           <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center"
-              style={{ boxShadow: '0 0 12px rgba(124,58,237,0.4)' }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="white">
-                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-              </svg>
-            </div>
+            <img src="/celestia-logo.svg" className="w-7 h-7" alt="Celestia" />
             <div className="flex items-baseline gap-1.5">
               <span className="text-sm font-semibold text-white tracking-tight">OIF</span>
               <span className="text-[11px] text-gray-600 font-medium">Solver</span>
