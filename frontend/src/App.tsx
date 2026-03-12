@@ -3,6 +3,7 @@ import { useAppKit, AppKitNetworkButton } from '@reown/appkit/react'
 import { useAccount, useDisconnect, useWriteContract, useSignTypedData, useSwitchChain } from 'wagmi'
 import { parseAbi } from 'viem'
 import { api, Config, AllBalances, Quote, OrderStatus } from './api'
+import { Docs } from './Docs'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -134,6 +135,7 @@ export default function App() {
   const [timedOut, setTimedOut]       = useState(false)
 
   const [rightTab, setRightTab]                 = useState<'balances' | 'tools'>('balances')
+  const [showDocs, setShowDocs]                 = useState(false)
 
   const pollRef = useRef<ReturnType<typeof setInterval>>()
 
@@ -381,42 +383,89 @@ export default function App() {
     <div className="min-h-screen bg-surface-0 flex flex-col overflow-hidden">
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <header className="relative z-50 shrink-0 bg-surface-0/80 backdrop-blur-xl"
-        style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <div className="max-w-7xl mx-auto px-8 h-[58px] flex items-center justify-between">
+      <header className="relative z-50 shrink-0 h-[72px] flex items-center">
 
+        {/* ── Centered pill navbar ── */}
+        <nav
+          className="absolute left-1/2 -translate-x-1/2 flex items-center gap-0.5 px-1.5 py-1.5 rounded-full"
+          style={{
+            background: 'rgba(255,255,255,0.04)',
+            backdropFilter: 'blur(24px) saturate(160%)',
+            WebkitBackdropFilter: 'blur(24px) saturate(160%)',
+            border: '1px solid rgba(255,255,255,0.09)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)',
+          }}
+        >
           {/* Logo */}
-          <div className="flex items-center gap-2.5">
-            <img src="/celestia-logo.svg" className="w-7 h-7" alt="Celestia" />
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-sm font-semibold text-white tracking-tight">OIF</span>
-              <span className="text-[11px] text-gray-600 font-medium">Solver</span>
+          <div className="flex items-center gap-2 pl-2.5 pr-3 py-1">
+            <img src="/celestia-logo.svg" className="w-5 h-5 opacity-90" alt="Celestia" />
+            <div className="flex items-baseline gap-1">
+              <span className="text-[13px] font-bold text-white tracking-tight">Celestia</span>
+              <span className="text-[11px] text-gray-400 font-medium">Bridge</span>
             </div>
           </div>
 
-          {/* Wallet */}
+          {/* Divider */}
+          <div className="w-px h-4 mx-1" style={{ background: 'rgba(255,255,255,0.08)' }} />
+
+          {/* App link */}
+          <button
+            onClick={() => setShowDocs(false)}
+            className="px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-all"
+            style={!showDocs ? {
+              background: 'rgba(255,255,255,0.09)',
+              color: '#fff',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1)',
+            } : { color: 'rgba(156,163,175,1)' }}
+          >
+            App
+          </button>
+
+          {/* Docs link */}
+          <button
+            onClick={() => setShowDocs(true)}
+            className="px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-all"
+            style={showDocs ? {
+              background: 'rgba(255,255,255,0.09)',
+              color: '#fff',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1)',
+            } : { color: 'rgba(156,163,175,1)' }}
+          >
+            Docs
+          </button>
+        </nav>
+
+        {/* ── Wallet — pinned right ── */}
+        <div className="absolute right-8 flex items-center gap-1.5">
           {isConnected ? (
-            <div className="flex items-center gap-1.5">
+            <>
               <AppKitNetworkButton />
-              <div className="flex items-center gap-1.5 bg-surface-2/80 border border-white/[0.06] rounded-lg px-2.5 py-1.5">
+              <div className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" style={{ boxShadow: '0 0 4px rgba(52,211,153,0.6)' }} />
                 <CopyableAddress address={connectedAddress!} className="text-[11px] font-mono text-gray-300" />
               </div>
               <button
                 onClick={() => disconnect()}
-                className="w-6 h-6 flex items-center justify-center rounded-md text-gray-700 hover:text-gray-400 hover:bg-surface-2 transition-colors"
+                className="w-7 h-7 flex items-center justify-center rounded-full text-gray-700 hover:text-gray-400 transition-colors"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
                 title="Disconnect"
               >
                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                   <path d="M18 6L6 18M6 6l12 12"/>
                 </svg>
               </button>
-            </div>
+            </>
           ) : (
             <button
               onClick={() => open()}
-              className="flex items-center gap-1.5 text-white text-[11px] font-semibold px-3.5 py-1.5 rounded-lg transition-all active:scale-[0.98]"
-              style={{ background: 'linear-gradient(135deg, #7c3aed, #6d28d9)', boxShadow: '0 0 12px rgba(124,58,237,0.3)' }}
+              className="flex items-center gap-1.5 text-white text-[12px] font-semibold px-4 py-2 rounded-full transition-all active:scale-[0.97]"
+              style={{
+                background: 'linear-gradient(135deg, rgba(124,58,237,0.9), rgba(109,40,217,0.9))',
+                backdropFilter: 'blur(12px)',
+                border: '1px solid rgba(167,139,250,0.2)',
+                boxShadow: '0 0 20px rgba(124,58,237,0.35), inset 0 1px 0 rgba(255,255,255,0.1)',
+              }}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
                 <rect x="2" y="7" width="20" height="14" rx="2" stroke="currentColor" strokeWidth="2"/>
@@ -441,9 +490,9 @@ export default function App() {
             <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-border/50">
               <div>
                 <h2 className="text-base font-bold text-white">Transfer</h2>
-                <p className="text-[11px] text-gray-600 mt-0.5">Cross-chain via intent protocol</p>
+                <p className="text-xs text-gray-400 mt-0.5">{routeType === 'fast' ? 'Cross-chain via intent protocol' : 'Cross-chain via Celestia bridge'}</p>
               </div>
-              <div className="flex items-center gap-1.5 text-[11px] text-gray-600">
+              <div className="flex items-center gap-1.5 text-xs text-gray-400">
                 <span className={`w-1.5 h-1.5 rounded-full ${isServicesUp ? 'bg-emerald-500' : 'bg-red-500'}`} />
                 {isServicesUp ? 'Ready' : 'Offline'}
               </div>
@@ -463,13 +512,13 @@ export default function App() {
                         : 'hover:bg-surface-2/40'
                     }`}
                   >
-                    <span className={`text-xs font-bold flex items-center gap-1.5 ${routeType === r ? 'text-white' : 'text-gray-600'}`}>
+                    <span className={`text-xs font-bold flex items-center gap-1.5 ${routeType === r ? 'text-white' : 'text-gray-400'}`}>
                       {r === 'fast'
                         ? <><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Fast</>
                         : <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M2 12c1.5-3 3.5-3 5 0s3.5 3 5 0 3.5-3 5 0"/></svg> Slow</>
                       }
                     </span>
-                    <span className={`text-[10px] font-normal ${routeType === r ? 'text-gray-500' : 'text-gray-700'}`}>
+                    <span className={`text-[11px] font-normal ${routeType === r ? 'text-gray-400' : 'text-gray-500'}`}>
                       {r === 'fast' ? 'Instant · Solver' : '~2 min · Celestia'}
                     </span>
                   </button>
@@ -494,14 +543,14 @@ export default function App() {
               {/* You Send */}
               <div className="bg-surface-2 border border-border rounded-xl p-4 hover:border-border-light transition-colors group">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">You send</span>
+                  <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">You send</span>
                   {balances && fromChain && balances[fromChain] && asset && (
                     <button
                       onClick={() => {
                         const b = balances[fromChain]?.balances?.user?.[asset]?.formatted ?? '0'
                         if (parseFloat(b) > 0) { setAmount(parseFloat(b).toFixed(2)); setStep('idle'); setQuote(null) }
                       }}
-                      className="text-[11px] text-gray-600 hover:text-brand-light transition-colors tabular-nums"
+                      className="text-xs text-gray-400 hover:text-brand-light transition-colors tabular-nums"
                     >
                       {formatToken(balances[fromChain].balances.user[asset]?.formatted ?? '0')} {asset}
                       <span className="ml-1.5 text-brand-light font-bold">MAX</span>
@@ -549,7 +598,7 @@ export default function App() {
                     hover:rotate-180 group"
                 >
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
-                    className="text-gray-500 group-hover:text-brand-light transition-colors">
+                    className="text-gray-400 group-hover:text-brand-light transition-colors">
                     <path d="M4 6L8 2L12 6M4 10L8 14L12 10" stroke="currentColor" strokeWidth="2"
                       strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
@@ -559,9 +608,9 @@ export default function App() {
               {/* You Receive */}
               <div className="bg-surface-2/60 border border-border rounded-xl p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">You receive</span>
+                  <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">You receive</span>
                   {balances && toChain && balances[toChain] && asset && (
-                    <span className="text-[11px] text-gray-600 tabular-nums">
+                    <span className="text-xs text-gray-400 tabular-nums">
                       {formatToken(balances[toChain].balances.user[asset]?.formatted ?? '0')} {asset}
                     </span>
                   )}
@@ -609,8 +658,8 @@ export default function App() {
                     { label: 'Type',     value: quote.order.type },
                   ].map(({ label, value }) => (
                     <div key={label} className="bg-surface-0/70 rounded-xl px-3 py-2 border border-border/40">
-                      <div className="text-[9px] text-gray-700 mb-0.5 font-semibold uppercase tracking-wider">{label}</div>
-                      <div className="text-[11px] text-gray-400 font-medium truncate">{value}</div>
+                      <div className="text-[10px] text-gray-500 mb-0.5 font-semibold uppercase tracking-wider">{label}</div>
+                      <div className="text-xs text-gray-300 font-medium truncate">{value}</div>
                     </div>
                   ))}
                 </div>
@@ -628,7 +677,7 @@ export default function App() {
                     : 'bg-surface-0/60 border-border/60'
                   }`}>
                     <div className="flex items-center justify-between mb-2.5">
-                      <span className="text-xs text-gray-500 font-medium">Settlement</span>
+                      <span className="text-xs text-gray-400 font-medium">Settlement</span>
                       <div className={`flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider ${
                         ok ? 'text-emerald-400' : fail ? 'text-red-400' : 'text-amber-400'
                       }`}>
@@ -639,13 +688,13 @@ export default function App() {
                     <div className="space-y-1.5">
                       {orderId && (
                         <div className="flex justify-between">
-                          <span className="text-[11px] text-gray-600">Order</span>
+                          <span className="text-xs text-gray-400">Order</span>
                           <CopyableAddress address={orderId} />
                         </div>
                       )}
                       {orderStatus.fillTransaction && (
                         <div className="flex justify-between">
-                          <span className="text-[11px] text-gray-600">Fill tx</span>
+                          <span className="text-xs text-gray-400">Fill tx</span>
                           <CopyableAddress address={(orderStatus.fillTransaction as any).hash ?? orderId} />
                         </div>
                       )}
@@ -849,39 +898,39 @@ export default function App() {
                       <div key={chainId}>
                         <div className="flex items-center gap-1.5 mb-1.5">
                           <ChainBadge name={cb.name} />
-                          {config && <span className="text-[10px] text-gray-700 font-mono">#{config.chains[chainId]?.chainId}</span>}
+                          {config && <span className="text-[11px] text-gray-500 font-mono">#{config.chains[chainId]?.chainId}</span>}
                         </div>
-                        <div className="rounded-lg overflow-hidden border border-border/50 text-[11px]">
+                        <div className="rounded-lg overflow-hidden border border-border/50 text-xs">
                           <div className="flex items-center justify-between px-3 py-1.5 bg-surface-0/50">
                             <div className="flex items-center gap-1.5">
-                              <span className="text-gray-600">You</span>
+                              <span className="text-gray-400">You</span>
                               {(connectedAddress || config?.userAddress) && <CopyableAddress address={connectedAddress ?? config!.userAddress} />}
                             </div>
                             <div className="flex gap-2.5 tabular-nums">
                               {asset && cb.balances.user[asset] && (
                                 <span className="text-gray-300 font-mono">
                                   {formatToken(cb.balances.user[asset]?.formatted ?? '0')}
-                                  <span className="text-gray-600 ml-0.5">{asset}</span>
+                                  <span className="text-gray-400 ml-0.5">{asset}</span>
                                 </span>
                               )}
                               {cb.balances.user['ETH'] && (
-                                <span className="text-gray-500 font-mono">
+                                <span className="text-gray-400 font-mono">
                                   {formatETH(cb.balances.user['ETH']?.formatted ?? '0')}
-                                  <span className="text-gray-700 ml-0.5">ETH</span>
+                                  <span className="text-gray-400 ml-0.5">ETH</span>
                                 </span>
                               )}
                             </div>
                           </div>
                           <div className="flex items-center justify-between px-3 py-1.5 bg-surface-0/30 border-t border-border/40">
                             <div className="flex items-center gap-1.5">
-                              <span className="text-gray-600">Solver</span>
+                              <span className="text-gray-300">Solver</span>
                               {config?.solverAddress && <CopyableAddress address={config.solverAddress} />}
                             </div>
                             <div className="flex gap-2.5 tabular-nums">
                               {asset && cb.balances.solver[asset] && (
                                 <span className="text-gray-300 font-mono">
                                   {formatToken(cb.balances.solver[asset]?.formatted ?? '0')}
-                                  <span className="text-gray-600 ml-0.5">{asset}</span>
+                                  <span className="text-gray-400 ml-0.5">{asset}</span>
                                 </span>
                               )}
                               {cb.balances.solver['ETH'] && (
@@ -897,7 +946,7 @@ export default function App() {
                     ))}
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 text-gray-600 text-xs py-1">
+                  <div className="flex items-center gap-2 text-gray-400 text-xs py-1">
                     <Spinner size={11} /> Loading…
                   </div>
                 )}
@@ -914,13 +963,13 @@ export default function App() {
                   <div className="space-y-2">
                     {config?.userAddress && (
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] text-gray-600">User</span>
+                        <span className="text-xs text-gray-400">User</span>
                         <CopyableAddress address={config.userAddress} />
                       </div>
                     )}
                     {config?.solverAddress && (
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] text-gray-600">Solver</span>
+                        <span className="text-xs text-gray-400">Solver</span>
                         <CopyableAddress address={config.solverAddress} />
                       </div>
                     )}
@@ -930,8 +979,8 @@ export default function App() {
                       { label: 'Aggregator', value: health.aggregator, status: health.aggregator },
                     ].map(({ label, value, status }) => (
                       <div key={label} className="flex items-center justify-between">
-                        <span className="text-[11px] text-gray-600">{label}</span>
-                        <span className={`text-[11px] ${
+                        <span className="text-xs text-gray-400">{label}</span>
+                        <span className={`text-xs ${
                           status === 'ok'  ? 'text-emerald-400 font-medium'
                           : status !== undefined ? 'text-red-400 font-medium'
                           : 'text-gray-300'
@@ -951,10 +1000,12 @@ export default function App() {
       {/* ── Footer ─────────────────────────────────────────────────────────── */}
       <footer className="relative z-10 border-t border-border/50 px-8 py-4 shrink-0">
         <div className="max-w-7xl mx-auto flex items-center justify-between text-[11px] text-gray-700">
-          <span className="font-semibold">OIF Solver</span>
+          <span className="font-semibold">Celestia Bridge</span>
           <span>Open Intents Framework</span>
         </div>
       </footer>
+
+      {showDocs && <Docs onClose={() => setShowDocs(false)} />}
     </div>
   )
 }

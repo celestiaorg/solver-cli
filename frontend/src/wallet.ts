@@ -61,7 +61,7 @@ export async function initWallet() {
       networks,
       projectId,
       metadata: {
-        name: 'OIF Solver',
+        name: 'Celestia Bridge',
         description: 'Cross-chain solver UI',
         url: 'http://localhost:5173',
         icons: [],
