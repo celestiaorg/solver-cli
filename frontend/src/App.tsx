@@ -35,6 +35,43 @@ function normalizeStatus(status: unknown): string {
 
 // ── Primitives ────────────────────────────────────────────────────────────────
 
+function fallbackCopy(text: string) {
+  const el = document.createElement('textarea')
+  el.value = text
+  el.style.position = 'fixed'
+  el.style.opacity = '0'
+  document.body.appendChild(el)
+  el.select()
+  document.execCommand('copy')
+  document.body.removeChild(el)
+}
+
+function CopyableAddress({ address, className }: { address: string; className?: string }) {
+  const [copied, setCopied] = useState(false)
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1500) }
+    try {
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(address).then(done).catch(() => { fallbackCopy(address); done() })
+      } else {
+        fallbackCopy(address); done()
+      }
+    } catch { fallbackCopy(address); done() }
+  }
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className={className ?? 'font-mono text-gray-400 text-[11px]'}>{truncAddr(address)}</span>
+      <button onClick={handleCopy} title={address} className="text-gray-700 hover:text-gray-400 transition-colors shrink-0">
+        {copied
+          ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        }
+      </button>
+    </span>
+  )
+}
+
 function Spinner({ size = 16 }: { size?: number }) {
   return (
     <svg className="animate-spin-slow shrink-0" width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -208,12 +245,13 @@ export default function App() {
       try {
         const s = await api.orderStatus(id)
         setOrderStatus(s)
+        loadBalances()
         const n = normalizeStatus(s.status)
-        if (n === 'finalized' || n === 'failed') {
-          clearInterval(pollRef.current); setStep('done'); loadBalances()
+        if (n === 'finalized' || n === 'failed' || s.settlement?.fillTransaction) {
+          clearInterval(pollRef.current); setStep('done')
         }
       } catch {}
-    }, 3000)
+    }, 1000)
   }
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
@@ -346,7 +384,7 @@ export default function App() {
               <AppKitNetworkButton />
               <div className="flex items-center gap-1.5 bg-surface-2/80 border border-white/[0.06] rounded-lg px-2.5 py-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" style={{ boxShadow: '0 0 4px rgba(52,211,153,0.6)' }} />
-                <span className="text-[11px] font-mono text-gray-300">{truncAddr(connectedAddress!)}</span>
+                <CopyableAddress address={connectedAddress!} className="text-[11px] font-mono text-gray-300" />
               </div>
               <button
                 onClick={() => disconnect()}
@@ -586,23 +624,19 @@ export default function App() {
                       {orderId && (
                         <div className="flex justify-between">
                           <span className="text-[11px] text-gray-600">Order</span>
-                          <span className="text-[11px] text-gray-400 font-mono">{truncAddr(orderId)}</span>
+                          <CopyableAddress address={orderId} />
                         </div>
                       )}
                       {orderStatus.settlement?.fillTransaction && (
                         <div className="flex justify-between">
                           <span className="text-[11px] text-gray-600">Fill tx</span>
-                          <span className="text-[11px] text-gray-400 font-mono">
-                            {truncAddr(orderStatus.settlement.fillTransaction.hash)}
-                          </span>
+                          <CopyableAddress address={orderStatus.settlement.fillTransaction.hash} />
                         </div>
                       )}
                       {orderStatus.settlement?.claimTransaction && (
                         <div className="flex justify-between">
                           <span className="text-[11px] text-gray-600">Claim tx</span>
-                          <span className="text-[11px] text-emerald-400 font-mono">
-                            {truncAddr(orderStatus.settlement.claimTransaction.hash)}
-                          </span>
+                          <CopyableAddress address={orderStatus.settlement.claimTransaction.hash} className="font-mono text-emerald-400 text-[11px]" />
                         </div>
                       )}
                     </div>
@@ -819,18 +853,27 @@ export default function App() {
                 <div className="p-5">
                   <span className="text-xs font-bold text-white block mb-3">System</span>
                   <div className="space-y-2">
+                    {config?.userAddress && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] text-gray-600">User</span>
+                        <CopyableAddress address={config.userAddress} />
+                      </div>
+                    )}
+                    {config?.solverAddress && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] text-gray-600">Solver</span>
+                        <CopyableAddress address={config.solverAddress} />
+                      </div>
+                    )}
                     {[
-                      { label: 'User',       value: config ? truncAddr(config.userAddress) : '—',                  mono: true  },
-                      { label: 'Solver',     value: config?.solverAddress ? truncAddr(config.solverAddress) : '—', mono: true  },
-                      { label: 'Chains',     value: String(chainEntries.length),                                   mono: false },
+                      { label: 'Chains',     value: String(chainEntries.length), status: undefined },
                       { label: 'Backend',    value: health.backend,    status: health.backend },
                       { label: 'Aggregator', value: health.aggregator, status: health.aggregator },
-                    ].map(({ label, value, mono, status }) => (
+                    ].map(({ label, value, status }) => (
                       <div key={label} className="flex items-center justify-between">
                         <span className="text-[11px] text-gray-600">{label}</span>
                         <span className={`text-[11px] ${
-                          mono ? 'font-mono text-gray-400'
-                          : status === 'ok'  ? 'text-emerald-400 font-medium'
+                          status === 'ok'  ? 'text-emerald-400 font-medium'
                           : status !== undefined ? 'text-red-400 font-medium'
                           : 'text-gray-300'
                         }`}>{value}</span>
