@@ -950,6 +950,30 @@ export default function App() {
                     <Spinner size={11} /> Loading…
                   </div>
                 )}
+
+                {/* Faucet links */}
+                <div className="mt-4 flex gap-2">
+                  {[
+                    { label: 'Eden USDC', sub: 'Testnet USDC faucet', href: 'http://51.159.182.223:8080/' },
+                    { label: 'Eden Gas', sub: 'Testnet ETH faucet', href: 'https://faucet-eden-testnet.binarybuilders.services/' },
+                  ].map(({ label, sub, href }) => (
+                    <a
+                      key={href}
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 flex items-center justify-between px-3 py-2.5 rounded-lg border border-border/50 bg-surface-0/40 hover:bg-surface-1/60 hover:border-border transition-colors group"
+                    >
+                      <div>
+                        <div className="text-[11px] font-medium text-gray-300 group-hover:text-white transition-colors">{label}</div>
+                        <div className="text-[10px] text-gray-500 mt-0.5">{sub}</div>
+                      </div>
+                      <svg className="w-3 h-3 text-gray-500 group-hover:text-gray-300 transition-colors shrink-0 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  ))}
+                </div>
               </div>
             )}
 
