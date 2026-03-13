@@ -59,7 +59,6 @@ impl ConfigGenerator {
 [networks.{}]
 input_settler_address = "{}"
 output_settler_address = "{}"
-permit2_address = "{}"
 
 [[networks.{}.rpc_urls]]
 http = "{}"
@@ -75,7 +74,6 @@ http = "{}"
                     .output_settler_simple
                     .as_deref()
                     .unwrap_or(""),
-                chain.contracts.permit2.as_deref().unwrap_or(""),
                 chain.chain_id,
                 chain.rpc,
             ));
@@ -182,6 +180,26 @@ polling_interval_secs = 12
 api_host = "127.0.0.1"
 api_port = 5002
 network_ids = [{chain_ids_str}]
+
+# ============================================================================
+# GAS ESTIMATES (per flow, in gas units)
+# ============================================================================
+[gas]
+
+[gas.flows.resource_lock]
+open = 0
+fill = 77298
+claim = 122793
+
+[gas.flows.permit2_escrow]
+open = 146306
+fill = 77298
+claim = 60084
+
+[gas.flows.eip3009_escrow]
+open = 130254
+fill = 77298
+claim = 60084
 
 # ============================================================================
 # ORDER

@@ -16,9 +16,7 @@ export interface ChainInfo {
 
 export interface Config {
   chains: Record<string, ChainInfo>
-  userAddress: string
   solverAddress: string
-  faucetChains?: string[]
 }
 
 export interface BalanceEntry {
@@ -71,14 +69,16 @@ export interface OrderResponse {
 }
 
 export interface OrderStatus {
-  id: string
-  status: 'pending' | 'accepted' | 'finalized' | 'failed'
-  createdAt: number
-  updatedAt: number
+  orderId: string
+  status: 'created' | 'pending' | 'executing' | 'executed' | 'settling' | 'settled' | 'finalized' | 'failed' | 'refunded' | string
+  createdAt: string
+  updatedAt: string
+  fillTransaction?: { hash: string; chainId: number } | Record<string, unknown>
   settlement?: {
-    status: string
-    fillTransaction?: { hash: string; chainId: number }
-    claimTransaction?: { hash: string; chainId: number }
+    settlementType?: string
+    sourceChainId?: string
+    destinationChainId?: string
+    recipient?: string
   }
 }
 
@@ -113,13 +113,6 @@ export const api = {
       body: JSON.stringify({ fromChainId, toChainId, amount, asset, ...(address ? { address } : {}) }),
     }),
 
-  submitOrder: (quote: Quote, fromChainId: number, asset: string, address?: string) =>
-    json<OrderResponse>(`${BASE}/order`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ quote, fromChainId, asset, ...(address ? { address } : {}) }),
-    }),
-
   submitSignedOrder: (quote: Quote, signature: string) =>
     json<OrderResponse>(`${BASE}/order/submit`, {
       method: 'POST',
@@ -128,20 +121,6 @@ export const api = {
     }),
 
   orderStatus: (id: string) => json<OrderStatus>(`${BASE}/order/${id}`),
-
-  faucet: (chainName: string, type: 'gas' | 'token', address?: string, symbol?: string) =>
-    json<{ success: boolean; hash: string; amount: string }>(`${BASE}/faucet`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chainName, type, ...(address ? { address } : {}), ...(symbol ? { symbol } : {}) }),
-    }),
-
-  rebalance: (from: string, to: string, amount?: string, token?: string) =>
-    json<{ success: boolean; message: string; txHash?: string }>(`${BASE}/rebalance`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to, amount, ...(token ? { token } : {}) }),
-    }),
 
   bridgePrepare: (from: string, to: string, token: string, address: string, amount: string) =>
     json<{
@@ -156,10 +135,4 @@ export const api = {
       body: JSON.stringify({ from, to, token, address, amount }),
     }),
 
-  bridge: (from: string, to: string, amount: string, token?: string) =>
-    json<{ success: boolean; message: string; txHash?: string }>(`${BASE}/bridge`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to, amount, ...(token ? { token } : {}) }),
-    }),
 }

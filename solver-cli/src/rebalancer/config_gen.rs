@@ -55,7 +55,7 @@ impl RebalancerConfigGenerator {
 [[chains]]
 name = "{name}"
 chain_id = {chain_id}
-domain_id = {chain_id}
+domain_id = {domain_id}
 rpc_url = "{rpc_url}"
 account = "{account}"
   [chains.signer]
@@ -63,6 +63,12 @@ account = "{account}"
 "#,
                 name = chain.name,
                 chain_id = chain.chain_id,
+                domain_id = chain
+                    .contracts
+                    .hyperlane
+                    .as_ref()
+                    .and_then(|h| h.domain_id)
+                    .unwrap_or_else(|| hyperlane_domain_id(chain.chain_id)),
                 rpc_url = chain.rpc,
                 account = account,
                 signer_inline = signer_inline,
@@ -276,6 +282,16 @@ fn derive_rebalancer_account(state: &SolverState) -> Result<String> {
     )
 }
 
+/// Map EVM chain ID to Hyperlane domain ID.
+/// Domain IDs can differ from chain IDs to avoid conflicts with Hyperlane's
+/// hardcoded KnownHyperlaneDomain enum (e.g. 31337 is hardcoded as "test4").
+fn hyperlane_domain_id(chain_id: u64) -> u64 {
+    match chain_id {
+        31337 => 131337,
+        _ => chain_id,
+    }
+}
+
 fn normalize_address(value: &str) -> Result<String> {
     let address: Address = value.parse()?;
     Ok(format!("{:?}", address))
@@ -311,8 +327,8 @@ mod tests {
                     "0x0000000000000000000000000000000000000102".to_string(),
                 ),
                 oracle: Some("0x0000000000000000000000000000000000000103".to_string()),
-                permit2: Some("0x0000000000000000000000000000000000000104".to_string()),
                 hyperlane: Some(HyperlaneAddresses {
+                    domain_id: None,
                     mailbox: None,
                     merkle_tree_hook: None,
                     validator_announce: None,
@@ -345,8 +361,8 @@ mod tests {
                     "0x0000000000000000000000000000000000000202".to_string(),
                 ),
                 oracle: Some("0x0000000000000000000000000000000000000203".to_string()),
-                permit2: Some("0x0000000000000000000000000000000000000204".to_string()),
                 hyperlane: Some(HyperlaneAddresses {
+                    domain_id: None,
                     mailbox: None,
                     merkle_tree_hook: None,
                     validator_announce: None,

@@ -41,15 +41,15 @@ echo "$MOCK_USDC_OUTPUT"
 MOCK_USDC_ADDR=$(echo "$MOCK_USDC_OUTPUT" | grep "Deployed to:" | awk '{print $3}')
 echo "MockERC20 USDC deployed on anvil1: $MOCK_USDC_ADDR"
 
-# Mint initial supply to deployer (100M USDC = 100000000 * 10^6)
+# Mint initial supply to deployer (100 USDC = 100 * 10^6)
 cast send $MOCK_USDC_ADDR \
   "mint(address,uint256)" \
   0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266 \
-  100000000000000 \
+  100000000 \
   --rpc-url $ANVIL1_RPC_URL \
   --private-key $HYP_KEY
 
-echo "Minted 100M USDC to deployer on anvil1"
+echo "Minted 100 USDC to deployer on anvil1"
 
 # ============================================================================
 # Step 2: Deploy Hyperlane core contracts to both EVM chains

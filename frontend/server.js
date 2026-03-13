@@ -21,12 +21,6 @@ function readState() {
   return JSON.parse(readFileSync(resolve(ROOT, '.config/state.json'), 'utf8'));
 }
 
-function getUserAccount() {
-  const pk = process.env.USER_PK;
-  if (!pk) throw new Error('USER_PK not set in .env');
-  return privateKeyToAccount(`0x${pk.replace('0x', '')}`);
-}
-
 function makeViemChain(chainId, name, rpc) {
   return defineChain({
     id: chainId,
@@ -60,11 +54,6 @@ const erc20Abi = parseAbi([
   'function mint(address, uint256)',
   'function decimals() view returns (uint8)',
   'function approve(address, uint256) returns (bool)',
-]);
-
-const hypTokenAbi = parseAbi([
-  'function transferRemote(uint32, bytes32, uint256) payable returns (bytes32)',
-  'function balanceOf(address) view returns (uint256)',
 ]);
 
 // ── Bech32 → bytes32 (replaces Python script) ───────────────────────────────
@@ -132,7 +121,7 @@ function parseWarpRouteYaml(yamlContent) {
 function getWarpRouteConfig(token) {
   const state = readState();
   const hypAddresses = readHyperlaneAddresses();
-  if (!hypAddresses) throw new Error('Hyperlane not deployed — hyperlane-addresses.json not found');
+  if (!hypAddresses) return null;
 
   const celestiaDomainId = hypAddresses.celestiadev?.domain_id || 69420;
 
@@ -230,11 +219,11 @@ function isOriginChain(chainName, hypAddresses) {
 function mapAggregatorQuoteError(msg) {
   if (typeof msg !== 'string') return JSON.stringify(msg);
   const lower = msg.toLowerCase();
-  if (lower.includes('all solvers failed')) {
-    return 'SOLVER_REJECTED: No solver could fill this transfer — the amount is likely too small to cover gas and bridging fees. Try a larger amount.';
+  if (lower.includes('all solvers failed') || lower.includes('no quotes')) {
+    return `SOLVER_REJECTED: ${msg}`;
   }
-  if (lower.includes('no solvers available')) {
-    return 'SOLVER_OFFLINE: No solvers are available for this route. Make sure the solver is running (make solver).';
+  if (lower.includes('no solvers available') || lower.includes('solver offline')) {
+    return `SOLVER_OFFLINE: ${msg}`;
   }
   return msg;
 }
@@ -262,15 +251,30 @@ app.get('/api/health', async (_req, res) => {
 app.get('/api/config', (_req, res) => {
   try {
     const state = readState();
-    const user = getUserAccount();
     const chains = {};
 
+    // Build warp route fallback tokens (same logic as /api/balances)
+    const warpTokenByChainName = {};
+    try {
+      for (const symbol of ['USDC']) {
+        const warp = getWarpRouteConfig(symbol);
+        if (!warp) continue;
+        for (const [chainName, info] of Object.entries(warp.chains)) {
+          if (!warpTokenByChainName[chainName]) warpTokenByChainName[chainName] = {};
+          const queryAddr = info.warpType === 'collateral' ? info.underlying : info.warpToken;
+          if (queryAddr) warpTokenByChainName[chainName][symbol] = { address: queryAddr, symbol, decimals: 6, token_type: 'erc20' };
+        }
+      }
+    } catch {}
+
     for (const [chainId, chain] of Object.entries(state.chains)) {
+      const warpFallback = warpTokenByChainName[chain.name] ?? {};
+      const tokens = Object.keys(chain.tokens).length > 0 ? chain.tokens : warpFallback;
       chains[chainId] = {
         name: chain.name,
         chainId: chain.chain_id,
         rpc: chain.rpc,
-        tokens: chain.tokens,
+        tokens,
         contracts: chain.contracts || {},
       };
     }
@@ -284,7 +288,6 @@ app.get('/api/config', (_req, res) => {
 
     res.json({
       chains,
-      userAddress: user.address,
       solverAddress: state.solver?.address ?? null,
       faucetChains,
     });
@@ -297,23 +300,40 @@ app.get('/api/config', (_req, res) => {
 app.get('/api/balances', async (req, res) => {
   try {
     const state = readState();
-    // Use connected wallet address if provided, otherwise fall back to USER_PK
     const addressParam = req.query.address;
-    let userAddress;
-    if (addressParam && /^0x[0-9a-fA-F]{40}$/.test(addressParam)) {
-      userAddress = addressParam;
-    } else {
-      userAddress = getUserAccount().address;
+    if (!addressParam || !/^0x[0-9a-fA-F]{40}$/.test(addressParam)) {
+      return res.status(400).json({ error: 'Missing or invalid "address" query parameter. Connect a wallet.' });
     }
+    const userAddress = addressParam;
     console.log(`[balances] user=${userAddress} solver=${state.solver?.address}`);
     const result = {};
+
+    // Build warp route fallback: chainName -> symbol -> { address, decimals }
+    // Used when state.json tokens are missing (e.g. race condition or testnet chains)
+    const warpTokenByChainName = {};
+    try {
+      for (const symbol of ['USDC']) {
+        const warp = getWarpRouteConfig(symbol);
+        if (!warp) continue;
+        for (const [chainName, info] of Object.entries(warp.chains)) {
+          if (!warpTokenByChainName[chainName]) warpTokenByChainName[chainName] = {};
+          // For balance queries: collateral chain → underlying ERC20; synthetic → warpToken
+          const queryAddr = info.warpType === 'collateral' ? info.underlying : info.warpToken;
+          if (queryAddr) warpTokenByChainName[chainName][symbol] = { address: queryAddr, decimals: 6 };
+        }
+      }
+    } catch {}
 
     const promises = Object.entries(state.chains).map(async ([chainId, chain]) => {
       const client = createPublicClient({ transport: http(chain.rpc) });
       const chainBal = { user: {}, solver: {} };
 
+      // Merge state tokens with warp route fallback (state takes precedence)
+      const warpFallback = warpTokenByChainName[chain.name] ?? {};
+      const tokensToQuery = { ...warpFallback, ...chain.tokens };
+
       // Token balances
-      for (const [symbol, token] of Object.entries(chain.tokens)) {
+      for (const [symbol, token] of Object.entries(tokensToQuery)) {
         try {
           const userBal = await client.readContract({
             address: token.address, abi: erc20Abi,
@@ -364,16 +384,10 @@ app.post('/api/faucet', async (req, res) => {
     const chain = Object.values(state.chains).find(c => c.name === chainName);
     if (!chain) throw new Error(`Chain "${chainName}" not found`);
 
-    // Use provided address (from connected wallet) or fall back to USER_PK
-    let recipient;
-    if (address) {
-      if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
-        throw new Error('Invalid Ethereum address');
-      }
-      recipient = address;
-    } else {
-      recipient = getUserAccount().address;
+    if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+      throw new Error('Missing or invalid "address". Connect a wallet first.');
     }
+    const recipient = address;
 
     // Resolve deployer key
     const envKey = `${chainName.toUpperCase()}_PK`;
@@ -442,125 +456,6 @@ app.post('/api/faucet', async (req, res) => {
   }
 });
 
-// Rebalance: bridge tokens between any two chains via Celestia forwarding
-app.post('/api/rebalance', async (req, res) => {
-  const { from, to, amount = '10000000', token = 'USDC' } = req.body;
-  if (!from || !to) return res.status(400).json({ error: '"from" and "to" chain names are required' });
-  try {
-    // 1. Load warp route config for this token
-    const warp = getWarpRouteConfig(token);
-    const src = warp.chains[from];
-    const dst = warp.chains[to];
-    if (!src) throw new Error(`Chain "${from}" not found in ${token} warp route. Have you enrolled the routers?`);
-    if (!dst) throw new Error(`Chain "${to}" not found in ${token} warp route. Have you enrolled the routers?`);
-
-    // Only the collateral side needs an ERC20 approve before transferRemote
-    const underlyingToApprove = src.warpType === 'collateral' ? src.underlying : null;
-    // On the collateral side, received tokens land as the underlying ERC20 (not the warp token)
-    const dstBalanceToken = dst.warpType === 'collateral' ? dst.underlying : dst.warpToken;
-
-    // 2. Setup viem clients
-    // BRIDGE_SIGNER_PK is a hot wallet key for the frontend bridge tool.
-    // Falls back to REBALANCER_PRIVATE_KEY, then SOLVER_PRIVATE_KEY.
-    // Required when solver/rebalancer use AWS KMS (which Node.js cannot sign with directly).
-    const solverPk = process.env.BRIDGE_SIGNER_PK || process.env.REBALANCER_PRIVATE_KEY || process.env.SOLVER_PRIVATE_KEY;
-    if (!solverPk) throw new Error('No bridge signer key found. Set BRIDGE_SIGNER_PK (or REBALANCER_PRIVATE_KEY / SOLVER_PRIVATE_KEY) in .env');
-    const solver = privateKeyToAccount(`0x${solverPk.replace('0x', '')}`);
-
-    const srcChain = makeViemChain(src.chainId, from, src.rpc);
-    const dstChain = makeViemChain(dst.chainId, to, dst.rpc);
-
-    const srcWallet = createWalletClient({ account: solver, chain: srcChain, transport: http(src.rpc) });
-    const srcPublic = createPublicClient({ chain: srcChain, transport: http(src.rpc) });
-    const dstPublic = createPublicClient({ chain: dstChain, transport: http(dst.rpc) });
-
-    const solverPadded = '0x000000000000000000000000' + solver.address.slice(2);
-    const amountBigInt = BigInt(amount);
-
-    console.log(`[rebalance] ${token} ${from}→${to} amount=${amount}`);
-    console.log(`[rebalance] solver=${solver.address} srcWarp=${src.warpToken} dstBalance=${dstBalanceToken}`);
-
-    // 3. Check initial balance on destination
-    const initialDstBal = await dstPublic.readContract({
-      address: dstBalanceToken, abi: hypTokenAbi,
-      functionName: 'balanceOf', args: [solver.address],
-    });
-    console.log(`[rebalance] Initial dst balance: ${initialDstBal}`);
-
-    // 4. Derive Celestia forwarding address
-    const forwardingBackend = process.env.FORWARDING_BACKEND || 'http://127.0.0.1:8080';
-    const addrResp = await fetch(`${forwardingBackend}/forwarding-address?dest_domain=${dst.domainId}&dest_recipient=${solverPadded}`);
-    if (!addrResp.ok) {
-      const body = await addrResp.text();
-      throw new Error(`Failed to derive forwarding address: ${body}`);
-    }
-    const { address: forwardAddr } = await addrResp.json();
-    console.log(`[rebalance] Forwarding address: ${forwardAddr}`);
-
-    // 5. Register forwarding request with backend
-    const registerResp = await fetch(`${forwardingBackend}/forwarding-requests`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        forward_addr: forwardAddr,
-        dest_domain: dst.domainId,
-        dest_recipient: solverPadded,
-      }),
-    });
-    if (!registerResp.ok) {
-      const body = await registerResp.text();
-      throw new Error(`Forwarding registration failed: ${body}`);
-    }
-    console.log(`[rebalance] Forwarding registered`);
-
-    // 6. Approve underlying ERC20 → HypCollateral (only for collateral source)
-    if (underlyingToApprove) {
-      const approveHash = await srcWallet.writeContract({
-        address: underlyingToApprove, abi: erc20Abi,
-        functionName: 'approve', args: [src.warpToken, amountBigInt],
-      });
-      await srcPublic.waitForTransactionReceipt({ hash: approveHash });
-      console.log(`[rebalance] Approved ${amount} of ${underlyingToApprove} → ${src.warpToken}`);
-    }
-
-    // 7. Call transferRemote on the warp token
-    const forwardAddrBytes32 = bech32ToBytes32(forwardAddr);
-    const txHash = await srcWallet.writeContract({
-      address: src.warpToken, abi: hypTokenAbi,
-      functionName: 'transferRemote',
-      args: [warp.celestiaDomainId, forwardAddrBytes32, amountBigInt],
-      value: 0n,
-    });
-    await srcPublic.waitForTransactionReceipt({ hash: txHash });
-    console.log(`[rebalance] transferRemote sent: ${txHash}`);
-
-    // 8. Poll destination balance (up to 60s)
-    let arrived = false;
-    for (let i = 1; i <= 12; i++) {
-      await new Promise(r => setTimeout(r, 5000));
-      const bal = await dstPublic.readContract({
-        address: dstBalanceToken, abi: hypTokenAbi,
-        functionName: 'balanceOf', args: [solver.address],
-      });
-      console.log(`[rebalance] [${i * 5}s] dst balance: ${bal}`);
-      if (bal !== initialDstBal && bal > 0n) { arrived = true; break; }
-    }
-
-    if (arrived) {
-      res.json({ success: true, message: `Bridged ${token} from ${from} to ${to}`, txHash });
-    } else {
-      res.json({
-        success: false,
-        message: `Bridge tx sent (${txHash}) but tokens haven't arrived on ${to} yet. Check Hyperlane relayer logs.`,
-        txHash,
-      });
-    }
-  } catch (err) {
-    console.error(`[rebalance] Failed:`, err.message);
-    res.status(500).json({ error: `Rebalance failed: ${err.message}` });
-  }
-});
-
 // Bridge prepare: derive forwarding address + register, return contract info for wallet-side execution
 app.post('/api/bridge/prepare', async (req, res) => {
   const { from, to, token = 'USDC', amount = '10000000', address } = req.body;
@@ -568,6 +463,7 @@ app.post('/api/bridge/prepare', async (req, res) => {
   if (!address) return res.status(400).json({ error: '"address" (user wallet) is required' });
   try {
     const warp = getWarpRouteConfig(token);
+    if (!warp) return res.status(503).json({ error: 'Slow route unavailable: Hyperlane not deployed on this network' });
     const src = warp.chains[from];
     const dst = warp.chains[to];
     if (!src) throw new Error(`Chain "${from}" not found in ${token} warp route`);
@@ -602,86 +498,9 @@ app.post('/api/bridge/prepare', async (req, res) => {
   }
 });
 
-// Bridge: server-side user bridge via Celestia (uses USER_PK)
-app.post('/api/bridge', async (req, res) => {
-  const { from, to, amount = '10000000', token = 'USDC' } = req.body;
-  if (!from || !to) return res.status(400).json({ error: '"from" and "to" are required' });
-  try {
-    const warp = getWarpRouteConfig(token);
-    const src = warp.chains[from];
-    const dst = warp.chains[to];
-    if (!src) throw new Error(`Chain "${from}" not found in ${token} warp route`);
-    if (!dst) throw new Error(`Chain "${to}" not found in ${token} warp route`);
-
-    const underlyingToApprove = src.warpType === 'collateral' ? src.underlying : null;
-    const dstBalanceToken = dst.warpType === 'collateral' ? dst.underlying : dst.warpToken;
-
-    const userPk = process.env.USER_PK;
-    if (!userPk) throw new Error('USER_PK not set in .env');
-    const user = privateKeyToAccount(`0x${userPk.replace('0x', '')}`);
-
-    const srcChain = makeViemChain(src.chainId, from, src.rpc);
-    const dstChain = makeViemChain(dst.chainId, to, dst.rpc);
-    const srcWallet = createWalletClient({ account: user, chain: srcChain, transport: http(src.rpc) });
-    const srcPublic = createPublicClient({ chain: srcChain, transport: http(src.rpc) });
-    const dstPublic = createPublicClient({ chain: dstChain, transport: http(dst.rpc) });
-
-    const userPadded = '0x000000000000000000000000' + user.address.slice(2);
-    const amountBigInt = BigInt(amount);
-
-    const forwardingBackend = process.env.FORWARDING_BACKEND || 'http://127.0.0.1:8080';
-    const addrResp = await fetch(
-      `${forwardingBackend}/forwarding-address?dest_domain=${dst.domainId}&dest_recipient=${userPadded}`
-    );
-    if (!addrResp.ok) throw new Error(`Failed to derive forwarding address: ${await addrResp.text()}`);
-    const { address: forwardAddr } = await addrResp.json();
-
-    const registerResp = await fetch(`${forwardingBackend}/forwarding-requests`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ forward_addr: forwardAddr, dest_domain: dst.domainId, dest_recipient: userPadded }),
-    });
-    if (!registerResp.ok) throw new Error(`Forwarding registration failed: ${await registerResp.text()}`);
-
-    const initialDstBal = await dstPublic.readContract({
-      address: dstBalanceToken, abi: hypTokenAbi, functionName: 'balanceOf', args: [user.address],
-    });
-
-    if (underlyingToApprove) {
-      const approveHash = await srcWallet.writeContract({
-        address: underlyingToApprove, abi: erc20Abi,
-        functionName: 'approve', args: [src.warpToken, amountBigInt],
-      });
-      await srcPublic.waitForTransactionReceipt({ hash: approveHash });
-    }
-
-    const txHash = await srcWallet.writeContract({
-      address: src.warpToken, abi: hypTokenAbi,
-      functionName: 'transferRemote',
-      args: [warp.celestiaDomainId, bech32ToBytes32(forwardAddr), amountBigInt],
-      value: 0n,
-    });
-    await srcPublic.waitForTransactionReceipt({ hash: txHash });
-
-    let arrived = false;
-    for (let i = 1; i <= 12; i++) {
-      await new Promise(r => setTimeout(r, 5000));
-      const bal = await dstPublic.readContract({
-        address: dstBalanceToken, abi: hypTokenAbi, functionName: 'balanceOf', args: [user.address],
-      });
-      if (bal !== initialDstBal && bal > 0n) { arrived = true; break; }
-    }
-
-    res.json({
-      success: arrived,
-      message: arrived
-        ? `Bridged ${token} from ${from} to ${to}`
-        : `Bridge tx sent but tokens haven't arrived yet. Check Hyperlane relayer.`,
-      txHash,
-    });
-  } catch (err) {
-    res.status(500).json({ error: `Bridge failed: ${err.message}` });
-  }
+// Bridge: server-side signing removed — wallet handles tx submission via /api/bridge/prepare
+app.post('/api/bridge', (_req, res) => {
+  res.status(400).json({ error: 'Server-side bridge removed. Connect a wallet and use the wallet-based bridge flow.' });
 });
 
 // Quote: request quote from aggregator
@@ -689,13 +508,10 @@ app.post('/api/quote', async (req, res) => {
   const { fromChainId, toChainId, amount, asset = 'USDC', address } = req.body;
   try {
     const state = readState();
-    const user = getUserAccount();
-
-    // Use connected wallet address if provided, otherwise fall back to USER_PK
-    let userAddress = user.address;
-    if (address && /^0x[0-9a-fA-F]{40}$/.test(address)) {
-      userAddress = address;
+    if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+      throw new Error('Missing or invalid "address". Connect a wallet first.');
     }
+    const userAddress = address;
 
     const fromChain = state.chains[fromChainId.toString()];
     const toChain = state.chains[toChainId.toString()];
@@ -747,87 +563,9 @@ app.post('/api/quote', async (req, res) => {
   }
 });
 
-// Order: approve tokens, sign EIP-712, prepend type byte, submit to aggregator
-app.post('/api/order', async (req, res) => {
-  const { quote, fromChainId, asset = 'USDC' } = req.body;
-  try {
-    const user = getUserAccount();
-    const state = readState();
-
-    // Resolve source chain for approval + signing
-    const srcChainId = fromChainId?.toString() || Object.keys(state.chains)[0];
-    const srcChain = state.chains[srcChainId];
-    if (!srcChain) throw new Error(`Source chain ${srcChainId} not found`);
-
-    const viemChain = makeViemChain(srcChain.chain_id, srcChain.name, srcChain.rpc);
-
-    const walletClient = createWalletClient({
-      account: user,
-      chain: viemChain,
-      transport: http(srcChain.rpc),
-    });
-    const publicClient = createPublicClient({
-      chain: viemChain,
-      transport: http(srcChain.rpc),
-    });
-
-    // Step 1: Approve token spending
-    // For Permit2: approve the Permit2 contract; for direct: approve the escrow
-    const token = srcChain.tokens[asset];
-    const payload = quote.order.payload;
-    const isPermit2Approval = payload.primaryType?.includes('Permit');
-    const spender = isPermit2Approval
-      ? payload.domain?.verifyingContract  // Permit2 contract
-      : srcChain.contracts?.input_settler_escrow;
-    if (token && spender) {
-      const approveHash = await walletClient.writeContract({
-        address: token.address,
-        abi: parseAbi(['function approve(address, uint256) returns (bool)']),
-        functionName: 'approve',
-        args: [spender, 100000000n], // 100 USDC allowance
-      });
-      await publicClient.waitForTransactionReceipt({ hash: approveHash });
-    }
-
-    // Step 2: Sign EIP-712 typed data with viem
-    // (payload already extracted above for approval target)
-
-    // Remove EIP712Domain from types (viem adds it automatically)
-    const types = { ...payload.types };
-    delete types.EIP712Domain;
-
-    // Coerce domain.chainId to number — the aggregator returns it as a string
-    // which causes viem to produce a different EIP-712 hash
-    const domain = { ...payload.domain };
-    if (typeof domain.chainId === 'string') {
-      domain.chainId = Number(domain.chainId);
-    }
-
-    const rawSignature = await user.signTypedData({
-      domain,
-      types,
-      primaryType: payload.primaryType,
-      message: payload.message,
-    });
-
-    // Prepend signature type byte: 0x00=Permit2, 0x01=EIP-3009, 0xff=self
-    const isPermit2 = payload.primaryType?.includes('Permit');
-    const prefix = isPermit2 ? '0x00' : '0x01';
-    const signature = prefix + rawSignature.slice(2);
-
-    // Step 4: Submit signed order to aggregator
-    const response = await fetch(`${AGGREGATOR_URL}/api/v1/orders`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ quoteResponse: quote, signature }),
-    });
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || data.error || JSON.stringify(data));
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+// Order: deprecated server-side signing — use /api/order/submit with wallet signature
+app.post('/api/order', (_req, res) => {
+  res.status(400).json({ error: 'Server-side signing removed. Connect a wallet and use the client-side signing flow.' });
 });
 
 // Order submit: forward a pre-signed order (for MetaMask / client-side signing flow)

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Args;
 use std::env;
 use std::path::PathBuf;
@@ -78,6 +78,39 @@ impl ConfigureCommand {
 
         print_address("Solver address", &format!("{:?}", solver_address));
 
+        // Derive operator address from env if not already set in state
+        if state.solver.operator_address.is_none() {
+            let operator_address = match crate::utils::OracleSignerConfig::from_env()? {
+                crate::utils::OracleSignerConfig::AwsKms {
+                    key_id,
+                    region,
+                    endpoint,
+                } => {
+                    use alloy::signers::aws::AwsSigner;
+                    use alloy::signers::Signer;
+                    use aws_sdk_kms::config::Region;
+                    let mut loader = aws_config::defaults(aws_config::BehaviorVersion::latest())
+                        .region(Region::new(region));
+                    if let Some(ep) = endpoint {
+                        loader = loader.endpoint_url(ep);
+                    }
+                    let sdk_config = loader.load().await;
+                    let client = aws_sdk_kms::Client::new(&sdk_config);
+                    let signer = AwsSigner::new(client, key_id, None)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("Oracle KMS initialization failed: {e}"))?;
+                    format!("{:?}", Signer::address(&signer))
+                }
+                crate::utils::OracleSignerConfig::Env => {
+                    let operator_pk = std::env::var("ORACLE_OPERATOR_PK")
+                        .context("Missing ORACLE_OPERATOR_PK — set it in .env or state")?;
+                    format!("{:?}", ChainClient::address_from_pk(&operator_pk)?)
+                }
+            };
+            print_address("Operator address (from env)", &operator_address);
+            state.solver.operator_address = Some(operator_address);
+        }
+
         // Update solver config in state
         state.solver.address = Some(format!("{:?}", solver_address));
         state.solver.solver_id = Some(self.solver_id.clone());
@@ -112,13 +145,15 @@ impl ConfigureCommand {
             aggregator_config_path
         ));
 
-        // Generate rebalancer config
+        // Generate rebalancer config (optional — skipped if token coverage is insufficient)
         let rebalancer_config_path = project_dir.join(".config/rebalancer.toml");
-        RebalancerConfigGenerator::write_config(&state, &rebalancer_config_path).await?;
-        print_success(&format!(
-            "Rebalancer config written to {:?}",
-            rebalancer_config_path
-        ));
+        match RebalancerConfigGenerator::write_config(&state, &rebalancer_config_path).await {
+            Ok(()) => print_success(&format!(
+                "Rebalancer config written to {:?}",
+                rebalancer_config_path
+            )),
+            Err(e) => print_info(&format!("Skipping rebalancer config: {e}")),
+        }
 
         // Generate Hyperlane relayer config
         let hyperlane_config_path = project_dir.join(".config/hyperlane-relayer.json");

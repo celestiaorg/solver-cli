@@ -1,0 +1,6 @@
+[Unit]
+Description=OIF Services
+Wants=oif-aggregator.service oif-solver.service oif-oracle.service oif-rebalancer.service oif-frontend-api.service oif-frontend.service
+
+[Install]
+WantedBy=multi-user.target

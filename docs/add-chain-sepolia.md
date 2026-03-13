@@ -162,7 +162,6 @@ export CEL_TOKEN=0x...   # paste from above
 **Enroll Celestia on Sepolia** — tells Sepolia's bridge contract that Celestia (domain 69420) is a valid route:
 
 ```bash
-. ./.env
 cast send $HYP_SYNTHETIC_SEPOLIA \
   "enrollRemoteRouter(uint32,bytes32)" \
   69420 $CEL_TOKEN \
@@ -202,8 +201,6 @@ anvil1 (HypCollateral) ↔ Celestia (native synthetic) ↔ anvil2 (HypSynthetic)
 The relayer passes messages between chains. Add Sepolia to `hyperlane/relayer-config.json`:
 
 ```bash
-. ./.env
-
 # Read the Sepolia mailbox address from the registry file downloaded in Step 3
 SEPOLIA_MAILBOX=$(grep "^mailbox:" hyperlane/registry/chains/sepolia/addresses.yaml | awk '{print $2}' | tr -d '"')
 echo "Sepolia mailbox: $SEPOLIA_MAILBOX"
@@ -261,7 +258,6 @@ make token-list CHAIN=sepolia
 **Solver** — needs ETH on Sepolia to pay gas when filling orders there:
 
 ```bash
-. ./.env
 SOLVER_ADDR=$(cast wallet address --private-key $SOLVER_PRIVATE_KEY)
 echo "Funding solver: $SOLVER_ADDR"
 

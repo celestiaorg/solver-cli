@@ -41,6 +41,7 @@ sol! {
     #[sol(rpc)]
     interface IERC20 {
         function balanceOf(address account) external view returns (uint256);
+        function allowance(address owner, address spender) external view returns (uint256);
         function approve(address spender, uint256 amount) external returns (bool);
     }
 
@@ -185,6 +186,48 @@ impl ChainClient {
         })?;
 
         Ok(*pending.tx_hash())
+    }
+
+    /// Approve spender for MaxUint256 only if current allowance is below `required`.
+    /// Returns Some(tx_hash) if an approval was submitted, None if already sufficient.
+    pub async fn ensure_allowance(
+        &self,
+        token: Address,
+        spender: Address,
+        required: U256,
+    ) -> Result<Option<TxHash>> {
+        let call = IERC20::allowanceCall {
+            owner: self.account,
+            spender,
+        };
+        let tx = TransactionRequest::default()
+            .to(token)
+            .input(Bytes::from(call.abi_encode()).into());
+        let raw = self
+            .provider
+            .call(tx)
+            .await
+            .context("Failed to call ERC20 allowance")?;
+        let current = U256::from_be_slice(&raw);
+
+        if current >= required {
+            return Ok(None);
+        }
+
+        let max = U256::MAX;
+        let tx_hash = self.approve_erc20(token, spender, max).await?;
+        Ok(Some(tx_hash))
+    }
+
+    pub async fn wait_for_tx(&self, tx_hash: TxHash) -> Result<()> {
+        use alloy::providers::PendingTransactionConfig;
+        self.provider
+            .watch_pending_transaction(PendingTransactionConfig::new(tx_hash))
+            .await
+            .context("Failed to watch pending transaction")?
+            .await
+            .with_context(|| format!("Transaction {} was not mined", tx_hash))?;
+        Ok(())
     }
 
     pub async fn quote_transfer_remote(

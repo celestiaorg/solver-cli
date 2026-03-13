@@ -96,9 +96,6 @@ pub struct ContractAddresses {
     /// Oracle contract
     pub oracle: Option<String>,
 
-    /// Permit2 contract
-    pub permit2: Option<String>,
-
     /// Hyperlane addresses (if deployed via Hyperlane warp route)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hyperlane: Option<HyperlaneAddresses>,
@@ -106,6 +103,10 @@ pub struct ContractAddresses {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct HyperlaneAddresses {
+    /// Hyperlane domain ID (may differ from EVM chain ID)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain_id: Option<u64>,
+
     /// Hyperlane mailbox address
     pub mailbox: Option<String>,
 
@@ -130,7 +131,6 @@ impl ContractAddresses {
         self.input_settler_escrow.is_some()
             && self.output_settler_simple.is_some()
             && self.oracle.is_some()
-            && self.permit2.is_some()
     }
 }
 

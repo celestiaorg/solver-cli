@@ -59,9 +59,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-chains"
-version = "0.2.30"
+version = "0.2.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90f374d3c6d729268bbe2d0e0ff992bb97898b2df756691a62ee1d5f0506bc39"
+checksum = "6d9d22005bf31b018f31ef9ecadb5d2c39cf4f6acc8db0456f72c815f3d7f757"
 dependencies = [
  "alloy-primitives",
  "num_enum",
@@ -828,13 +828,12 @@ dependencies = [
 
 [[package]]
 name = "alloy-trie"
-version = "0.9.4"
+version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d7fd448ab0a017de542de1dcca7a58e7019fe0e7a34ed3f9543ebddf6aceffa"
+checksum = "3f14b5d9b2c2173980202c6ff470d96e7c5e202c65a9f67884ad565226df7fbb"
 dependencies = [
  "alloy-primitives",
  "alloy-rlp",
- "arrayvec",
  "derive_more",
  "nybbles",
  "serde",
@@ -1123,15 +1122,12 @@ name = "arrayvec"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
-dependencies = [
- "serde",
-]
 
 [[package]]
 name = "assert_cmd"
-version = "2.1.2"
+version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c5bcfa8749ac45dd12cb11055aeeb6b27a3895560d60d71e3c23bf979e60514"
+checksum = "9a686bbee5efb88a82df0621b236e74d925f470e5445d3220a5648b892ec99c9"
 dependencies = [
  "anstyle",
  "bstr",
@@ -1894,9 +1890,9 @@ dependencies = [
 
 [[package]]
 name = "c-kzg"
-version = "2.1.6"
+version = "2.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a0f582957c24870b7bfd12bf562c40b4734b533cafbaf8ded31d6d85f462c01"
+checksum = "6648ed1e4ea8e8a1a4a2c78e1cda29a3fd500bc622899c340d8525ea9a76b24a"
 dependencies = [
  "blst",
  "cc",
@@ -3115,7 +3111,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.6.2",
+ "socket2 0.6.3",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -3493,9 +3489,9 @@ checksum = "09edd9e8b54e49e587e4f6295a7d29c3ea94d469cb40ab8ca70b288248a81db2"
 
 [[package]]
 name = "libc"
-version = "0.2.182"
+version = "0.2.183"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6800badb6cb2082ffd7b6a67e6125bb39f18782f793520caee8cb8846be06112"
+checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
 
 [[package]]
 name = "libm"
@@ -3773,9 +3769,9 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "openssl"
-version = "0.10.75"
+version = "0.10.76"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08838db121398ad17ab8531ce9de97b244589089e290a384c900cb9ff7434328"
+checksum = "951c002c75e16ea2c65b8c7e4d3d51d5530d8dfa7d060b4776828c88cfb18ecf"
 dependencies = [
  "bitflags",
  "cfg-if",
@@ -3805,9 +3801,9 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.111"
+version = "0.9.112"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82cab2d520aa75e3c58898289429321eb788c3106963d0dc886ec7a5f4adc321"
+checksum = "57d55af3b3e226502be1526dfdba67ab0e9c96fc293004e79576b2b9edb0dbdb"
 dependencies = [
  "cc",
  "libc",
@@ -4239,7 +4235,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls 0.23.37",
- "socket2 0.6.2",
+ "socket2 0.6.3",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -4248,9 +4244,9 @@ dependencies = [
 
 [[package]]
 name = "quinn-proto"
-version = "0.11.13"
+version = "0.11.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1906b49b0c3bc04b5fe5d86a77925ae6524a19b816ae38ce1e426255f1d8a31"
+checksum = "434b42fec591c96ef50e21e886936e66d3cc3f737104fdb9b737c40ffb94c098"
 dependencies = [
  "bytes",
  "getrandom 0.3.4",
@@ -4276,7 +4272,7 @@ dependencies = [
  "cfg_aliases 0.2.1",
  "libc",
  "once_cell",
- "socket2 0.6.2",
+ "socket2 0.6.3",
  "tracing",
  "windows-sys 0.60.2",
 ]
@@ -4432,7 +4428,7 @@ dependencies = [
  "pin-project-lite",
  "ryu",
  "sha1_smol",
- "socket2 0.6.2",
+ "socket2 0.6.3",
  "tokio",
  "tokio-util",
  "url",
@@ -4819,9 +4815,9 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "schannel"
-version = "0.1.28"
+version = "0.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "891d81b926048e76efe18581bf793546b4c0eaf8448d72be8de2bbee5fd166e1"
+checksum = "91c1b7e4904c873ef0710c1f407dde2e6287de2bebc1bbbf7d430bb7cbffd939"
 dependencies = [
  "windows-sys 0.61.2",
 ]
@@ -5253,18 +5249,18 @@ dependencies = [
 
 [[package]]
 name = "socket2"
-version = "0.6.2"
+version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86f4aa3ad99f2088c990dfa82d367e19cb29268ed67c574d10d0a4bfe71f07e0"
+checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "solver-account"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "alloy-consensus",
  "alloy-network",
@@ -5338,7 +5334,7 @@ dependencies = [
 [[package]]
 name = "solver-config"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "dotenvy",
  "regex",
@@ -5353,7 +5349,7 @@ dependencies = [
 [[package]]
 name = "solver-core"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "alloy-primitives",
  "chrono",
@@ -5368,7 +5364,7 @@ dependencies = [
  "solver-discovery",
  "solver-order",
  "solver-pricing",
- "solver-settlement 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f)",
+ "solver-settlement 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc)",
  "solver-storage",
  "solver-types",
  "thiserror 2.0.18",
@@ -5380,7 +5376,7 @@ dependencies = [
 [[package]]
 name = "solver-delivery"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "alloy-consensus",
  "alloy-network",
@@ -5409,7 +5405,7 @@ dependencies = [
 [[package]]
 name = "solver-discovery"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
@@ -5439,7 +5435,7 @@ dependencies = [
 [[package]]
 name = "solver-order"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
@@ -5459,7 +5455,7 @@ dependencies = [
 [[package]]
 name = "solver-pricing"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "alloy-primitives",
  "async-trait",
@@ -5477,7 +5473,7 @@ dependencies = [
 [[package]]
 name = "solver-service"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "alloy-primitives",
  "alloy-signer",
@@ -5507,7 +5503,7 @@ dependencies = [
  "solver-discovery",
  "solver-order",
  "solver-pricing",
- "solver-settlement 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f)",
+ "solver-settlement 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc)",
  "solver-storage",
  "solver-types",
  "subtle",
@@ -5532,7 +5528,7 @@ dependencies = [
  "async-trait",
  "serde_json",
  "sha3",
- "solver-settlement 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f)",
+ "solver-settlement 0.1.0 (git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc)",
  "solver-storage",
  "solver-types",
  "tokio",
@@ -5543,7 +5539,7 @@ dependencies = [
 [[package]]
 name = "solver-settlement"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "alloy-primitives",
  "alloy-provider",
@@ -5568,7 +5564,7 @@ dependencies = [
 [[package]]
 name = "solver-storage"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5588,7 +5584,7 @@ dependencies = [
 [[package]]
 name = "solver-types"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?rev=2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f#2364b4d5bd6f2b77299fbcf2d1a921ce46923a6f"
+source = "git+https://github.com/celestiaorg/oif-solver?rev=a06231ca236ee9ce156900cd2cc9915fbe847cdc#a06231ca236ee9ce156900cd2cc9915fbe847cdc"
 dependencies = [
  "alloy-consensus",
  "alloy-contract",
@@ -5751,9 +5747,9 @@ checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "tempfile"
-version = "3.26.0"
+version = "3.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82a72c767771b47409d2345987fda8628641887d5466101319899796367354a0"
+checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
  "getrandom 0.4.2",
@@ -5894,7 +5890,7 @@ dependencies = [
  "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
- "socket2 0.6.2",
+ "socket2 0.6.3",
  "tokio-macros",
  "windows-sys 0.61.2",
 ]
@@ -6361,9 +6357,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.21.0"
+version = "1.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b672338555252d43fd2240c714dc444b8c6fb0a5c5335e65a07bba7742735ddb"
+checksum = "a68d3c8f01c0cfa54a75291d83601161799e4a89a39e0929f4b0354d88757a37"
 dependencies = [
  "getrandom 0.4.2",
  "js-sys",
@@ -6913,9 +6909,9 @@ checksum = "d6bbff5f0aada427a1e5a6da5f1f98158182f26556f345ac9e04d36d0ebed650"
 
 [[package]]
 name = "winnow"
-version = "0.7.14"
+version = "0.7.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a5364e9d77fcdeeaa6062ced926ee3381faa2ee02d3eb83a5c27a8825540829"
+checksum = "df79d97927682d2fd8adb29682d1140b343be4ac0f08fd68b7765d9c059d3945"
 dependencies = [
  "memchr",
 ]
@@ -7073,18 +7069,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.40"
+version = "0.8.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a789c6e490b576db9f7e6b6d661bcc9799f7c0ac8352f56ea20193b2681532e5"
+checksum = "f2578b716f8a7a858b7f02d5bd870c14bf4ddbbcf3a4c05414ba6503640505e3"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.40"
+version = "0.8.42"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f65c489a7071a749c849713807783f70672b28094011623e200cb86dcb835953"
+checksum = "7e6cc098ea4d3bd6246687de65af3f920c430e236bee1e3bf2e441463f08a02f"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -52,7 +52,6 @@ impl Deployer {
             input_settler_escrow: deployment.input_settler().cloned(),
             output_settler_simple: deployment.output_settler().cloned(),
             oracle: deployment.oracle().cloned(),
-            permit2: deployment.permit2().cloned(),
             hyperlane: None,
         };
 
@@ -220,6 +219,7 @@ impl Deployer {
 
             // Store Hyperlane contract addresses
             let hyperlane = HyperlaneAddresses {
+                domain_id: chain_data.get("domain_id").and_then(|v| v.as_u64()),
                 mailbox: chain_data
                     .get("mailbox")
                     .and_then(|v| v.as_str())

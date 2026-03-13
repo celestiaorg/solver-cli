@@ -3,6 +3,7 @@ import { useAppKit, AppKitNetworkButton } from '@reown/appkit/react'
 import { useAccount, useDisconnect, useWriteContract, useSignTypedData, useSwitchChain } from 'wagmi'
 import { parseAbi } from 'viem'
 import { api, Config, AllBalances, Quote, OrderStatus } from './api'
+import { Docs } from './Docs'
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -35,6 +36,46 @@ function normalizeStatus(status: unknown): string {
 
 // ── Primitives ────────────────────────────────────────────────────────────────
 
+function fallbackCopy(text: string) {
+  const el = document.createElement('textarea')
+  el.value = text
+  el.style.position = 'fixed'
+  el.style.opacity = '0'
+  document.body.appendChild(el)
+  el.select()
+  document.execCommand('copy')
+  document.body.removeChild(el)
+}
+
+function CopyableAddress({ address, className }: { address: string; className?: string }) {
+  const [copied, setCopied] = useState(false)
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const done = () => { setCopied(true); setTimeout(() => setCopied(false), 1500) }
+    try {
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(address).then(done).catch(() => { fallbackCopy(address); done() })
+      } else {
+        fallbackCopy(address); done()
+      }
+    } catch { fallbackCopy(address); done() }
+  }
+  return (
+    <span className="inline-flex items-center gap-1 group/addr relative">
+      <span className={className ?? 'font-mono text-gray-400 text-[11px]'}>{truncAddr(address)}</span>
+      <button onClick={handleCopy} className="text-gray-700 hover:text-gray-400 transition-colors shrink-0">
+        {copied
+          ? <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        }
+      </button>
+      <span className="pointer-events-none absolute bottom-full right-0 mb-1.5 hidden group-hover/addr:flex items-center bg-surface-3 border border-border/60 rounded-lg px-2.5 py-1.5 z-50 shadow-xl">
+        <span className="font-mono text-[10px] text-gray-200 whitespace-nowrap">{address}</span>
+      </span>
+    </span>
+  )
+}
+
 function Spinner({ size = 16 }: { size?: number }) {
   return (
     <svg className="animate-spin-slow shrink-0" width={size} height={size} viewBox="0 0 24 24" fill="none">
@@ -49,6 +90,7 @@ const CHAIN_GRADIENTS: Record<string, string> = {
   anvil2:   'from-cyan-400 to-blue-500',
   sepolia:  'from-amber-400 to-orange-500',
   arbitrum: 'from-sky-400 to-blue-500',
+  eden:     'from-purple-500 to-violet-700',
 }
 
 function ChainBadge({ name }: { name: string }) {
@@ -90,15 +132,10 @@ export default function App() {
 
   const [slowLoading, setSlowLoading] = useState(false)
   const [slowMsg, setSlowMsg]         = useState('')
+  const [timedOut, setTimedOut]       = useState(false)
 
-  const [faucetLoading, setFaucetLoading] = useState<string | null>(null)
-  const [faucetMsg, setFaucetMsg]         = useState('')
-  const [rebalanceLoading, setRebalanceLoading] = useState<string | null>(null)
-  const [rebalanceMsg, setRebalanceMsg]         = useState('')
-  const [rebalanceToken, setRebalanceToken]     = useState('USDC')
-  const [rebalanceFrom, setRebalanceFrom]       = useState('anvil1')
-  const [rebalanceTo, setRebalanceTo]           = useState('anvil2')
   const [rightTab, setRightTab]                 = useState<'balances' | 'tools'>('balances')
+  const [showDocs, setShowDocs]                 = useState(false)
 
   const pollRef = useRef<ReturnType<typeof setInterval>>()
 
@@ -132,9 +169,9 @@ export default function App() {
   }, [])
 
   const loadBalances = useCallback(async () => {
+    if (!isConnected || !connectedAddress) { setBalances(null); return }
     try {
-      const addr = isConnected && connectedAddress ? connectedAddress : undefined
-      setBalances(await api.balances(addr))
+      setBalances(await api.balances(connectedAddress))
     } catch {}
   }, [isConnected, connectedAddress])
 
@@ -155,19 +192,31 @@ export default function App() {
 
   const handleGetQuote = async () => {
     if (!fromChain || !toChain || !amount) return
+    if (!isConnected || !connectedAddress) { setError('Connect a wallet first.'); setStep('error'); return }
     setStep('quoting'); setError(''); setQuote(null); setOrderId(''); setOrderStatus(null)
     try {
       const fromId = config!.chains[fromChain].chainId
       const toId   = config!.chains[toChain].chainId
       const raw    = Math.round(parseFloat(amount) * 10 ** selectedTokenDecimals).toString()
-      const resp   = await api.quote(fromId, toId, raw, asset,
-        isConnected && connectedAddress ? connectedAddress : undefined)
+      let resp: any
+      try {
+        resp = await api.quote(fromId, toId, raw, asset, connectedAddress)
+      } catch (fetchErr: any) {
+        const msg: string = fetchErr?.message ?? ''
+        // Only treat as network error if msg hasn't already been categorized by server.js
+        const alreadyCategorized = msg.startsWith('SOLVER_REJECTED:') || msg.startsWith('SOLVER_OFFLINE:')
+        const isNetworkErr = !alreadyCategorized && (fetchErr?.name === 'TypeError' || msg.toLowerCase().includes('econnrefused') || msg.toLowerCase().includes('fetch failed'))
+        throw new Error(isNetworkErr
+          ? 'SOLVER_OFFLINE: Cannot reach the aggregator. Make sure the solver and aggregator are running (make solver && make aggregator).'
+          : fetchErr.message)
+      }
       if (!resp.quotes?.length) {
         const meta = (resp as any).metadata
+        const detail: string = (resp as any).error || (resp as any).message || ''
         const allFailed = meta && meta.solvers_queried > 0 && meta.solvers_responded_success === 0
         throw new Error(allFailed
-          ? 'SOLVER_REJECTED: No solver could fill this transfer — the amount is likely too small to cover gas and bridging fees. Try a larger amount.'
-          : 'No quotes returned. Is the solver running? (make solver)')
+          ? `SOLVER_REJECTED: ${detail || 'No solver could fill this transfer.'}`
+          : 'SOLVER_OFFLINE: No quotes returned. Is the solver running? (make solver)')
       }
       setQuote(resp.quotes[0]); setStep('quoted')
     } catch (err: any) { setError(err.message); setStep('error') }
@@ -175,82 +224,64 @@ export default function App() {
 
   const handleAcceptQuote = async () => {
     if (!quote) return
+    if (!isConnected || !connectedAddress) { setError('Connect a wallet first.'); setStep('error'); return }
     setStep('signing'); setError('')
     try {
       const fromId    = config!.chains[fromChain].chainId
-      if (isConnected && connectedAddress) {
-        const chainInfo = config!.chains[fromChain]
-        const token     = chainInfo.tokens[asset]
-        await switchChainAsync({ chainId: fromId })
-        const payload   = quote.order.payload as any
-        const isPermit2 = payload.primaryType?.includes('Permit')
-        const spender   = isPermit2
-          ? (payload.domain?.verifyingContract as `0x${string}`)
-          : (chainInfo.contracts?.input_settler_escrow as `0x${string}`)
-        if (token && spender) {
-          await writeContractAsync({
-            address: token.address as `0x${string}`,
-            abi: parseAbi(['function approve(address, uint256) returns (bool)']),
-            functionName: 'approve', args: [spender, 100000000n], chainId: fromId,
-          })
-        }
-        const types = { ...payload.types }
-        delete types.EIP712Domain
-        const domain = { ...payload.domain }
-        if (typeof domain.chainId === 'string') domain.chainId = Number(domain.chainId)
-        const rawSig = await signTypedDataAsync({ domain, types, primaryType: payload.primaryType, message: payload.message })
-        const sig    = (isPermit2 ? '0x00' : '0x01') + rawSig.slice(2)
-        const resp   = await api.submitSignedOrder(quote, sig)
-        setOrderId(resp.orderId); setStep('polling'); startPolling(resp.orderId)
-      } else {
-        const resp = await api.submitOrder(quote, config!.chains[fromChain].chainId, asset)
-        setOrderId(resp.orderId); setStep('polling'); startPolling(resp.orderId)
+      const chainInfo = config!.chains[fromChain]
+      const token     = chainInfo.tokens[asset]
+      await switchChainAsync({ chainId: fromId })
+      const payload   = quote.order.payload as any
+      const isPermit2 = payload.primaryType?.includes('Permit')
+      const spender   = isPermit2
+        ? (payload.domain?.verifyingContract as `0x${string}`)
+        : (chainInfo.contracts?.input_settler_escrow as `0x${string}`)
+      if (token && spender) {
+        await writeContractAsync({
+          address: token.address as `0x${string}`,
+          abi: parseAbi(['function approve(address, uint256) returns (bool)']),
+          functionName: 'approve', args: [spender, BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')], chainId: fromId,
+        })
       }
+      const types = { ...payload.types }
+      delete types.EIP712Domain
+      const domain = { ...payload.domain }
+      if (typeof domain.chainId === 'string') domain.chainId = Number(domain.chainId)
+      const rawSig = await signTypedDataAsync({ domain, types, primaryType: payload.primaryType, message: payload.message })
+      const sig    = (isPermit2 ? '0x00' : '0x01') + rawSig.slice(2)
+      const resp   = await api.submitSignedOrder(quote, sig)
+      setOrderId(resp.orderId); setStep('polling'); startPolling(resp.orderId)
     } catch (err: any) { setError(err.message); setStep('error') }
   }
 
   const startPolling = (id: string) => {
     if (pollRef.current) clearInterval(pollRef.current)
+    const deadline = Date.now() + 120_000
     pollRef.current = setInterval(async () => {
+      const expired = Date.now() > deadline
+      if (expired) {
+        setTimedOut(true)
+        clearInterval(pollRef.current)
+        setStep('done')
+        return
+      }
       try {
         const s = await api.orderStatus(id)
         setOrderStatus(s)
+        loadBalances()
         const n = normalizeStatus(s.status)
-        if (n === 'finalized' || n === 'failed') {
-          clearInterval(pollRef.current); setStep('done'); loadBalances()
-        }
+        const isDone = n === 'finalized' || n === 'executed' || n === 'settling' || n === 'settled' || n === 'failed' || n === 'refunded'
+        if (isDone) { clearInterval(pollRef.current); setStep('done') }
       } catch {}
-    }, 3000)
+    }, 1000)
   }
 
   useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current) }, [])
 
-  // ── Faucet ────────────────────────────────────────────────────────────────
 
-  const handleFaucet = async (chainName: string, type: 'gas' | 'token', symbol?: string) => {
-    const key = `${chainName}-${type}${symbol ? `-${symbol}` : ''}`
-    setFaucetLoading(key); setFaucetMsg('')
-    try {
-      const r = await api.faucet(chainName, type,
-        isConnected && connectedAddress ? connectedAddress : undefined, symbol)
-      setFaucetMsg(`Sent ${r.amount} on ${chainName}`); loadBalances()
-    } catch (err: any) { setFaucetMsg(`Error: ${err.message}`) }
-    finally { setFaucetLoading(null) }
-  }
-
-  // ── Rebalance ─────────────────────────────────────────────────────────────
-
-  const handleRebalance = async () => {
-    setRebalanceLoading('bridge'); setRebalanceMsg('')
-    try {
-      const r = await api.rebalance(rebalanceFrom, rebalanceTo, undefined, rebalanceToken)
-      setRebalanceMsg(r.message); loadBalances()
-    } catch (err: any) { setRebalanceMsg(`Error: ${err.message}`) }
-    finally { setRebalanceLoading(null) }
-  }
 
   const resetFlowState = () => {
-    setStep('idle'); setQuote(null); setOrderId(''); setOrderStatus(null); setError(''); setSlowMsg('')
+    setStep('idle'); setQuote(null); setOrderId(''); setOrderStatus(null); setError(''); setSlowMsg(''); setTimedOut(false)
   }
 
   // ── Slow route (Celestia bridge, user → user) ─────────────────────────────
@@ -264,42 +295,40 @@ export default function App() {
       const fromId    = config!.chains[fromChain].chainId
       const rawAmount = Math.round(parseFloat(amount) * 10 ** selectedTokenDecimals).toString()
 
-      if (isConnected && connectedAddress) {
-        // Wallet-connected: server prepares the forwarding, wallet executes the txs
-        setSlowMsg('Preparing Celestia route…')
-        const prep = await api.bridgePrepare(fromName, toName, asset, connectedAddress, rawAmount)
-
-        await switchChainAsync({ chainId: fromId })
-
-        if (prep.needsApproval && prep.underlyingToken) {
-          setSlowMsg('Approving token…')
-          await writeContractAsync({
-            address: prep.underlyingToken as `0x${string}`,
-            abi: parseAbi(['function approve(address, uint256) returns (bool)']),
-            functionName: 'approve',
-            args: [prep.warpToken as `0x${string}`, BigInt(rawAmount)],
-            chainId: fromId,
-          })
-        }
-
-        setSlowMsg('Submitting bridge transaction…')
-        const txHash = await writeContractAsync({
-          address: prep.warpToken as `0x${string}`,
-          abi: parseAbi(['function transferRemote(uint32, bytes32, uint256) payable returns (bytes32)']),
-          functionName: 'transferRemote',
-          args: [prep.celestiaDomainId, prep.forwardingAddressBytes32 as `0x${string}`, BigInt(rawAmount)],
-          chainId: fromId,
-          value: 0n,
-        })
-
-        setSlowMsg(`Submitted (${txHash.slice(0, 10)}…). Tokens arrive in ~2 min via Celestia.`)
-        loadBalances()
-      } else {
-        // No wallet: server executes using USER_PK
-        const resp = await api.bridge(fromName, toName, rawAmount, asset)
-        setSlowMsg(resp.message)
-        loadBalances()
+      if (!isConnected || !connectedAddress) {
+        throw new Error('Connect a wallet to use the bridge.')
       }
+
+      // Wallet-connected: server prepares the forwarding, wallet executes the txs
+      setSlowMsg('Preparing Celestia route…')
+      const prep = await api.bridgePrepare(fromName, toName, asset, connectedAddress, rawAmount)
+
+      await switchChainAsync({ chainId: fromId })
+
+      if (prep.needsApproval && prep.underlyingToken) {
+        setSlowMsg('Approving token…')
+        await writeContractAsync({
+          address: prep.underlyingToken as `0x${string}`,
+          abi: parseAbi(['function approve(address, uint256) returns (bool)']),
+          functionName: 'approve',
+          args: [prep.warpToken as `0x${string}`, BigInt(rawAmount)],
+          chainId: fromId,
+        })
+      }
+
+      setSlowMsg('Submitting bridge transaction…')
+      const txHash = await writeContractAsync({
+        address: prep.warpToken as `0x${string}`,
+        abi: parseAbi(['function transferRemote(uint32, bytes32, uint256) payable returns (bytes32)']),
+        functionName: 'transferRemote',
+        args: [prep.celestiaDomainId, prep.forwardingAddressBytes32 as `0x${string}`, BigInt(rawAmount)],
+        chainId: fromId,
+        value: 0n,
+        gas: 3_000_000n,
+      })
+
+      setSlowMsg(`Submitted (${txHash.slice(0, 10)}…). Tokens arrive in ~2 min via Celestia.`)
+      loadBalances()
     } catch (err: any) {
       setSlowMsg(`Error: ${err.message}`)
     } finally {
@@ -317,11 +346,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-surface-0 flex items-center justify-center">
         <div className="flex flex-col items-center gap-5">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-brand to-purple-400 flex items-center justify-center shadow-brand">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" fill="white"/>
-            </svg>
-          </div>
+          <img src="/celestia-logo.svg" className="w-12 h-12" alt="Celestia" />
           <div className="flex items-center gap-2 text-gray-500 text-sm">
             <Spinner size={13} /> Connecting to solver…
           </div>
@@ -351,47 +376,89 @@ export default function App() {
     <div className="min-h-screen bg-surface-0 flex flex-col overflow-hidden">
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <header className="relative z-50 shrink-0 bg-surface-0/80 backdrop-blur-xl"
-        style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <div className="max-w-7xl mx-auto px-8 h-[58px] flex items-center justify-between">
+      <header className="relative z-50 shrink-0 h-[72px] flex items-center">
 
+        {/* ── Centered pill navbar ── */}
+        <nav
+          className="absolute left-1/2 -translate-x-1/2 flex items-center gap-0.5 px-1.5 py-1.5 rounded-full"
+          style={{
+            background: 'rgba(255,255,255,0.04)',
+            backdropFilter: 'blur(24px) saturate(160%)',
+            WebkitBackdropFilter: 'blur(24px) saturate(160%)',
+            border: '1px solid rgba(255,255,255,0.09)',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.07)',
+          }}
+        >
           {/* Logo */}
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-violet-500 to-purple-700 flex items-center justify-center"
-              style={{ boxShadow: '0 0 12px rgba(124,58,237,0.4)' }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="white">
-                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
-              </svg>
-            </div>
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-sm font-semibold text-white tracking-tight">OIF</span>
-              <span className="text-[11px] text-gray-600 font-medium">Solver</span>
+          <div className="flex items-center gap-2 pl-2.5 pr-3 py-1">
+            <img src="/celestia-logo.svg" className="w-5 h-5 opacity-90" alt="Celestia" />
+            <div className="flex items-baseline gap-1">
+              <span className="text-[13px] font-bold text-white tracking-tight">Celestia</span>
+              <span className="text-[11px] text-gray-400 font-medium">Bridge</span>
             </div>
           </div>
 
-          {/* Wallet */}
+          {/* Divider */}
+          <div className="w-px h-4 mx-1" style={{ background: 'rgba(255,255,255,0.08)' }} />
+
+          {/* App link */}
+          <button
+            onClick={() => setShowDocs(false)}
+            className="px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-all"
+            style={!showDocs ? {
+              background: 'rgba(255,255,255,0.09)',
+              color: '#fff',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1)',
+            } : { color: 'rgba(156,163,175,1)' }}
+          >
+            App
+          </button>
+
+          {/* Docs link */}
+          <button
+            onClick={() => setShowDocs(true)}
+            className="px-3.5 py-1.5 rounded-full text-[13px] font-medium transition-all"
+            style={showDocs ? {
+              background: 'rgba(255,255,255,0.09)',
+              color: '#fff',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.1)',
+            } : { color: 'rgba(156,163,175,1)' }}
+          >
+            Docs
+          </button>
+        </nav>
+
+        {/* ── Wallet — pinned right ── */}
+        <div className="absolute right-8 flex items-center gap-1.5">
           {isConnected ? (
-            <div className="flex items-center gap-1.5">
+            <>
               <AppKitNetworkButton />
-              <div className="flex items-center gap-1.5 bg-surface-2/80 border border-white/[0.06] rounded-lg px-2.5 py-1.5">
+              <div className="flex items-center gap-1.5 rounded-full px-2.5 py-1.5"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" style={{ boxShadow: '0 0 4px rgba(52,211,153,0.6)' }} />
-                <span className="text-[11px] font-mono text-gray-300">{truncAddr(connectedAddress!)}</span>
+                <CopyableAddress address={connectedAddress!} className="text-[11px] font-mono text-gray-300" />
               </div>
               <button
                 onClick={() => disconnect()}
-                className="w-6 h-6 flex items-center justify-center rounded-md text-gray-700 hover:text-gray-400 hover:bg-surface-2 transition-colors"
+                className="w-7 h-7 flex items-center justify-center rounded-full text-gray-700 hover:text-gray-400 transition-colors"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
                 title="Disconnect"
               >
                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                   <path d="M18 6L6 18M6 6l12 12"/>
                 </svg>
               </button>
-            </div>
+            </>
           ) : (
             <button
               onClick={() => open()}
-              className="flex items-center gap-1.5 text-white text-[11px] font-semibold px-3.5 py-1.5 rounded-lg transition-all active:scale-[0.98]"
-              style={{ background: 'linear-gradient(135deg, #7c3aed, #6d28d9)', boxShadow: '0 0 12px rgba(124,58,237,0.3)' }}
+              className="flex items-center gap-1.5 text-white text-[12px] font-semibold px-4 py-2 rounded-full transition-all active:scale-[0.97]"
+              style={{
+                background: 'linear-gradient(135deg, rgba(124,58,237,0.9), rgba(109,40,217,0.9))',
+                backdropFilter: 'blur(12px)',
+                border: '1px solid rgba(167,139,250,0.2)',
+                boxShadow: '0 0 20px rgba(124,58,237,0.35), inset 0 1px 0 rgba(255,255,255,0.1)',
+              }}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
                 <rect x="2" y="7" width="20" height="14" rx="2" stroke="currentColor" strokeWidth="2"/>
@@ -416,9 +483,9 @@ export default function App() {
             <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-border/50">
               <div>
                 <h2 className="text-base font-bold text-white">Transfer</h2>
-                <p className="text-[11px] text-gray-600 mt-0.5">Cross-chain via intent protocol</p>
+                <p className="text-xs text-gray-400 mt-0.5">{routeType === 'fast' ? 'Cross-chain via intent protocol' : 'Cross-chain via Celestia bridge'}</p>
               </div>
-              <div className="flex items-center gap-1.5 text-[11px] text-gray-600">
+              <div className="flex items-center gap-1.5 text-xs text-gray-400">
                 <span className={`w-1.5 h-1.5 rounded-full ${isServicesUp ? 'bg-emerald-500' : 'bg-red-500'}`} />
                 {isServicesUp ? 'Ready' : 'Offline'}
               </div>
@@ -438,13 +505,13 @@ export default function App() {
                         : 'hover:bg-surface-2/40'
                     }`}
                   >
-                    <span className={`text-xs font-bold flex items-center gap-1.5 ${routeType === r ? 'text-white' : 'text-gray-600'}`}>
+                    <span className={`text-xs font-bold flex items-center gap-1.5 ${routeType === r ? 'text-white' : 'text-gray-400'}`}>
                       {r === 'fast'
                         ? <><svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Fast</>
                         : <><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M2 12c1.5-3 3.5-3 5 0s3.5 3 5 0 3.5-3 5 0"/></svg> Slow</>
                       }
                     </span>
-                    <span className={`text-[10px] font-normal ${routeType === r ? 'text-gray-500' : 'text-gray-700'}`}>
+                    <span className={`text-[11px] font-normal ${routeType === r ? 'text-gray-400' : 'text-gray-500'}`}>
                       {r === 'fast' ? 'Instant · Solver' : '~2 min · Celestia'}
                     </span>
                   </button>
@@ -469,14 +536,14 @@ export default function App() {
               {/* You Send */}
               <div className="bg-surface-2 border border-border rounded-xl p-4 hover:border-border-light transition-colors group">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">You send</span>
+                  <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">You send</span>
                   {balances && fromChain && balances[fromChain] && asset && (
                     <button
                       onClick={() => {
                         const b = balances[fromChain]?.balances?.user?.[asset]?.formatted ?? '0'
                         if (parseFloat(b) > 0) { setAmount(parseFloat(b).toFixed(2)); setStep('idle'); setQuote(null) }
                       }}
-                      className="text-[11px] text-gray-600 hover:text-brand-light transition-colors tabular-nums"
+                      className="text-xs text-gray-400 hover:text-brand-light transition-colors tabular-nums"
                     >
                       {formatToken(balances[fromChain].balances.user[asset]?.formatted ?? '0')} {asset}
                       <span className="ml-1.5 text-brand-light font-bold">MAX</span>
@@ -524,7 +591,7 @@ export default function App() {
                     hover:rotate-180 group"
                 >
                   <svg width="14" height="14" viewBox="0 0 16 16" fill="none"
-                    className="text-gray-500 group-hover:text-brand-light transition-colors">
+                    className="text-gray-400 group-hover:text-brand-light transition-colors">
                     <path d="M4 6L8 2L12 6M4 10L8 14L12 10" stroke="currentColor" strokeWidth="2"
                       strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
@@ -534,9 +601,9 @@ export default function App() {
               {/* You Receive */}
               <div className="bg-surface-2/60 border border-border rounded-xl p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-widest">You receive</span>
+                  <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest">You receive</span>
                   {balances && toChain && balances[toChain] && asset && (
-                    <span className="text-[11px] text-gray-600 tabular-nums">
+                    <span className="text-xs text-gray-400 tabular-nums">
                       {formatToken(balances[toChain].balances.user[asset]?.formatted ?? '0')} {asset}
                     </span>
                   )}
@@ -584,8 +651,8 @@ export default function App() {
                     { label: 'Type',     value: quote.order.type },
                   ].map(({ label, value }) => (
                     <div key={label} className="bg-surface-0/70 rounded-xl px-3 py-2 border border-border/40">
-                      <div className="text-[9px] text-gray-700 mb-0.5 font-semibold uppercase tracking-wider">{label}</div>
-                      <div className="text-[11px] text-gray-400 font-medium truncate">{value}</div>
+                      <div className="text-[10px] text-gray-500 mb-0.5 font-semibold uppercase tracking-wider">{label}</div>
+                      <div className="text-xs text-gray-300 font-medium truncate">{value}</div>
                     </div>
                   ))}
                 </div>
@@ -594,8 +661,8 @@ export default function App() {
               {/* Order status (fast route only) */}
               {routeType === 'fast' && (step === 'polling' || step === 'done') && orderStatus && (() => {
                 const status = normalizeStatus(orderStatus.status)
-                const ok     = status === 'finalized'
-                const fail   = status === 'failed'
+                const ok     = status === 'finalized' || status === 'executed' || status === 'settling' || status === 'settled'
+                const fail   = status === 'failed' || status === 'refunded'
                 return (
                   <div className={`rounded-xl p-4 border animate-fade-in ${
                     ok   ? 'bg-emerald-500/[0.06] border-emerald-500/20'
@@ -603,7 +670,7 @@ export default function App() {
                     : 'bg-surface-0/60 border-border/60'
                   }`}>
                     <div className="flex items-center justify-between mb-2.5">
-                      <span className="text-xs text-gray-500 font-medium">Settlement</span>
+                      <span className="text-xs text-gray-400 font-medium">Settlement</span>
                       <div className={`flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider ${
                         ok ? 'text-emerald-400' : fail ? 'text-red-400' : 'text-amber-400'
                       }`}>
@@ -614,24 +681,14 @@ export default function App() {
                     <div className="space-y-1.5">
                       {orderId && (
                         <div className="flex justify-between">
-                          <span className="text-[11px] text-gray-600">Order</span>
-                          <span className="text-[11px] text-gray-400 font-mono">{truncAddr(orderId)}</span>
+                          <span className="text-xs text-gray-400">Order</span>
+                          <CopyableAddress address={orderId} />
                         </div>
                       )}
-                      {orderStatus.settlement?.fillTransaction && (
+                      {orderStatus.fillTransaction && (
                         <div className="flex justify-between">
-                          <span className="text-[11px] text-gray-600">Fill tx</span>
-                          <span className="text-[11px] text-gray-400 font-mono">
-                            {truncAddr(orderStatus.settlement.fillTransaction.hash)}
-                          </span>
-                        </div>
-                      )}
-                      {orderStatus.settlement?.claimTransaction && (
-                        <div className="flex justify-between">
-                          <span className="text-[11px] text-gray-600">Claim tx</span>
-                          <span className="text-[11px] text-emerald-400 font-mono">
-                            {truncAddr(orderStatus.settlement.claimTransaction.hash)}
-                          </span>
+                          <span className="text-xs text-gray-400">Fill tx</span>
+                          <CopyableAddress address={(orderStatus.fillTransaction as any).hash ?? orderId} />
                         </div>
                       )}
                     </div>
@@ -710,25 +767,71 @@ export default function App() {
                     <Spinner size={16} /> Awaiting settlement…
                   </button>
                 ) : step === 'done' ? (
-                  <button
-                    onClick={resetFlowState}
-                    className="w-full py-4 rounded-xl font-bold text-[15px] transition-all duration-200
-                      bg-gradient-to-r from-brand to-purple-500 hover:from-brand-light hover:to-purple-400
-                      text-white hover:shadow-brand active:scale-[0.99]">
-                    New Transfer
-                  </button>
+                  <>
+                    {timedOut && (
+                      <div className="flex items-start gap-2.5 bg-amber-500/[0.06] border border-amber-500/20 rounded-xl px-4 py-3 animate-fade-in">
+                        <svg className="shrink-0 mt-0.5" width="13" height="13" viewBox="0 0 24 24" fill="none">
+                          <circle cx="12" cy="12" r="10" stroke="#f59e0b" strokeWidth="2"/>
+                          <path d="M12 8v4m0 4h.01" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round"/>
+                        </svg>
+                        <p className="text-xs text-amber-400 leading-relaxed">
+                          Settlement is taking longer than expected — check your balances to see if the transfer completed.
+                        </p>
+                      </div>
+                    )}
+                    <button
+                      onClick={resetFlowState}
+                      className="w-full py-4 rounded-xl font-bold text-[15px] transition-all duration-200
+                        bg-gradient-to-r from-brand to-purple-500 hover:from-brand-light hover:to-purple-400
+                        text-white hover:shadow-brand active:scale-[0.99]">
+                      New Transfer
+                    </button>
+                  </>
                 ) : null
               ) : (
                 // ── Slow route: direct Celestia bridge ─────────────────────
                 <>
-                  {slowMsg && (
+                  {/* Step progress (while loading) */}
+                  {slowLoading && (() => {
+                    const steps = [
+                      { label: 'Preparing route',       match: 'Preparing' },
+                      { label: 'Approving token',       match: 'Approving' },
+                      { label: 'Submitting transaction', match: 'Submitting' },
+                    ]
+                    const activeIdx = steps.findIndex(s => slowMsg.includes(s.match))
+                    return (
+                      <div className="bg-surface-0/60 border border-border/50 rounded-xl px-4 py-3 space-y-2 animate-fade-in">
+                        {steps.map((s, i) => {
+                          const isDone    = activeIdx > i
+                          const isCurrent = activeIdx === i
+                          return (
+                            <div key={s.label} className={`flex items-center gap-2.5 text-[11px] transition-colors ${
+                              isCurrent ? 'text-white' : isDone ? 'text-emerald-400' : 'text-gray-700'
+                            }`}>
+                              {isCurrent
+                                ? <Spinner size={10} />
+                                : isDone
+                                  ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                  : <span className="w-2.5 h-2.5 rounded-full border border-current opacity-30 shrink-0" />
+                              }
+                              {s.label}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
+
+                  {/* Result message (after loading) */}
+                  {slowMsg && !slowLoading && (
                     <div className={`text-[11px] px-3 py-2.5 rounded-xl animate-fade-in border ${
                       slowMsg.startsWith('Error')
                         ? 'bg-red-500/[0.06] text-red-400 border-red-500/15'
                         : 'bg-emerald-500/[0.06] text-emerald-400 border-emerald-500/15'
                     }`}>{slowMsg}</div>
                   )}
-                  {slowMsg && !slowMsg.startsWith('Error') ? (
+
+                  {slowMsg && !slowLoading && !slowMsg.startsWith('Error') ? (
                     <button
                       onClick={resetFlowState}
                       className="w-full py-4 rounded-xl font-bold text-[15px] transition-all duration-200
@@ -745,10 +848,7 @@ export default function App() {
                         text-white disabled:opacity-20 disabled:cursor-not-allowed
                         hover:shadow-[0_0_24px_rgba(14,165,233,0.28)] active:scale-[0.99]"
                     >
-                      {slowLoading
-                        ? <span className="flex items-center justify-center gap-2.5"><Spinner size={16} /> Bridging…</span>
-                        : 'Bridge via Celestia'
-                      }
+                      Bridge via Celestia
                     </button>
                   )}
                 </>
@@ -791,33 +891,39 @@ export default function App() {
                       <div key={chainId}>
                         <div className="flex items-center gap-1.5 mb-1.5">
                           <ChainBadge name={cb.name} />
-                          {config && <span className="text-[10px] text-gray-700 font-mono">#{config.chains[chainId]?.chainId}</span>}
+                          {config && <span className="text-[11px] text-gray-500 font-mono">#{config.chains[chainId]?.chainId}</span>}
                         </div>
-                        <div className="rounded-lg overflow-hidden border border-border/50 text-[11px]">
+                        <div className="rounded-lg overflow-hidden border border-border/50 text-xs">
                           <div className="flex items-center justify-between px-3 py-1.5 bg-surface-0/50">
-                            <span className="text-gray-600">You</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-gray-400">You</span>
+                              {connectedAddress && <CopyableAddress address={connectedAddress} />}
+                            </div>
                             <div className="flex gap-2.5 tabular-nums">
                               {asset && cb.balances.user[asset] && (
                                 <span className="text-gray-300 font-mono">
                                   {formatToken(cb.balances.user[asset]?.formatted ?? '0')}
-                                  <span className="text-gray-600 ml-0.5">{asset}</span>
+                                  <span className="text-gray-400 ml-0.5">{asset}</span>
                                 </span>
                               )}
                               {cb.balances.user['ETH'] && (
-                                <span className="text-gray-500 font-mono">
+                                <span className="text-gray-400 font-mono">
                                   {formatETH(cb.balances.user['ETH']?.formatted ?? '0')}
-                                  <span className="text-gray-700 ml-0.5">ETH</span>
+                                  <span className="text-gray-400 ml-0.5">ETH</span>
                                 </span>
                               )}
                             </div>
                           </div>
                           <div className="flex items-center justify-between px-3 py-1.5 bg-surface-0/30 border-t border-border/40">
-                            <span className="text-gray-600">Solver</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-gray-300">Solver</span>
+                              {config?.solverAddress && <CopyableAddress address={config.solverAddress} />}
+                            </div>
                             <div className="flex gap-2.5 tabular-nums">
                               {asset && cb.balances.solver[asset] && (
                                 <span className="text-gray-300 font-mono">
                                   {formatToken(cb.balances.solver[asset]?.formatted ?? '0')}
-                                  <span className="text-gray-600 ml-0.5">{asset}</span>
+                                  <span className="text-gray-400 ml-0.5">{asset}</span>
                                 </span>
                               )}
                               {cb.balances.solver['ETH'] && (
@@ -833,151 +939,66 @@ export default function App() {
                     ))}
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 text-gray-600 text-xs py-1">
+                  <div className="flex items-center gap-2 text-gray-400 text-xs py-1">
                     <Spinner size={11} /> Loading…
                   </div>
                 )}
+
+                {/* Faucet links */}
+                <div className="mt-4 flex gap-2">
+                  {[
+                    { label: 'Eden USDC', sub: 'Testnet USDC faucet', href: 'http://51.159.182.223:8080/' },
+                    { label: 'Eden Gas', sub: 'Testnet ETH faucet', href: 'https://faucet-eden-testnet.binarybuilders.services/' },
+                  ].map(({ label, sub, href }) => (
+                    <a
+                      key={href}
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 flex items-center justify-between px-3 py-2.5 rounded-lg border border-border/50 bg-surface-0/40 hover:bg-surface-1/60 hover:border-border transition-colors group"
+                    >
+                      <div>
+                        <div className="text-[11px] font-medium text-gray-300 group-hover:text-white transition-colors">{label}</div>
+                        <div className="text-[10px] text-gray-500 mt-0.5">{sub}</div>
+                      </div>
+                      <svg className="w-3 h-3 text-gray-500 group-hover:text-gray-300 transition-colors shrink-0 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                      </svg>
+                    </a>
+                  ))}
+                </div>
               </div>
             )}
 
-            {/* ── Tools tab (Faucet + Bridge + System) ────────────────────── */}
+            {/* ── Tools tab (System) ─────────────────────────────────────── */}
             {rightTab === 'tools' && (
               <div className="divide-y divide-border/60 flex-1 overflow-y-auto">
-
-                {/* Faucet */}
-                <div className="p-5">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-bold text-white">Faucet</span>
-                    <span className="text-[11px] text-gray-600">
-                      {isConnected
-                        ? <span className="text-brand-light font-mono">{truncAddr(connectedAddress!)}</span>
-                        : config ? <span className="font-mono">{truncAddr(config.userAddress)}</span> : '—'
-                      }
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-gray-600 mb-3">Claim testnet gas and tokens.</p>
-                  {config && chainEntries.map(([chainId, chain]) => {
-                    if (!config.faucetChains?.includes(chain.name)) return null
-                    return (
-                      <div key={chainId} className="mb-3 last:mb-0">
-                        <div className="mb-1.5"><ChainBadge name={chain.name} /></div>
-                        <div className="flex gap-1.5">
-                          <button
-                            onClick={() => handleFaucet(chain.name, 'gas')}
-                            disabled={faucetLoading !== null}
-                            className="flex-1 py-2 px-2 rounded-lg text-[11px] font-semibold
-                              bg-surface-2 border border-border hover:border-border-light
-                              text-gray-400 hover:text-white transition-all
-                              disabled:opacity-40 disabled:cursor-not-allowed
-                              flex items-center justify-center gap-1"
-                          >
-                            {faucetLoading === `${chain.name}-gas` ? <Spinner size={10} /> : null}
-                            1 ETH
-                          </button>
-                          {Object.keys(chain.tokens).map(sym => (
-                            <button key={sym}
-                              onClick={() => handleFaucet(chain.name, 'token', sym)}
-                              disabled={faucetLoading !== null}
-                              className="flex-1 py-2 px-2 rounded-lg text-[11px] font-semibold
-                                bg-surface-2 border border-border hover:border-border-light
-                                text-gray-400 hover:text-white transition-all
-                                disabled:opacity-40 disabled:cursor-not-allowed
-                                flex items-center justify-center gap-1"
-                            >
-                              {faucetLoading === `${chain.name}-token-${sym}` ? <Spinner size={10} /> : null}
-                              10 {sym}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )
-                  })}
-                  {faucetMsg && (
-                    <div className={`mt-2 text-[11px] px-3 py-2 rounded-lg animate-fade-in ${
-                      faucetMsg.startsWith('Error')
-                        ? 'bg-red-500/[0.06] text-red-400 border border-red-500/15'
-                        : 'bg-emerald-500/[0.06] text-emerald-400 border border-emerald-500/15'
-                    }`}>{faucetMsg}</div>
-                  )}
-                </div>
-
-                {/* Bridge */}
-                <div className="p-5">
-                  <span className="text-xs font-bold text-white block mb-1">Bridge</span>
-                  <p className="text-[11px] text-gray-600 mb-3">Move solver tokens via Hyperlane.</p>
-                  <div className="space-y-2 mb-2">
-                    <select
-                      value={rebalanceToken}
-                      onChange={e => setRebalanceToken(e.target.value)}
-                      className="w-full bg-surface-2 border border-border rounded-xl px-3 py-2.5 text-white text-xs
-                        font-semibold outline-none cursor-pointer transition-colors"
-                    >
-                      {config && Object.values(config.chains).flatMap(c => Object.keys(c.tokens))
-                        .filter((s, i, a) => a.indexOf(s) === i && s !== 'ETH')
-                        .map(sym => <option key={sym} value={sym}>{sym}</option>)
-                      }
-                    </select>
-                    <div className="flex items-center gap-2">
-                      <select
-                        value={rebalanceFrom}
-                        onChange={e => setRebalanceFrom(e.target.value)}
-                        className="flex-1 bg-surface-2 border border-border rounded-xl px-3 py-2.5 text-white text-xs
-                          font-semibold outline-none cursor-pointer transition-colors"
-                      >
-                        {chainEntries.map(([id, c]) => (
-                          <option key={id} value={c.name} disabled={c.name === rebalanceTo}>{c.name}</option>
-                        ))}
-                      </select>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="text-gray-600 shrink-0">
-                        <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                      <select
-                        value={rebalanceTo}
-                        onChange={e => setRebalanceTo(e.target.value)}
-                        className="flex-1 bg-surface-2 border border-border rounded-xl px-3 py-2.5 text-white text-xs
-                          font-semibold outline-none cursor-pointer transition-colors"
-                      >
-                        {chainEntries.map(([id, c]) => (
-                          <option key={id} value={c.name} disabled={c.name === rebalanceFrom}>{c.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleRebalance}
-                    disabled={rebalanceLoading !== null || rebalanceFrom === rebalanceTo}
-                    className="w-full py-2.5 rounded-xl text-xs font-semibold transition-all
-                      bg-surface-2 border border-border hover:border-border-light text-gray-400 hover:text-white
-                      disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                  >
-                    {rebalanceLoading === 'bridge' ? <Spinner size={11} /> : null}
-                    Bridge {rebalanceToken}
-                  </button>
-                  {rebalanceMsg && (
-                    <div className={`mt-2 text-[11px] px-3 py-2 rounded-lg animate-fade-in ${
-                      rebalanceMsg.startsWith('Error')
-                        ? 'bg-red-500/[0.06] text-red-400 border border-red-500/15'
-                        : 'bg-emerald-500/[0.06] text-emerald-400 border border-emerald-500/15'
-                    }`}>{rebalanceMsg}</div>
-                  )}
-                </div>
 
                 {/* System */}
                 <div className="p-5">
                   <span className="text-xs font-bold text-white block mb-3">System</span>
                   <div className="space-y-2">
+                    {connectedAddress && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-400">Wallet</span>
+                        <CopyableAddress address={connectedAddress} />
+                      </div>
+                    )}
+                    {config?.solverAddress && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-400">Solver</span>
+                        <CopyableAddress address={config.solverAddress} />
+                      </div>
+                    )}
                     {[
-                      { label: 'User',       value: config ? truncAddr(config.userAddress) : '—',                  mono: true  },
-                      { label: 'Solver',     value: config?.solverAddress ? truncAddr(config.solverAddress) : '—', mono: true  },
-                      { label: 'Chains',     value: String(chainEntries.length),                                   mono: false },
+                      { label: 'Chains',     value: String(chainEntries.length), status: undefined },
                       { label: 'Backend',    value: health.backend,    status: health.backend },
                       { label: 'Aggregator', value: health.aggregator, status: health.aggregator },
-                    ].map(({ label, value, mono, status }) => (
+                    ].map(({ label, value, status }) => (
                       <div key={label} className="flex items-center justify-between">
-                        <span className="text-[11px] text-gray-600">{label}</span>
-                        <span className={`text-[11px] ${
-                          mono ? 'font-mono text-gray-400'
-                          : status === 'ok'  ? 'text-emerald-400 font-medium'
+                        <span className="text-xs text-gray-400">{label}</span>
+                        <span className={`text-xs ${
+                          status === 'ok'  ? 'text-emerald-400 font-medium'
                           : status !== undefined ? 'text-red-400 font-medium'
                           : 'text-gray-300'
                         }`}>{value}</span>
@@ -996,10 +1017,12 @@ export default function App() {
       {/* ── Footer ─────────────────────────────────────────────────────────── */}
       <footer className="relative z-10 border-t border-border/50 px-8 py-4 shrink-0">
         <div className="max-w-7xl mx-auto flex items-center justify-between text-[11px] text-gray-700">
-          <span className="font-semibold">OIF Solver</span>
+          <span className="font-semibold">Celestia Bridge</span>
           <span>Open Intents Framework</span>
         </div>
       </footer>
+
+      {showDocs && <Docs onClose={() => setShowDocs(false)} />}
     </div>
   )
 }

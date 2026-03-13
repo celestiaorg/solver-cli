@@ -141,14 +141,14 @@
             "protocol": "ethereum",
             "rpcUrls": [
                 {
-                    "http": "https://rpc.ankr.com/eth_sepolia/3afc3fea39333420bb3a7b29067d4291b79d761cd18faafec716442cd0be0be2"
+                    "http": "https://ethereum-sepolia-rpc.publicnode.com"
                 }
             ],
             "signer": {
                 "type": "hexKey",
                 "key": "0x52d441beb407f47811a09ed9d330320b2d336482512f26e9a5c5d3dacddc7b1e"
             },
-            "mailbox": "0xF12598dd5A9aec25AA9355382eC884117f3093Cb"
+            "mailbox": "0x409c1D7f3bDC4e30E4502DeD20D8Ad561D60606c"
         }
     },
     "defaultRpcConsensusType": "fallback",

@@ -224,8 +224,4 @@ impl DeploymentOutput {
             .get("OutputSettlerSimple")
             .or_else(|| self.addresses.get("OutputSettler"))
     }
-
-    pub fn permit2(&self) -> Option<&String> {
-        self.addresses.get("Permit2")
-    }
 }
