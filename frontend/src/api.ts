@@ -16,7 +16,6 @@ export interface ChainInfo {
 
 export interface Config {
   chains: Record<string, ChainInfo>
-  userAddress: string
   solverAddress: string
 }
 
@@ -114,13 +113,6 @@ export const api = {
       body: JSON.stringify({ fromChainId, toChainId, amount, asset, ...(address ? { address } : {}) }),
     }),
 
-  submitOrder: (quote: Quote, fromChainId: number, asset: string, address?: string) =>
-    json<OrderResponse>(`${BASE}/order`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ quote, fromChainId, asset, ...(address ? { address } : {}) }),
-    }),
-
   submitSignedOrder: (quote: Quote, signature: string) =>
     json<OrderResponse>(`${BASE}/order/submit`, {
       method: 'POST',
@@ -143,10 +135,4 @@ export const api = {
       body: JSON.stringify({ from, to, token, address, amount }),
     }),
 
-  bridge: (from: string, to: string, amount: string, token?: string) =>
-    json<{ success: boolean; message: string; txHash?: string }>(`${BASE}/bridge`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to, amount, ...(token ? { token } : {}) }),
-    }),
 }

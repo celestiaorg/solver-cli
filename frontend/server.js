@@ -21,12 +21,6 @@ function readState() {
   return JSON.parse(readFileSync(resolve(ROOT, '.config/state.json'), 'utf8'));
 }
 
-function getUserAccount() {
-  const pk = process.env.USER_PK;
-  if (!pk) throw new Error('USER_PK not set in .env');
-  return privateKeyToAccount(`0x${pk.replace('0x', '')}`);
-}
-
 function makeViemChain(chainId, name, rpc) {
   return defineChain({
     id: chainId,
@@ -60,11 +54,6 @@ const erc20Abi = parseAbi([
   'function mint(address, uint256)',
   'function decimals() view returns (uint8)',
   'function approve(address, uint256) returns (bool)',
-]);
-
-const hypTokenAbi = parseAbi([
-  'function transferRemote(uint32, bytes32, uint256) payable returns (bytes32)',
-  'function balanceOf(address) view returns (uint256)',
 ]);
 
 // ── Bech32 → bytes32 (replaces Python script) ───────────────────────────────
@@ -262,7 +251,6 @@ app.get('/api/health', async (_req, res) => {
 app.get('/api/config', (_req, res) => {
   try {
     const state = readState();
-    const user = getUserAccount();
     const chains = {};
 
     // Build warp route fallback tokens (same logic as /api/balances)
@@ -300,7 +288,6 @@ app.get('/api/config', (_req, res) => {
 
     res.json({
       chains,
-      userAddress: user.address,
       solverAddress: state.solver?.address ?? null,
       faucetChains,
     });
@@ -313,14 +300,11 @@ app.get('/api/config', (_req, res) => {
 app.get('/api/balances', async (req, res) => {
   try {
     const state = readState();
-    // Use connected wallet address if provided, otherwise fall back to USER_PK
     const addressParam = req.query.address;
-    let userAddress;
-    if (addressParam && /^0x[0-9a-fA-F]{40}$/.test(addressParam)) {
-      userAddress = addressParam;
-    } else {
-      userAddress = getUserAccount().address;
+    if (!addressParam || !/^0x[0-9a-fA-F]{40}$/.test(addressParam)) {
+      return res.status(400).json({ error: 'Missing or invalid "address" query parameter. Connect a wallet.' });
     }
+    const userAddress = addressParam;
     console.log(`[balances] user=${userAddress} solver=${state.solver?.address}`);
     const result = {};
 
@@ -400,16 +384,10 @@ app.post('/api/faucet', async (req, res) => {
     const chain = Object.values(state.chains).find(c => c.name === chainName);
     if (!chain) throw new Error(`Chain "${chainName}" not found`);
 
-    // Use provided address (from connected wallet) or fall back to USER_PK
-    let recipient;
-    if (address) {
-      if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
-        throw new Error('Invalid Ethereum address');
-      }
-      recipient = address;
-    } else {
-      recipient = getUserAccount().address;
+    if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+      throw new Error('Missing or invalid "address". Connect a wallet first.');
     }
+    const recipient = address;
 
     // Resolve deployer key
     const envKey = `${chainName.toUpperCase()}_PK`;
@@ -520,86 +498,9 @@ app.post('/api/bridge/prepare', async (req, res) => {
   }
 });
 
-// Bridge: server-side user bridge via Celestia (uses USER_PK)
-app.post('/api/bridge', async (req, res) => {
-  const { from, to, amount = '10000000', token = 'USDC' } = req.body;
-  if (!from || !to) return res.status(400).json({ error: '"from" and "to" are required' });
-  try {
-    const warp = getWarpRouteConfig(token);
-    const src = warp.chains[from];
-    const dst = warp.chains[to];
-    if (!src) throw new Error(`Chain "${from}" not found in ${token} warp route`);
-    if (!dst) throw new Error(`Chain "${to}" not found in ${token} warp route`);
-
-    const underlyingToApprove = src.warpType === 'collateral' ? src.underlying : null;
-    const dstBalanceToken = dst.warpType === 'collateral' ? dst.underlying : dst.warpToken;
-
-    const userPk = process.env.USER_PK;
-    if (!userPk) throw new Error('USER_PK not set in .env');
-    const user = privateKeyToAccount(`0x${userPk.replace('0x', '')}`);
-
-    const srcChain = makeViemChain(src.chainId, from, src.rpc);
-    const dstChain = makeViemChain(dst.chainId, to, dst.rpc);
-    const srcWallet = createWalletClient({ account: user, chain: srcChain, transport: http(src.rpc) });
-    const srcPublic = createPublicClient({ chain: srcChain, transport: http(src.rpc) });
-    const dstPublic = createPublicClient({ chain: dstChain, transport: http(dst.rpc) });
-
-    const userPadded = '0x000000000000000000000000' + user.address.slice(2);
-    const amountBigInt = BigInt(amount);
-
-    const forwardingBackend = process.env.FORWARDING_BACKEND || 'http://127.0.0.1:8080';
-    const addrResp = await fetch(
-      `${forwardingBackend}/forwarding-address?dest_domain=${dst.domainId}&dest_recipient=${userPadded}`
-    );
-    if (!addrResp.ok) throw new Error(`Failed to derive forwarding address: ${await addrResp.text()}`);
-    const { address: forwardAddr } = await addrResp.json();
-
-    const registerResp = await fetch(`${forwardingBackend}/forwarding-requests`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ forward_addr: forwardAddr, dest_domain: dst.domainId, dest_recipient: userPadded }),
-    });
-    if (!registerResp.ok) throw new Error(`Forwarding registration failed: ${await registerResp.text()}`);
-
-    const initialDstBal = await dstPublic.readContract({
-      address: dstBalanceToken, abi: hypTokenAbi, functionName: 'balanceOf', args: [user.address],
-    });
-
-    if (underlyingToApprove) {
-      const approveHash = await srcWallet.writeContract({
-        address: underlyingToApprove, abi: erc20Abi,
-        functionName: 'approve', args: [src.warpToken, amountBigInt],
-      });
-      await srcPublic.waitForTransactionReceipt({ hash: approveHash });
-    }
-
-    const txHash = await srcWallet.writeContract({
-      address: src.warpToken, abi: hypTokenAbi,
-      functionName: 'transferRemote',
-      args: [warp.celestiaDomainId, bech32ToBytes32(forwardAddr), amountBigInt],
-      value: 0n,
-    });
-    await srcPublic.waitForTransactionReceipt({ hash: txHash });
-
-    let arrived = false;
-    for (let i = 1; i <= 12; i++) {
-      await new Promise(r => setTimeout(r, 5000));
-      const bal = await dstPublic.readContract({
-        address: dstBalanceToken, abi: hypTokenAbi, functionName: 'balanceOf', args: [user.address],
-      });
-      if (bal !== initialDstBal && bal > 0n) { arrived = true; break; }
-    }
-
-    res.json({
-      success: arrived,
-      message: arrived
-        ? `Bridged ${token} from ${from} to ${to}`
-        : `Bridge tx sent but tokens haven't arrived yet. Check Hyperlane relayer.`,
-      txHash,
-    });
-  } catch (err) {
-    res.status(500).json({ error: `Bridge failed: ${err.message}` });
-  }
+// Bridge: server-side signing removed — wallet handles tx submission via /api/bridge/prepare
+app.post('/api/bridge', (_req, res) => {
+  res.status(400).json({ error: 'Server-side bridge removed. Connect a wallet and use the wallet-based bridge flow.' });
 });
 
 // Quote: request quote from aggregator
@@ -607,13 +508,10 @@ app.post('/api/quote', async (req, res) => {
   const { fromChainId, toChainId, amount, asset = 'USDC', address } = req.body;
   try {
     const state = readState();
-    const user = getUserAccount();
-
-    // Use connected wallet address if provided, otherwise fall back to USER_PK
-    let userAddress = user.address;
-    if (address && /^0x[0-9a-fA-F]{40}$/.test(address)) {
-      userAddress = address;
+    if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+      throw new Error('Missing or invalid "address". Connect a wallet first.');
     }
+    const userAddress = address;
 
     const fromChain = state.chains[fromChainId.toString()];
     const toChain = state.chains[toChainId.toString()];
@@ -665,87 +563,9 @@ app.post('/api/quote', async (req, res) => {
   }
 });
 
-// Order: approve tokens, sign EIP-712, prepend type byte, submit to aggregator
-app.post('/api/order', async (req, res) => {
-  const { quote, fromChainId, asset = 'USDC' } = req.body;
-  try {
-    const user = getUserAccount();
-    const state = readState();
-
-    // Resolve source chain for approval + signing
-    const srcChainId = fromChainId?.toString() || Object.keys(state.chains)[0];
-    const srcChain = state.chains[srcChainId];
-    if (!srcChain) throw new Error(`Source chain ${srcChainId} not found`);
-
-    const viemChain = makeViemChain(srcChain.chain_id, srcChain.name, srcChain.rpc);
-
-    const walletClient = createWalletClient({
-      account: user,
-      chain: viemChain,
-      transport: http(srcChain.rpc),
-    });
-    const publicClient = createPublicClient({
-      chain: viemChain,
-      transport: http(srcChain.rpc),
-    });
-
-    // Step 1: Approve token spending
-    // For Permit2: approve the Permit2 contract; for direct: approve the escrow
-    const token = srcChain.tokens[asset];
-    const payload = quote.order.payload;
-    const isPermit2Approval = payload.primaryType?.includes('Permit');
-    const spender = isPermit2Approval
-      ? payload.domain?.verifyingContract  // Permit2 contract
-      : srcChain.contracts?.input_settler_escrow;
-    if (token && spender) {
-      const approveHash = await walletClient.writeContract({
-        address: token.address,
-        abi: parseAbi(['function approve(address, uint256) returns (bool)']),
-        functionName: 'approve',
-        args: [spender, 100000000n], // 100 USDC allowance
-      });
-      await publicClient.waitForTransactionReceipt({ hash: approveHash });
-    }
-
-    // Step 2: Sign EIP-712 typed data with viem
-    // (payload already extracted above for approval target)
-
-    // Remove EIP712Domain from types (viem adds it automatically)
-    const types = { ...payload.types };
-    delete types.EIP712Domain;
-
-    // Coerce domain.chainId to number — the aggregator returns it as a string
-    // which causes viem to produce a different EIP-712 hash
-    const domain = { ...payload.domain };
-    if (typeof domain.chainId === 'string') {
-      domain.chainId = Number(domain.chainId);
-    }
-
-    const rawSignature = await user.signTypedData({
-      domain,
-      types,
-      primaryType: payload.primaryType,
-      message: payload.message,
-    });
-
-    // Prepend signature type byte: 0x00=Permit2, 0x01=EIP-3009, 0xff=self
-    const isPermit2 = payload.primaryType?.includes('Permit');
-    const prefix = isPermit2 ? '0x00' : '0x01';
-    const signature = prefix + rawSignature.slice(2);
-
-    // Step 4: Submit signed order to aggregator
-    const response = await fetch(`${AGGREGATOR_URL}/api/v1/orders`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ quoteResponse: quote, signature }),
-    });
-
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || data.error || JSON.stringify(data));
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+// Order: deprecated server-side signing — use /api/order/submit with wallet signature
+app.post('/api/order', (_req, res) => {
+  res.status(400).json({ error: 'Server-side signing removed. Connect a wallet and use the client-side signing flow.' });
 });
 
 // Order submit: forward a pre-signed order (for MetaMask / client-side signing flow)

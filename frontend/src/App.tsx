@@ -169,9 +169,9 @@ export default function App() {
   }, [])
 
   const loadBalances = useCallback(async () => {
+    if (!isConnected || !connectedAddress) { setBalances(null); return }
     try {
-      const addr = isConnected && connectedAddress ? connectedAddress : undefined
-      setBalances(await api.balances(addr))
+      setBalances(await api.balances(connectedAddress))
     } catch {}
   }, [isConnected, connectedAddress])
 
@@ -192,6 +192,7 @@ export default function App() {
 
   const handleGetQuote = async () => {
     if (!fromChain || !toChain || !amount) return
+    if (!isConnected || !connectedAddress) { setError('Connect a wallet first.'); setStep('error'); return }
     setStep('quoting'); setError(''); setQuote(null); setOrderId(''); setOrderStatus(null)
     try {
       const fromId = config!.chains[fromChain].chainId
@@ -199,8 +200,7 @@ export default function App() {
       const raw    = Math.round(parseFloat(amount) * 10 ** selectedTokenDecimals).toString()
       let resp: any
       try {
-        resp = await api.quote(fromId, toId, raw, asset,
-          isConnected && connectedAddress ? connectedAddress : undefined)
+        resp = await api.quote(fromId, toId, raw, asset, connectedAddress)
       } catch (fetchErr: any) {
         const msg: string = fetchErr?.message ?? ''
         // Only treat as network error if msg hasn't already been categorized by server.js
@@ -224,37 +224,33 @@ export default function App() {
 
   const handleAcceptQuote = async () => {
     if (!quote) return
+    if (!isConnected || !connectedAddress) { setError('Connect a wallet first.'); setStep('error'); return }
     setStep('signing'); setError('')
     try {
       const fromId    = config!.chains[fromChain].chainId
-      if (isConnected && connectedAddress) {
-        const chainInfo = config!.chains[fromChain]
-        const token     = chainInfo.tokens[asset]
-        await switchChainAsync({ chainId: fromId })
-        const payload   = quote.order.payload as any
-        const isPermit2 = payload.primaryType?.includes('Permit')
-        const spender   = isPermit2
-          ? (payload.domain?.verifyingContract as `0x${string}`)
-          : (chainInfo.contracts?.input_settler_escrow as `0x${string}`)
-        if (token && spender) {
-          await writeContractAsync({
-            address: token.address as `0x${string}`,
-            abi: parseAbi(['function approve(address, uint256) returns (bool)']),
-            functionName: 'approve', args: [spender, BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')], chainId: fromId,
-          })
-        }
-        const types = { ...payload.types }
-        delete types.EIP712Domain
-        const domain = { ...payload.domain }
-        if (typeof domain.chainId === 'string') domain.chainId = Number(domain.chainId)
-        const rawSig = await signTypedDataAsync({ domain, types, primaryType: payload.primaryType, message: payload.message })
-        const sig    = (isPermit2 ? '0x00' : '0x01') + rawSig.slice(2)
-        const resp   = await api.submitSignedOrder(quote, sig)
-        setOrderId(resp.orderId); setStep('polling'); startPolling(resp.orderId)
-      } else {
-        const resp = await api.submitOrder(quote, config!.chains[fromChain].chainId, asset)
-        setOrderId(resp.orderId); setStep('polling'); startPolling(resp.orderId)
+      const chainInfo = config!.chains[fromChain]
+      const token     = chainInfo.tokens[asset]
+      await switchChainAsync({ chainId: fromId })
+      const payload   = quote.order.payload as any
+      const isPermit2 = payload.primaryType?.includes('Permit')
+      const spender   = isPermit2
+        ? (payload.domain?.verifyingContract as `0x${string}`)
+        : (chainInfo.contracts?.input_settler_escrow as `0x${string}`)
+      if (token && spender) {
+        await writeContractAsync({
+          address: token.address as `0x${string}`,
+          abi: parseAbi(['function approve(address, uint256) returns (bool)']),
+          functionName: 'approve', args: [spender, BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')], chainId: fromId,
+        })
       }
+      const types = { ...payload.types }
+      delete types.EIP712Domain
+      const domain = { ...payload.domain }
+      if (typeof domain.chainId === 'string') domain.chainId = Number(domain.chainId)
+      const rawSig = await signTypedDataAsync({ domain, types, primaryType: payload.primaryType, message: payload.message })
+      const sig    = (isPermit2 ? '0x00' : '0x01') + rawSig.slice(2)
+      const resp   = await api.submitSignedOrder(quote, sig)
+      setOrderId(resp.orderId); setStep('polling'); startPolling(resp.orderId)
     } catch (err: any) { setError(err.message); setStep('error') }
   }
 
@@ -299,43 +295,40 @@ export default function App() {
       const fromId    = config!.chains[fromChain].chainId
       const rawAmount = Math.round(parseFloat(amount) * 10 ** selectedTokenDecimals).toString()
 
-      if (isConnected && connectedAddress) {
-        // Wallet-connected: server prepares the forwarding, wallet executes the txs
-        setSlowMsg('Preparing Celestia route…')
-        const prep = await api.bridgePrepare(fromName, toName, asset, connectedAddress, rawAmount)
-
-        await switchChainAsync({ chainId: fromId })
-
-        if (prep.needsApproval && prep.underlyingToken) {
-          setSlowMsg('Approving token…')
-          await writeContractAsync({
-            address: prep.underlyingToken as `0x${string}`,
-            abi: parseAbi(['function approve(address, uint256) returns (bool)']),
-            functionName: 'approve',
-            args: [prep.warpToken as `0x${string}`, BigInt(rawAmount)],
-            chainId: fromId,
-          })
-        }
-
-        setSlowMsg('Submitting bridge transaction…')
-        const txHash = await writeContractAsync({
-          address: prep.warpToken as `0x${string}`,
-          abi: parseAbi(['function transferRemote(uint32, bytes32, uint256) payable returns (bytes32)']),
-          functionName: 'transferRemote',
-          args: [prep.celestiaDomainId, prep.forwardingAddressBytes32 as `0x${string}`, BigInt(rawAmount)],
-          chainId: fromId,
-          value: 0n,
-          gas: 3_000_000n,
-        })
-
-        setSlowMsg(`Submitted (${txHash.slice(0, 10)}…). Tokens arrive in ~2 min via Celestia.`)
-        loadBalances()
-      } else {
-        // No wallet: server executes using USER_PK
-        const resp = await api.bridge(fromName, toName, rawAmount, asset)
-        setSlowMsg(resp.message)
-        loadBalances()
+      if (!isConnected || !connectedAddress) {
+        throw new Error('Connect a wallet to use the bridge.')
       }
+
+      // Wallet-connected: server prepares the forwarding, wallet executes the txs
+      setSlowMsg('Preparing Celestia route…')
+      const prep = await api.bridgePrepare(fromName, toName, asset, connectedAddress, rawAmount)
+
+      await switchChainAsync({ chainId: fromId })
+
+      if (prep.needsApproval && prep.underlyingToken) {
+        setSlowMsg('Approving token…')
+        await writeContractAsync({
+          address: prep.underlyingToken as `0x${string}`,
+          abi: parseAbi(['function approve(address, uint256) returns (bool)']),
+          functionName: 'approve',
+          args: [prep.warpToken as `0x${string}`, BigInt(rawAmount)],
+          chainId: fromId,
+        })
+      }
+
+      setSlowMsg('Submitting bridge transaction…')
+      const txHash = await writeContractAsync({
+        address: prep.warpToken as `0x${string}`,
+        abi: parseAbi(['function transferRemote(uint32, bytes32, uint256) payable returns (bytes32)']),
+        functionName: 'transferRemote',
+        args: [prep.celestiaDomainId, prep.forwardingAddressBytes32 as `0x${string}`, BigInt(rawAmount)],
+        chainId: fromId,
+        value: 0n,
+        gas: 3_000_000n,
+      })
+
+      setSlowMsg(`Submitted (${txHash.slice(0, 10)}…). Tokens arrive in ~2 min via Celestia.`)
+      loadBalances()
     } catch (err: any) {
       setSlowMsg(`Error: ${err.message}`)
     } finally {
@@ -904,7 +897,7 @@ export default function App() {
                           <div className="flex items-center justify-between px-3 py-1.5 bg-surface-0/50">
                             <div className="flex items-center gap-1.5">
                               <span className="text-gray-400">You</span>
-                              {(connectedAddress || config?.userAddress) && <CopyableAddress address={connectedAddress ?? config!.userAddress} />}
+                              {connectedAddress && <CopyableAddress address={connectedAddress} />}
                             </div>
                             <div className="flex gap-2.5 tabular-nums">
                               {asset && cb.balances.user[asset] && (
@@ -985,10 +978,10 @@ export default function App() {
                 <div className="p-5">
                   <span className="text-xs font-bold text-white block mb-3">System</span>
                   <div className="space-y-2">
-                    {config?.userAddress && (
+                    {connectedAddress && (
                       <div className="flex items-center justify-between">
-                        <span className="text-xs text-gray-400">User</span>
-                        <CopyableAddress address={config.userAddress} />
+                        <span className="text-xs text-gray-400">Wallet</span>
+                        <CopyableAddress address={connectedAddress} />
                       </div>
                     )}
                     {config?.solverAddress && (
