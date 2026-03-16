@@ -13,7 +13,11 @@ const ROOT = resolve(__dirname, '..');
 config({ path: resolve(ROOT, '.env') });
 
 const AGGREGATOR_URL = process.env.AGGREGATOR_URL || 'http://localhost:4000';
+const SOLVER_URL = process.env.SOLVER_URL || 'http://localhost:5001';
 const PORT = process.env.BACKEND_PORT || 3001;
+
+// Track order creation times to detect solver rejections
+const orderCreatedAt = new Map();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -587,18 +591,39 @@ app.post('/api/order/submit', async (req, res) => {
     const data = await response.json();
     console.log(`[order/submit] aggregator response: ${response.status}`, JSON.stringify(data).slice(0, 200));
     if (!response.ok) throw new Error(data.message || data.error || JSON.stringify(data));
+    if (data.orderId) orderCreatedAt.set(data.orderId, Date.now());
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Order status
+// Order status — checks solver directly when aggregator status is stuck on 'created'
 app.get('/api/order/:id', async (req, res) => {
   try {
     const response = await fetch(`${AGGREGATOR_URL}/api/v1/orders/${req.params.id}`);
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || data.error || JSON.stringify(data));
+
+    // If aggregator still says 'created' after a grace period, check the solver directly.
+    // The solver drops orders it rejects (e.g. unprofitable), returning 400 NOT_FOUND.
+    const createdTs = orderCreatedAt.get(req.params.id);
+    if (data.status === 'created' && createdTs && Date.now() - createdTs > 5_000) {
+      try {
+        const solverResp = await fetch(`${SOLVER_URL}/api/v1/orders/${req.params.id}`);
+        if (!solverResp.ok) {
+          const solverData = await solverResp.json().catch(() => ({}));
+          console.log(`[order/${req.params.id.slice(0,8)}] solver rejected: ${solverData.error || solverResp.status}`);
+          orderCreatedAt.delete(req.params.id);
+          return res.json({
+            ...data,
+            status: 'failed',
+            failureReason: 'Order rejected by solver — likely insufficient profit margin for gas costs. Try a larger amount.',
+          });
+        }
+      } catch { /* solver unreachable, keep aggregator status */ }
+    }
+
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });

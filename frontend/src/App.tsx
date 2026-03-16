@@ -691,6 +691,11 @@ export default function App() {
                           <CopyableAddress address={(orderStatus.fillTransaction as any).hash ?? orderId} />
                         </div>
                       )}
+                      {fail && (orderStatus as any).failureReason && (
+                        <p className="text-xs text-red-400/80 mt-2 leading-relaxed">
+                          {(orderStatus as any).failureReason}
+                        </p>
+                      )}
                     </div>
                   </div>
                 )

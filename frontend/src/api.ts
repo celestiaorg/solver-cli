@@ -80,6 +80,7 @@ export interface OrderStatus {
     destinationChainId?: string
     recipient?: string
   }
+  failureReason?: string
 }
 
 export interface HealthStatus {
