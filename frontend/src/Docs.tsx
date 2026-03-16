@@ -85,7 +85,7 @@ function Callout({ type, title, children }: CalloutProps) {
   const s = {
     info: { border: 'border-brand/40', bg: 'bg-brand/5', label: 'text-brand-light' },
     note: { border: 'border-amber-500/40', bg: 'bg-amber-500/5', label: 'text-amber-400' },
-    tip:  { border: 'border-emerald-500/40', bg: 'bg-emerald-500/5', label: 'text-emerald-400' },
+    tip: { border: 'border-emerald-500/40', bg: 'bg-emerald-500/5', label: 'text-emerald-400' },
   }[type]
   return (
     <div className={`border-l-2 ${s.border} ${s.bg} pl-4 pr-4 py-3.5 rounded-r-xl my-5`}>
@@ -102,7 +102,7 @@ function SectionDivider() {
 // Nav sections
 
 const NAV = [
-  { id: 'overview',   label: 'Overview',   icon: <IconBook /> },
+  { id: 'overview', label: 'Overview', icon: <IconBook /> },
   { id: 'fast-route', label: 'Fast Route', icon: <IconLightning /> },
   { id: 'slow-route', label: 'Slow Route', icon: <IconWave /> },
   { id: 'comparison', label: 'Comparison', icon: <IconScales /> },
@@ -160,11 +160,10 @@ export function Docs({ onClose }: { onClose: () => void }) {
             <button
               key={s.id}
               onClick={() => scrollTo(s.id)}
-              className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-colors duration-100 text-left w-full ${
-                active === s.id
-                  ? 'bg-brand/10 text-white border border-brand/20'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-surface-2/50'
-              }`}
+              className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] transition-colors duration-100 text-left w-full ${active === s.id
+                ? 'bg-brand/10 text-white border border-brand/20'
+                : 'text-gray-400 hover:text-gray-200 hover:bg-surface-2/50'
+                }`}
             >
               <span className={active === s.id ? 'text-brand-light' : 'text-gray-400'}>{s.icon}</span>
               {s.label}
@@ -181,11 +180,10 @@ export function Docs({ onClose }: { onClose: () => void }) {
             <button
               key={s.id}
               onClick={() => scrollTo(s.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all ${
-                active === s.id
-                  ? 'bg-brand/15 text-white border border-brand/25'
-                  : 'text-gray-400 hover:text-gray-200'
-              }`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs whitespace-nowrap transition-all ${active === s.id
+                ? 'bg-brand/15 text-white border border-brand/25'
+                : 'text-gray-400 hover:text-gray-200'
+                }`}
             >
               {s.label}
             </button>
@@ -198,12 +196,12 @@ export function Docs({ onClose }: { onClose: () => void }) {
 
             <section id="overview" className="scroll-mt-6">
               <div className="text-[10px] font-bold uppercase tracking-widest text-brand-light mb-3">Introduction</div>
-              <h1 className="text-[22px] font-bold text-white mb-4 leading-tight">What is Celestia Bridge?</h1>
+              <h1 className="text-[22px] font-bold text-white mb-4 leading-tight">Celestia Bridge</h1>
               <p className="text-[14.5px] text-gray-300 leading-relaxed mb-5">
                 Celestia Bridge is a cross-chain token transfer interface built on the{' '}
                 <span className="text-gray-200 font-medium">Open Intents Framework</span>, an open protocol for
-                expressing and fulfilling cross-chain user intents across EVM networks. Move tokens between chains
-                without managing bridges, liquidity pools, or multi-step transaction sequences yourself.
+                expressing and fulfilling cross-chain user intents across EVM networks. Different solvers compete
+                to offer users the best possible quote for their cross-chain transfers.
               </p>
               <p className="text-[14.5px] text-gray-300 leading-relaxed mb-8">
                 Two routing mechanisms let you choose between speed and trustlessness depending on your needs.
@@ -428,13 +426,11 @@ export function Docs({ onClose }: { onClose: () => void }) {
                   <div className="px-4 py-2.5 text-[10px] font-bold uppercase tracking-widest text-sky-400 bg-surface-1/50 border-l border-border/60">〜 Slow</div>
                 </div>
                 {[
-                  ['Speed',             '~15–30 seconds',          '~2 minutes'],
-                  ['Gas you pay',       'None',                    'Source chain tx fee'],
-                  ['Steps',             'Sign once',               'Approve + send (or just send)'],
-                  ['Requires solver',   'Yes',                     'No'],
-                  ['Trust model',       'Oracle + solver network', 'Celestia DA + Hyperlane'],
-                  ['Censorship risk',   'Solver can decline',      'Fully permissionless'],
-                  ['Best for',          'Speed, best rate',        'Trustlessness, sovereignty'],
+                  ['Speed', '~15–30 seconds', '~2 minutes'],
+                  ['Requires solver', 'Yes', 'No'],
+                  ['Trust model', 'Oracle + solver network', 'Hyperlane ISMs'],
+                  ['Censorship risk', 'Solver can decline', 'Permissionless'],
+                  ['Best for', 'Speed, best rate', 'Trustlessness, sovereignty'],
                 ].map(([feat, fast, slow], i) => (
                   <div key={feat} className={`grid grid-cols-3 ${i % 2 === 0 ? '' : 'bg-surface-1/15'}`}>
                     <div className="px-4 py-3 text-gray-300 font-medium">{feat}</div>
