@@ -108,7 +108,7 @@ solver-types = { git = "https://github.com/celestiaorg/oif-solver", branch = "jo
 assert_cmd = "2.0"
 mockall = "0.13"
 predicates = "3.0"
-tempfile = "3.8"
 solver-settlement-impls = { path = "../solver-settlement", features = ["testing"] }
 solver-storage = { git = "https://github.com/celestiaorg/oif-solver", branch = "jonas/fix-expose-api-server", features = ["testing"] }
+tempfile = "3.8"
 
