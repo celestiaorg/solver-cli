@@ -5264,7 +5264,7 @@ dependencies = [
 [[package]]
 name = "solver-account"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffix-expose-api-server#7fa3e779cdbaccf94609185d6a7fe65880d791d7"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Fdenylist#ecda6d828a9fce383e8605395b11701f68565b00"
 dependencies = [
  "alloy-consensus",
  "alloy-network",
@@ -5276,10 +5276,11 @@ dependencies = [
  "aws-config",
  "aws-sdk-kms",
  "hex",
+ "serde",
+ "serde_json",
  "solver-types",
  "thiserror 2.0.18",
  "tokio",
- "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]
@@ -5338,24 +5339,27 @@ dependencies = [
 [[package]]
 name = "solver-config"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffix-expose-api-server#7fa3e779cdbaccf94609185d6a7fe65880d791d7"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Fdenylist#ecda6d828a9fce383e8605395b11701f68565b00"
 dependencies = [
  "dotenvy",
  "regex",
  "rust_decimal",
  "serde",
+ "serde_json",
  "solver-types",
  "thiserror 2.0.18",
  "tokio",
- "toml 0.9.12+spec-1.1.0",
 ]
 
 [[package]]
 name = "solver-core"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffix-expose-api-server#7fa3e779cdbaccf94609185d6a7fe65880d791d7"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Fdenylist#ecda6d828a9fce383e8605395b11701f68565b00"
 dependencies = [
  "alloy-primitives",
+ "alloy-provider",
+ "alloy-rpc-types",
+ "alloy-sol-types",
  "chrono",
  "lru",
  "once_cell",
@@ -5373,14 +5377,13 @@ dependencies = [
  "solver-types",
  "thiserror 2.0.18",
  "tokio",
- "toml 0.9.12+spec-1.1.0",
  "tracing",
 ]
 
 [[package]]
 name = "solver-delivery"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffix-expose-api-server#7fa3e779cdbaccf94609185d6a7fe65880d791d7"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Fdenylist#ecda6d828a9fce383e8605395b11701f68565b00"
 dependencies = [
  "alloy-consensus",
  "alloy-network",
@@ -5402,14 +5405,13 @@ dependencies = [
  "solver-types",
  "thiserror 2.0.18",
  "tokio",
- "toml 0.9.12+spec-1.1.0",
  "tracing",
 ]
 
 [[package]]
 name = "solver-discovery"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffix-expose-api-server#7fa3e779cdbaccf94609185d6a7fe65880d791d7"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Fdenylist#ecda6d828a9fce383e8605395b11701f68565b00"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
@@ -5430,7 +5432,6 @@ dependencies = [
  "solver-types",
  "thiserror 2.0.18",
  "tokio",
- "toml 0.9.12+spec-1.1.0",
  "tower",
  "tower-http",
  "tracing",
@@ -5439,7 +5440,7 @@ dependencies = [
 [[package]]
 name = "solver-order"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffix-expose-api-server#7fa3e779cdbaccf94609185d6a7fe65880d791d7"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Fdenylist#ecda6d828a9fce383e8605395b11701f68565b00"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
@@ -5451,7 +5452,6 @@ dependencies = [
  "serde_json",
  "solver-types",
  "thiserror 2.0.18",
- "toml 0.9.12+spec-1.1.0",
  "tracing",
  "uuid",
 ]
@@ -5459,7 +5459,7 @@ dependencies = [
 [[package]]
 name = "solver-pricing"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffix-expose-api-server#7fa3e779cdbaccf94609185d6a7fe65880d791d7"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Fdenylist#ecda6d828a9fce383e8605395b11701f68565b00"
 dependencies = [
  "alloy-primitives",
  "async-trait",
@@ -5470,14 +5470,13 @@ dependencies = [
  "solver-types",
  "thiserror 2.0.18",
  "tokio",
- "toml 0.9.12+spec-1.1.0",
  "tracing",
 ]
 
 [[package]]
 name = "solver-service"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffix-expose-api-server#7fa3e779cdbaccf94609185d6a7fe65880d791d7"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Fdenylist#ecda6d828a9fce383e8605395b11701f68565b00"
 dependencies = [
  "alloy-primitives",
  "alloy-signer",
@@ -5513,7 +5512,6 @@ dependencies = [
  "subtle",
  "thiserror 2.0.18",
  "tokio",
- "toml 0.9.12+spec-1.1.0",
  "tower",
  "tower-http",
  "tracing",
@@ -5524,7 +5522,7 @@ dependencies = [
 [[package]]
 name = "solver-settlement"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffix-expose-api-server#7fa3e779cdbaccf94609185d6a7fe65880d791d7"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Fdenylist#ecda6d828a9fce383e8605395b11701f68565b00"
 dependencies = [
  "alloy-primitives",
  "alloy-provider",
@@ -5538,11 +5536,11 @@ dependencies = [
  "serde",
  "serde_json",
  "sha3",
+ "solver-delivery",
  "solver-storage",
  "solver-types",
  "thiserror 2.0.18",
  "tokio",
- "toml 0.9.12+spec-1.1.0",
  "tracing",
 ]
 
@@ -5568,7 +5566,7 @@ dependencies = [
 [[package]]
 name = "solver-storage"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffix-expose-api-server#7fa3e779cdbaccf94609185d6a7fe65880d791d7"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Fdenylist#ecda6d828a9fce383e8605395b11701f68565b00"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5580,7 +5578,6 @@ dependencies = [
  "solver-types",
  "thiserror 2.0.18",
  "tokio",
- "toml 0.9.12+spec-1.1.0",
  "tracing",
  "uuid",
 ]
@@ -5588,7 +5585,7 @@ dependencies = [
 [[package]]
 name = "solver-types"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffix-expose-api-server#7fa3e779cdbaccf94609185d6a7fe65880d791d7"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Fdenylist#ecda6d828a9fce383e8605395b11701f68565b00"
 dependencies = [
  "alloy-consensus",
  "alloy-contract",
@@ -5608,7 +5605,6 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
- "toml 0.9.12+spec-1.1.0",
  "tracing",
  "zeroize",
 ]
