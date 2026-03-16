@@ -242,6 +242,7 @@ fallbacks = ["coingecko"]
 # SETTLEMENT
 # ============================================================================
 [settlement]
+primary = "centralized"
 settlement_poll_interval_seconds = 12
 
 [settlement.implementations.centralized]

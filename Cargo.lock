@@ -5297,6 +5297,7 @@ dependencies = [
  "async-trait",
  "aws-config",
  "aws-sdk-kms",
+ "axum",
  "chrono",
  "clap",
  "colored",

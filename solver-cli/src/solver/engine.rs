@@ -108,17 +108,33 @@ async fn run_solver_from_config_impl(config_path: &Path) -> Result<()> {
     let api_enabled = config.api.as_ref().is_some_and(|api| api.enabled);
 
     if api_enabled {
-        let api_config = config.api.as_ref().unwrap().clone();
+        let mut api_config = config.api.as_ref().unwrap().clone();
         let api_solver = Arc::clone(&solver);
 
+        // The external port that clients (aggregator) connect to
+        let external_host = api_config.host.clone();
+        let external_port = api_config.port;
+
+        // Run the upstream solver API on an internal port. A lightweight proxy
+        // on the external port strips fields the aggregator doesn't understand
+        // (e.g. `settlementName` added in newer solver versions).
+        let internal_port = external_port + 1000;
+        api_config.port = internal_port;
+
         tracing::info!(
-            "Starting solver with API server on {}:{}",
-            api_config.host,
-            api_config.port
+            "Starting solver API on internal port {} with proxy on {}:{}",
+            internal_port,
+            external_host,
+            external_port
         );
 
         let solver_task = solver.run();
         let api_task = solver_service::server::start_server(api_config, api_solver);
+        let proxy_task = start_compat_proxy(
+            external_host,
+            external_port,
+            format!("http://127.0.0.1:{internal_port}"),
+        );
 
         tokio::select! {
             result = solver_task => {
@@ -129,6 +145,10 @@ async fn run_solver_from_config_impl(config_path: &Path) -> Result<()> {
                 tracing::info!("API server finished");
                 result.map_err(|e| anyhow::anyhow!("{}", e))?;
             }
+            result = proxy_task => {
+                tracing::info!("Proxy finished");
+                result?;
+            }
         }
     } else {
         tracing::info!("Starting solver (no API server)");
@@ -137,4 +157,129 @@ async fn run_solver_from_config_impl(config_path: &Path) -> Result<()> {
 
     tracing::info!("Solver stopped");
     Ok(())
+}
+
+/// Compatibility proxy that forwards requests to the internal solver API and
+/// strips fields from quote responses that the aggregator doesn't understand.
+#[cfg(feature = "solver-runtime")]
+async fn start_compat_proxy(
+    host: String,
+    port: u16,
+    upstream: String,
+) -> Result<()> {
+    use axum::{
+        body::Body,
+        extract::State,
+        http::{HeaderMap, Method, Uri},
+        response::{IntoResponse, Response},
+        routing::any,
+        Router,
+    };
+    use tokio::net::TcpListener;
+
+    #[derive(Clone)]
+    struct ProxyState {
+        client: reqwest::Client,
+        upstream: String,
+    }
+
+    async fn proxy_handler(
+        State(state): State<ProxyState>,
+        method: Method,
+        uri: Uri,
+        headers: HeaderMap,
+        body: Body,
+    ) -> Response {
+        let url = format!("{}{}", state.upstream, uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/"));
+        let body_bytes = match axum::body::to_bytes(body, 10 * 1024 * 1024).await {
+            Ok(b) => b,
+            Err(e) => {
+                return (axum::http::StatusCode::BAD_REQUEST, format!("body error: {e}")).into_response();
+            }
+        };
+
+        let mut req = state.client.request(method.clone(), &url);
+        for (key, val) in headers.iter() {
+            if key != "host" {
+                req = req.header(key, val);
+            }
+        }
+        req = req.body(body_bytes);
+
+        let resp = match req.send().await {
+            Ok(r) => r,
+            Err(e) => {
+                return (axum::http::StatusCode::BAD_GATEWAY, format!("upstream error: {e}")).into_response();
+            }
+        };
+
+        let status = resp.status();
+        let resp_headers = resp.headers().clone();
+        let resp_bytes = resp.bytes().await.unwrap_or_default();
+
+        // Strip `settlementName` from quote responses so the aggregator
+        // (which uses deny_unknown_fields) can parse them.
+        let is_quotes = uri.path().contains("/quotes");
+        let final_bytes = if is_quotes {
+            strip_settlement_name(&resp_bytes)
+        } else {
+            resp_bytes.to_vec()
+        };
+
+        let mut response = (status, final_bytes).into_response();
+        for (key, val) in resp_headers.iter() {
+            if key != "content-length" && key != "transfer-encoding" {
+                response.headers_mut().insert(key.clone(), val.clone());
+            }
+        }
+        response
+    }
+
+    let state = ProxyState {
+        client: reqwest::Client::new(),
+        upstream,
+    };
+
+    let app = Router::new()
+        .route("/{*path}", any(proxy_handler))
+        .route("/", any(proxy_handler))
+        .with_state(state);
+
+    let addr = format!("{host}:{port}");
+    let listener = TcpListener::bind(&addr).await?;
+    tracing::info!("Compatibility proxy listening on {addr}");
+
+    axum::serve(listener, app)
+        .await
+        .map_err(|e| anyhow::anyhow!("proxy error: {e}"))
+}
+
+/// Remove `settlementName` keys from JSON bytes.
+#[cfg(feature = "solver-runtime")]
+fn strip_settlement_name(bytes: &[u8]) -> Vec<u8> {
+    match serde_json::from_slice::<serde_json::Value>(bytes) {
+        Ok(mut val) => {
+            remove_key_recursive(&mut val, "settlementName");
+            serde_json::to_vec(&val).unwrap_or_else(|_| bytes.to_vec())
+        }
+        Err(_) => bytes.to_vec(),
+    }
+}
+
+#[cfg(feature = "solver-runtime")]
+fn remove_key_recursive(val: &mut serde_json::Value, key: &str) {
+    match val {
+        serde_json::Value::Object(map) => {
+            map.remove(key);
+            for v in map.values_mut() {
+                remove_key_recursive(v, key);
+            }
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr.iter_mut() {
+                remove_key_recursive(v, key);
+            }
+        }
+        _ => {}
+    }
 }
