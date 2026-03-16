@@ -317,7 +317,7 @@ impl ConfigSchema for CentralizedSettlementSchema {
                 ),
             ],
         );
-        schema.validate(&config)
+        schema.validate(config)
     }
 }
 
