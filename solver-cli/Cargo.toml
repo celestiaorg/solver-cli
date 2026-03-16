@@ -86,10 +86,10 @@ uuid = { version = "1.6", features = ["v4", "serde"] }
 # Unix process management
 [target.'cfg(unix)'.dependencies]
 alloy-primitives = { version = "1.0.37", features = ["std", "serde"], optional = true }
-axum = { version = "0.8", optional = true }
 alloy-provider = { version = "1.0", optional = true }
 alloy-rpc-types = { version = "1.0", optional = true }
 alloy-sol-types = { version = "1.0.37", optional = true }
+axum = { version = "0.8", optional = true }
 futures = { version = "0.3", optional = true }
 nix = { version = "0.28", features = ["signal", "process"] }
 rebalancer = { path = "../rebalancer" }

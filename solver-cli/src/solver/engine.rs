@@ -162,11 +162,7 @@ async fn run_solver_from_config_impl(config_path: &Path) -> Result<()> {
 /// Compatibility proxy that forwards requests to the internal solver API and
 /// strips fields from quote responses that the aggregator doesn't understand.
 #[cfg(feature = "solver-runtime")]
-async fn start_compat_proxy(
-    host: String,
-    port: u16,
-    upstream: String,
-) -> Result<()> {
+async fn start_compat_proxy(host: String, port: u16, upstream: String) -> Result<()> {
     use axum::{
         body::Body,
         extract::State,
@@ -190,11 +186,19 @@ async fn start_compat_proxy(
         headers: HeaderMap,
         body: Body,
     ) -> Response {
-        let url = format!("{}{}", state.upstream, uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/"));
+        let url = format!(
+            "{}{}",
+            state.upstream,
+            uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/")
+        );
         let body_bytes = match axum::body::to_bytes(body, 10 * 1024 * 1024).await {
             Ok(b) => b,
             Err(e) => {
-                return (axum::http::StatusCode::BAD_REQUEST, format!("body error: {e}")).into_response();
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    format!("body error: {e}"),
+                )
+                    .into_response();
             }
         };
 
@@ -209,7 +213,11 @@ async fn start_compat_proxy(
         let resp = match req.send().await {
             Ok(r) => r,
             Err(e) => {
-                return (axum::http::StatusCode::BAD_GATEWAY, format!("upstream error: {e}")).into_response();
+                return (
+                    axum::http::StatusCode::BAD_GATEWAY,
+                    format!("upstream error: {e}"),
+                )
+                    .into_response();
             }
         };
 
