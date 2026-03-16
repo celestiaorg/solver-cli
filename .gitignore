@@ -12,6 +12,7 @@ config/
 .rebalancer
 .docs/
 .DS_Store
+.continue
 .claude
 .config/
 

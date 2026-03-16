@@ -274,7 +274,10 @@ fn toml_to_json(value: &toml::Value) -> serde_json::Value {
         toml::Value::Datetime(d) => serde_json::Value::String(d.to_string()),
         toml::Value::Array(a) => serde_json::Value::Array(a.iter().map(toml_to_json).collect()),
         toml::Value::Table(t) => {
-            let map = t.iter().map(|(k, v)| (k.clone(), toml_to_json(v))).collect();
+            let map = t
+                .iter()
+                .map(|(k, v)| (k.clone(), toml_to_json(v)))
+                .collect();
             serde_json::Value::Object(map)
         }
     }
@@ -551,7 +554,8 @@ pub fn create_settlement(
     networks: &NetworksConfig,
     _storage: Arc<solver_storage::StorageService>,
 ) -> Result<Box<dyn SettlementInterface>, SettlementError> {
-    CentralizedSettlementSchema.validate(config)
+    CentralizedSettlementSchema
+        .validate(config)
         .map_err(|e| SettlementError::ValidationFailed(format!("Invalid configuration: {}", e)))?;
 
     let oracle_config = parse_oracle_config(config)?;
