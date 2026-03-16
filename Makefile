@@ -127,13 +127,9 @@ init: build
 	@$(SOLVER_CLI) init $(FORCE_FLAG)
 .PHONY: init
 
-## deploy-permit2: Deploy Permit2 contract to local Anvil chains (fetches bytecode from mainnet)
+## deploy-permit2: Deploy (or inject) Permit2 to all configured chains via solver-cli
 deploy-permit2:
-	@echo "Deploying Permit2 to local Anvil chains..."
-	@PERMIT2_CODE=$$(cast code 0x000000000022D473030F116dDEE9F6B43aC78BA3 --rpc-url https://eth.llamarpc.com 2>/dev/null) && \
-		cast rpc anvil_setCode 0x000000000022D473030F116dDEE9F6B43aC78BA3 "$$PERMIT2_CODE" --rpc-url http://127.0.0.1:8545 > /dev/null && \
-		cast rpc anvil_setCode 0x000000000022D473030F116dDEE9F6B43aC78BA3 "$$PERMIT2_CODE" --rpc-url http://127.0.0.1:8546 > /dev/null && \
-		echo "  Permit2 deployed at 0x000000000022D473030F116dDEE9F6B43aC78BA3 on anvil1 + anvil2"
+	@$(SOLVER_CLI) deploy-permit2
 .PHONY: deploy-permit2
 
 ## deploy: Deploy OIF contracts to all configured chains (use FORCE=1 to redeploy, CHAINS=a,b to limit)

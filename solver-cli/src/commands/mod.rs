@@ -3,6 +3,7 @@ pub mod balances;
 pub mod chain;
 pub mod configure;
 pub mod deploy;
+pub mod deploy_permit2;
 pub mod fund;
 pub mod init;
 pub mod intent;
