@@ -8,7 +8,6 @@ import { GrazProvider, WalletType } from 'graz';
 import {
   celestiatestnet3,
   cosmoshub,
-  mainnetChainsArray,
   testnetChainsArray,
 } from 'graz/chains';
 import { WagmiProvider } from 'wagmi';
@@ -16,7 +15,6 @@ import { WagmiProvider } from 'wagmi';
 import dynamic from 'next/dynamic';
 
 import {
-  cosmosPrimaryMainnetChainId,
   cosmosPrimaryTestnetChainId,
   defaultWagmiConfig,
   enabledCosmosWallets,
@@ -25,7 +23,6 @@ import {
   walletConnectOptions,
   web3ModalConfig,
 } from '@/connect-kit/constants';
-import { isEdenMainnet } from '@/lib/constants/eden-network';
 
 const ConnectKitProvider = dynamic(
   () => import('@/connect-kit').then(mod => mod.ConnectKitProvider),
@@ -40,40 +37,23 @@ const celestiaTestnetWithRpc = {
   rpc: 'https://rpc-1.testnet.celestia.nodes.guru',
 };
 
-const getGrazOptions = (isTestnet?: boolean) => {
-  const supportedChainIdMap = new Map(
-    ['celestia', 'neutron-1', 'stride-1', 'mocha-4'].map(chainId => [
-      chainId,
-      true,
-    ])
-  );
-  const enabledCosmosChains = isTestnet
-    ? testnetChainsArray.map(chain =>
-        chain.chainId === 'mocha-4' ? celestiaTestnetWithRpc : chain
-      )
-    : [
-        ...mainnetChainsArray.filter(chain =>
-          supportedChainIdMap.get(chain.chainId)
-        ),
-        celestiaTestnetWithRpc,
-      ];
-  return {
-    chains: [
-      ...enabledCosmosChains,
-      {
-        ...cosmoshub,
-        rpc: 'https://cosmos-rpc.stakeandrelax.net',
-      },
-    ],
-    defaultWallet: 'leap' as WalletType,
-    walletConnect: {
-      options: walletConnectOptions,
-      web3Modal: web3ModalConfig,
+const grazOptions = {
+  chains: [
+    ...testnetChainsArray.map(chain =>
+      chain.chainId === 'mocha-4' ? celestiaTestnetWithRpc : chain
+    ),
+    {
+      ...cosmoshub,
+      rpc: 'https://cosmos-rpc.stakeandrelax.net',
     },
-    autoReconnect: false,
-  };
+  ],
+  defaultWallet: 'leap' as WalletType,
+  walletConnect: {
+    options: walletConnectOptions,
+    web3Modal: web3ModalConfig,
+  },
+  autoReconnect: false,
 };
-const grazOptions = getGrazOptions(!isEdenMainnet);
 
 export const WalletConnectWrapper = ({
   children,
@@ -91,11 +71,7 @@ export const WalletConnectWrapper = ({
           <GrazProvider grazOptions={grazOptions}>
             <ConnectKitProvider
               multiChainConnect="all"
-              chainId={
-                isEdenMainnet
-                  ? cosmosPrimaryMainnetChainId
-                  : cosmosPrimaryTestnetChainId
-              }
+              chainId={cosmosPrimaryTestnetChainId}
               wallets={enabledCosmosWallets}
             >
               {children}

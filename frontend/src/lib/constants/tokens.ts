@@ -1,50 +1,42 @@
-// Token and chain configuration from hyperlane-ops registry deployments
+// Token and chain configuration for local anvil chains
 
 export const CHAIN_CONFIG = {
-  sepolia: {
-    chainId: 11155111,
-    domainId: 11155111,
-    name: 'Sepolia',
-    serverName: 'sepolia',
-    rpc: 'https://ethereum-sepolia-rpc.publicnode.com',
+  anvil1: {
+    chainId: 31337,
+    domainId: 131337,
+    name: 'Anvil1',
+    serverName: 'anvil1',
+    rpc: 'http://127.0.0.1:8545',
     logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png',
   },
-  eden: {
-    chainId: 3735928814,
-    domainId: 2147483647,
-    name: 'Eden Testnet',
-    serverName: 'eden',
-    rpc: 'https://ev-reth-eden-testnet.binarybuilders.services:8545/',
-    logo: '/favicon.png',
+  anvil2: {
+    chainId: 31338,
+    domainId: 31338,
+    name: 'Anvil2',
+    serverName: 'anvil2',
+    rpc: 'http://127.0.0.1:8546',
+    logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png',
   },
 } as const;
 
 export const CONTRACTS = {
-  sepolia: {
-    usdc: '0xf77764d1E232Ec088150a3E434678768f8774f21',
-    usdcWarpRoute: '0x22cCd0e1efc2beF46143eA00e3868A35ebA16113',
-    lbtc: '0x0A3eC97CA4082e83FeB77Fa69F127F0eAABD016E',
-    lbtcWarpRoute: '0x101612E45d8D1ebE8e2EB90373b7cCecB6F52F5C',
-    ethWarpRoute: '0xEEea7Edeb303A1D20F3742edfC66F188f805a28E',
-    inputSettler: '0x156AEa0bBdf1B9A338E2E382e473D18dFb263198',
-    outputSettler: '0xDc09667c8f29Bae5cd9A9c97C014834110C06f0E',
-    oracle: '0x9265b88c3AF6b1445fCA1C6b446978aD7a1bdAaE',
+  anvil1: {
+    usdc: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+    inputSettler: '0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E',
+    outputSettler: '0xc3e53F4d16Ae77Db1c982e75a937B9f60FE63690',
+    oracle: '0x67d269191c92Caf3cD7723F116c85e6E9bf55933',
   },
-  eden: {
-    usdc: '0x0C1c5a78669ea6cb269883ad1B65334319Aacfd7',
-    eth: '0xf8e7A4608AE1e77743FD83549b36E605213760b6',
-    lbtc: '0x4d46424A8AA50e7c585F218338BCCE4a9a992c0F',
-    tia: '0x43505da95A74Fa577FB9bB0Ce29E293FdF575011',
-    inputSettler: '0x2b3789733d542531642CB6B29ceDAf6865Fe1C53',
-    outputSettler: '0x272dF2585c54d6E135379f3Fb079508E80D10135',
-    oracle: '0x933D26259a4F031a3D836E529DD5dE9b097EFA86',
+  anvil2: {
+    usdc: '0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44',
+    inputSettler: '0xc5a5C42992dECbae36851359345FE25997F5C42d',
+    outputSettler: '0x67d269191c92Caf3cD7723F116c85e6E9bf55933',
+    oracle: '0x09635F643e140090A9A8Dcd712eD6285858ceBef',
   },
   celestia: {
-    domainId: 1297040200,
-    restUrl: 'https://api-mocha.pops.one',
+    domainId: 69420,
+    restUrl: 'http://127.0.0.1:1317',
   },
-  depositFactory: '0x6C7A87cCed5aF1Fd2ab4E19b20e2793e079bF81e',
-  forwardingService: 'http://51.15.252.63:8080',
+  forwardingService: 'http://127.0.0.1:8080',
 } as const;
 
 export interface TokenDef {
@@ -71,60 +63,13 @@ export const TOKENS: Record<string, TokenDef> = {
     decimals: 6,
     logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png',
     addresses: {
-      [CHAIN_CONFIG.sepolia.chainId]: {
-        token: CONTRACTS.sepolia.usdc,
-        warpRoute: CONTRACTS.sepolia.usdcWarpRoute,
+      [CHAIN_CONFIG.anvil1.chainId]: {
+        token: CONTRACTS.anvil1.usdc,
         type: 'collateral',
       },
-      [CHAIN_CONFIG.eden.chainId]: {
-        token: CONTRACTS.eden.usdc,
+      [CHAIN_CONFIG.anvil2.chainId]: {
+        token: CONTRACTS.anvil2.usdc,
         type: 'synthetic',
-      },
-    },
-  },
-  ETH: {
-    symbol: 'ETH',
-    name: 'Ether',
-    decimals: 18,
-    logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png',
-    addresses: {
-      [CHAIN_CONFIG.sepolia.chainId]: {
-        token: 'native',
-        warpRoute: CONTRACTS.sepolia.ethWarpRoute,
-        type: 'native',
-      },
-      [CHAIN_CONFIG.eden.chainId]: {
-        token: CONTRACTS.eden.eth,
-        type: 'synthetic',
-      },
-    },
-  },
-  LBTC: {
-    symbol: 'LBTC',
-    name: 'Lombard BTC',
-    decimals: 8,
-    logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599/logo.png',
-    addresses: {
-      [CHAIN_CONFIG.sepolia.chainId]: {
-        token: CONTRACTS.sepolia.lbtc,
-        warpRoute: CONTRACTS.sepolia.lbtcWarpRoute,
-        type: 'collateral',
-      },
-      [CHAIN_CONFIG.eden.chainId]: {
-        token: CONTRACTS.eden.lbtc,
-        type: 'synthetic',
-      },
-    },
-  },
-  TIA: {
-    symbol: 'TIA',
-    name: 'Celestia',
-    decimals: 18,
-    logo: '/favicon.png',
-    addresses: {
-      [CHAIN_CONFIG.eden.chainId]: {
-        token: CONTRACTS.eden.tia,
-        type: 'native',
       },
     },
   },

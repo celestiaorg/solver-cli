@@ -1,12 +1,6 @@
 import { Config, Connector } from 'wagmi';
 import { ConnectMutateAsync, DisconnectMutateAsync } from 'wagmi/query';
 
-import {
-  edenChainId,
-  edenChainName,
-  edenExplorerUrl,
-  edenRpcUrl,
-} from '@/lib/constants/eden-network';
 import { tryCatch } from '@/lib/utils';
 
 export async function disconnectEvmWallet(
@@ -31,16 +25,15 @@ export async function connectEvmWallet(
     await connect({ connector: wallet });
     await wallet.switchChain?.({
       addEthereumChainParameter: {
-        chainName: edenChainName,
+        chainName: 'Anvil1',
         nativeCurrency: {
           name: 'ETH',
           symbol: 'ETH',
           decimals: 18,
         },
-        blockExplorerUrls: [edenExplorerUrl],
-        rpcUrls: [edenRpcUrl],
+        rpcUrls: ['http://127.0.0.1:8545'],
       },
-      chainId: edenChainId,
+      chainId: 31337,
     });
   };
 

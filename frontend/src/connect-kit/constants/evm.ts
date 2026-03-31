@@ -1,148 +1,45 @@
 import type { Chain } from 'viem';
-import * as viemChains from 'viem/chains';
-import { createConfig, fallback, http } from 'wagmi';
-import { mainnet } from 'wagmi/chains';
+import { createConfig, http } from 'wagmi';
 
-import {
-  edenChainId,
-  edenChainName,
-  edenExplorerUrl,
-  edenRpcUrl,
-  isEdenMainnet,
-} from '@/lib/constants/eden-network';
-
-const rpcUrlConfig = {
-  batch: {
-    batchSize: 5,
-  },
-};
-
-const formaChain: Chain = {
-  id: 984_122,
-  name: 'Forma',
-  testnet: false,
-  nativeCurrency: {
-    name: 'TIA',
-    symbol: 'TIA',
-    decimals: 18,
-  },
-  rpcUrls: {
-    default: {
-      http: ['https://rpc.forma.art'],
-    },
-    public: {
-      http: ['https://rpc.forma.art'],
-    },
-  },
-  blockExplorers: {
-    default: {
-      name: 'Forma Explorer',
-      url: 'https://explorer.forma.art',
-    },
-  },
-  contracts: {
-    multicall3: {
-      address: '0xd53C6FFB123F7349A32980F87faeD8FfDc9ef079',
-      blockCreated: 252_705,
-    },
-  },
-};
-
-// https://chainlist.org/?search=evmos
-const evmosChain: Chain = {
-  id: 9001,
-  name: 'Evmos',
-  testnet: false,
-  nativeCurrency: {
-    name: 'Evmos',
-    symbol: 'EVMOS',
-    decimals: 18,
-  },
-  rpcUrls: {
-    default: {
-      http: ['https://evmos.lava.build'],
-    },
-    public: {
-      http: ['https://evmos.lava.build'],
-    },
-  },
-  blockExplorers: {
-    default: {
-      name: 'Escan',
-      url: 'https://escan.live',
-    },
-  },
-  contracts: {
-    multicall3: {
-      address: '0xcA11bde05977b3631167028862bE2a173976CA11',
-    },
-  },
-};
-
-// https://chainlist.org/?search=inj
-const injectiveChain: Chain = {
-  id: 2525,
-  name: 'inEVM',
-  testnet: false,
-  nativeCurrency: {
-    name: 'Injective',
-    symbol: 'INJ',
-    decimals: 18,
-  },
-  rpcUrls: {
-    default: {
-      http: ['https://mainnet.rpc.inevm.com/http'],
-    },
-    public: {
-      http: ['https://mainnet.rpc.inevm.com/http'],
-    },
-  },
-  blockExplorers: {
-    default: {
-      name: 'inEVM Explorer',
-      url: 'https://explorer.inevm.com/',
-    },
-  },
-};
-
-const edenChain: Chain = {
-  id: edenChainId,
-  name: edenChainName,
-  testnet: !isEdenMainnet,
+const anvil1Chain: Chain = {
+  id: 31337,
+  name: 'Anvil1',
+  testnet: true,
   nativeCurrency: {
     name: 'Ethereum',
     symbol: 'ETH',
     decimals: 18,
   },
   rpcUrls: {
-    default: { http: [edenRpcUrl] },
-    public: { http: [edenRpcUrl] },
+    default: { http: ['http://127.0.0.1:8545'] },
+    public: { http: ['http://127.0.0.1:8545'] },
   },
-  blockExplorers: {
-    default: {
-      name: 'Binary Builders',
-      url: edenExplorerUrl,
-    },
+};
+
+const anvil2Chain: Chain = {
+  id: 31338,
+  name: 'Anvil2',
+  testnet: true,
+  nativeCurrency: {
+    name: 'Ethereum',
+    symbol: 'ETH',
+    decimals: 18,
+  },
+  rpcUrls: {
+    default: { http: ['http://127.0.0.1:8546'] },
+    public: { http: ['http://127.0.0.1:8546'] },
   },
 };
 
 export const supportedEVMChains: ReadonlyArray<Chain> = [
-  formaChain,
-  evmosChain,
-  injectiveChain,
-  edenChain,
-  ...Object.values(viemChains),
+  anvil1Chain,
+  anvil2Chain,
 ];
 
 export const defaultWagmiConfig = createConfig({
-  chains: [mainnet, ...supportedEVMChains],
+  chains: [anvil1Chain, anvil2Chain],
   transports: {
-    ...Object.fromEntries(supportedEVMChains.map(chain => [chain.id, http()])),
-    [mainnet.id]: fallback([
-      http('https://eth.llamarpc.com', rpcUrlConfig),
-      http('https://ethereum.blockpi.network/v1/rpc/public', rpcUrlConfig),
-      http('https://eth-mainnet.public.blastapi.io', rpcUrlConfig),
-      http('https://1rpc.io/eth', rpcUrlConfig),
-    ]),
+    [anvil1Chain.id]: http('http://127.0.0.1:8545'),
+    [anvil2Chain.id]: http('http://127.0.0.1:8546'),
   },
 });

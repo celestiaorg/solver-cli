@@ -50,7 +50,7 @@ type Step =
   | 'done'
   | 'error';
 
-const CHAINS = [CHAIN_CONFIG.sepolia, CHAIN_CONFIG.eden];
+const CHAINS = [CHAIN_CONFIG.anvil1, CHAIN_CONFIG.anvil2];
 const balanceOfAbi = parseAbi([
   'function balanceOf(address) view returns (uint256)',
 ]);
@@ -202,9 +202,9 @@ function CrossChainTransfer({
   const { writeContractAsync } = useWriteContract();
 
   const [fromChainId, setFromChainId] = useState<number>(
-    CHAIN_CONFIG.sepolia.chainId
+    CHAIN_CONFIG.anvil1.chainId
   );
-  const [toChainId, setToChainId] = useState<number>(CHAIN_CONFIG.eden.chainId);
+  const [toChainId, setToChainId] = useState<number>(CHAIN_CONFIG.anvil2.chainId);
   const [token, setToken] = useState('USDC');
   const [amount, setAmount] = useState('');
   const [step, setStep] = useState<Step>('idle');
@@ -705,10 +705,10 @@ function ExchangeDeposit({
   onConnect: () => void;
 }) {
   const [sourceChainId, setSourceChainId] = useState<number>(
-    CHAIN_CONFIG.sepolia.chainId
+    CHAIN_CONFIG.anvil1.chainId
   );
   const [destChainId, setDestChainId] = useState<number>(
-    CHAIN_CONFIG.eden.chainId
+    CHAIN_CONFIG.anvil2.chainId
   );
   const [token, setToken] = useState('USDC');
   const [depositInfo, setDepositInfo] = useState<{
@@ -726,7 +726,7 @@ function ExchangeDeposit({
   const sourceChain = CHAINS.find(c => c.chainId === sourceChainId)!;
   const destChain = CHAINS.find(c => c.chainId === destChainId)!;
   const sourceChains = CHAINS.filter(
-    c => c.chainId !== CHAIN_CONFIG.eden.chainId
+    c => c.chainId !== CHAIN_CONFIG.anvil2.chainId
   );
   const destChains = CHAINS.filter(c => c.chainId !== sourceChainId);
   const cexTokens = ['USDC', 'ETH', 'LBTC'];
