@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tokio::time::{sleep, Duration};
+use tokio::time::{sleep, Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 const LOG_QUERY_BLOCK_WINDOW: u64 = 10_000;
@@ -148,11 +148,49 @@ struct FillEvent {
     fill_chain_id: u64, // Chain where this fill happened (destination)
 }
 
+/// Per-chain backoff state for rate-limit handling.
+struct ChainBackoff {
+    /// Next time we're allowed to poll this chain.
+    ready_at: Instant,
+    /// Current backoff duration (doubles on each consecutive failure, resets on success).
+    current: Duration,
+}
+
+impl ChainBackoff {
+    const MIN_BACKOFF: Duration = Duration::from_secs(5);
+    const MAX_BACKOFF: Duration = Duration::from_secs(120);
+
+    fn new() -> Self {
+        Self {
+            ready_at: Instant::now(),
+            current: Self::MIN_BACKOFF,
+        }
+    }
+
+    fn record_failure(&mut self) {
+        self.ready_at = Instant::now() + self.current;
+        warn!(
+            "Backing off for {}s before next poll",
+            self.current.as_secs()
+        );
+        self.current = (self.current * 2).min(Self::MAX_BACKOFF);
+    }
+
+    fn record_success(&mut self) {
+        self.current = Self::MIN_BACKOFF;
+    }
+
+    fn is_ready(&self) -> bool {
+        Instant::now() >= self.ready_at
+    }
+}
+
 pub struct OracleOperator {
     config: OracleConfig,
     operator_signer: TxSigner,
     providers: HashMap<u64, Arc<WalletHttpProvider>>,
     state: Arc<Mutex<StateManager>>,
+    backoffs: Mutex<HashMap<u64, ChainBackoff>>,
 }
 
 impl OracleOperator {
@@ -219,6 +257,7 @@ impl OracleOperator {
             operator_signer,
             providers,
             state: Arc::new(Mutex::new(state_manager)),
+            backoffs: Mutex::new(HashMap::new()),
         })
     }
 
@@ -253,13 +292,36 @@ impl OracleOperator {
     }
 
     async fn poll_and_process(&self) -> Result<()> {
-        // Poll each chain for new fills
+        // Poll each chain for new fills, respecting per-chain backoff
         for chain_config in &self.config.chains {
-            if let Err(e) = self
-                .process_chain(chain_config.chain_id, chain_config)
-                .await
+            let chain_id = chain_config.chain_id;
+
+            // Check backoff
             {
-                warn!("Error processing chain {}: {}", chain_config.chain_id, e);
+                let backoffs = self.backoffs.lock().await;
+                if let Some(backoff) = backoffs.get(&chain_id) {
+                    if !backoff.is_ready() {
+                        debug!("Chain {} still in backoff, skipping", chain_id);
+                        continue;
+                    }
+                }
+            }
+
+            match self.process_chain(chain_id, chain_config).await {
+                Ok(()) => {
+                    let mut backoffs = self.backoffs.lock().await;
+                    if let Some(backoff) = backoffs.get_mut(&chain_id) {
+                        backoff.record_success();
+                    }
+                }
+                Err(e) => {
+                    warn!("Error processing chain {}: {}", chain_id, e);
+                    let mut backoffs = self.backoffs.lock().await;
+                    backoffs
+                        .entry(chain_id)
+                        .or_insert_with(ChainBackoff::new)
+                        .record_failure();
+                }
             }
         }
 
@@ -656,7 +718,7 @@ impl OracleOperator {
         let tx = alloy::rpc::types::TransactionRequest::default()
             .to(oracle_address)
             .input(call.abi_encode().into())
-            .gas_limit(500_000);
+            .gas_limit(80_000);
 
         // Send transaction (wallet handles signing)
         let receipt = provider.send_transaction(tx).await?.get_receipt().await?;
