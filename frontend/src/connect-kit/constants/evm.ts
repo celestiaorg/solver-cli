@@ -1,9 +1,11 @@
 import type { Chain } from 'viem';
 import { createConfig, http } from 'wagmi';
 
-const anvil1Chain: Chain = {
-  id: 31337,
-  name: 'Anvil1',
+import { CHAIN_CONFIG } from '@/lib/constants/tokens';
+
+const chains: Chain[] = Object.values(CHAIN_CONFIG).map(c => ({
+  id: c.chainId,
+  name: c.name,
   testnet: true,
   nativeCurrency: {
     name: 'Ethereum',
@@ -11,35 +13,14 @@ const anvil1Chain: Chain = {
     decimals: 18,
   },
   rpcUrls: {
-    default: { http: ['http://127.0.0.1:8545'] },
-    public: { http: ['http://127.0.0.1:8545'] },
+    default: { http: [c.rpc] },
+    public: { http: [c.rpc] },
   },
-};
+}));
 
-const anvil2Chain: Chain = {
-  id: 31338,
-  name: 'Anvil2',
-  testnet: true,
-  nativeCurrency: {
-    name: 'Ethereum',
-    symbol: 'ETH',
-    decimals: 18,
-  },
-  rpcUrls: {
-    default: { http: ['http://127.0.0.1:8546'] },
-    public: { http: ['http://127.0.0.1:8546'] },
-  },
-};
-
-export const supportedEVMChains: ReadonlyArray<Chain> = [
-  anvil1Chain,
-  anvil2Chain,
-];
+export const supportedEVMChains: ReadonlyArray<Chain> = chains;
 
 export const defaultWagmiConfig = createConfig({
-  chains: [anvil1Chain, anvil2Chain],
-  transports: {
-    [anvil1Chain.id]: http('http://127.0.0.1:8545'),
-    [anvil2Chain.id]: http('http://127.0.0.1:8546'),
-  },
+  chains: chains as any,
+  transports: Object.fromEntries(chains.map(c => [c.id, http(c.rpcUrls.default.http[0])])),
 });

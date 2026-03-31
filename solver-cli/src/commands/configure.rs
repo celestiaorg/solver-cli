@@ -138,7 +138,7 @@ impl ConfigureCommand {
         ));
 
         // Generate aggregator config directly where the aggregator reads it
-        let aggregator_config_path = project_dir.join("oif/oif-aggregator/config/config.json");
+        let aggregator_config_path = project_dir.join(".config/aggregator.json");
         ConfigGenerator::write_aggregator_config(&state, &aggregator_config_path).await?;
         print_success(&format!(
             "Aggregator config written to {:?}",

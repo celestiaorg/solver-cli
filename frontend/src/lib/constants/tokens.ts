@@ -1,9 +1,10 @@
-// Token and chain configuration for local anvil chains
+// Auto-generated from .config/state.json — do not edit manually
+// Regenerate with: make configure
 
 export const CHAIN_CONFIG = {
   anvil1: {
     chainId: 31337,
-    domainId: 131337,
+    domainId: 31337,
     name: 'Anvil1',
     serverName: 'anvil1',
     rpc: 'http://127.0.0.1:8545',
@@ -59,16 +60,16 @@ export interface TokenDef {
 export const TOKENS: Record<string, TokenDef> = {
   USDC: {
     symbol: 'USDC',
-    name: 'USD Coin',
+    name: 'USDC',
     decimals: 6,
-    logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png',
+    logo: 'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png',
     addresses: {
       [CHAIN_CONFIG.anvil1.chainId]: {
-        token: CONTRACTS.anvil1.usdc,
+        token: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
         type: 'collateral',
       },
       [CHAIN_CONFIG.anvil2.chainId]: {
-        token: CONTRACTS.anvil2.usdc,
+        token: '0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44',
         type: 'synthetic',
       },
     },

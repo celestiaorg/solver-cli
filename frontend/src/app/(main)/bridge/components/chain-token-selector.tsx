@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { CHAIN_CONFIG, TOKENS } from '@/lib/constants/tokens';
 
-const CHAINS = [CHAIN_CONFIG.anvil1, CHAIN_CONFIG.anvil2];
+const CHAINS = Object.values(CHAIN_CONFIG);
 
 export function ChainSelector({
   value,

@@ -50,7 +50,7 @@ type Step =
   | 'done'
   | 'error';
 
-const CHAINS = [CHAIN_CONFIG.anvil1, CHAIN_CONFIG.anvil2];
+const CHAINS = Object.values(CHAIN_CONFIG);
 const balanceOfAbi = parseAbi([
   'function balanceOf(address) view returns (uint256)',
 ]);
@@ -202,9 +202,9 @@ function CrossChainTransfer({
   const { writeContractAsync } = useWriteContract();
 
   const [fromChainId, setFromChainId] = useState<number>(
-    CHAIN_CONFIG.anvil1.chainId
+    CHAINS[0].chainId
   );
-  const [toChainId, setToChainId] = useState<number>(CHAIN_CONFIG.anvil2.chainId);
+  const [toChainId, setToChainId] = useState<number>(CHAINS[1].chainId);
   const [token, setToken] = useState('USDC');
   const [amount, setAmount] = useState('');
   const [step, setStep] = useState<Step>('idle');
@@ -292,26 +292,67 @@ function CrossChainTransfer({
 
   const signAndSubmit = async () => {
     if (!quote || !address) return;
-    setStep('signing');
+    setStep('approving');
     setError(null);
     try {
       if (!(await ensureChain())) {
         setStep('quoted');
         return;
       }
+      // Ensure token is approved to Permit2
+      const permit2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
+      const tokenDef = TOKENS[token];
+      const tokenAddr = tokenDef?.addresses[fromChainId];
+      if (tokenAddr && tokenAddr.token !== 'native') {
+        const { createPublicClient, http: viemHttp, maxUint256 } = await import('viem');
+        const client = createPublicClient({ transport: viemHttp(fromChain.rpc) });
+        const allowance = await client.readContract({
+          address: tokenAddr.token as `0x${string}`,
+          abi: balanceOfAbi,
+          functionName: 'balanceOf',
+          args: [address as `0x${string}`],
+        }).catch(() => BigInt(0));
+        // Check Permit2 allowance
+        const currentAllowance = await client.readContract({
+          address: tokenAddr.token as `0x${string}`,
+          abi: [{ inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }], name: 'allowance', outputs: [{ type: 'uint256' }], stateMutability: 'view', type: 'function' }] as const,
+          functionName: 'allowance',
+          args: [address as `0x${string}`, permit2 as `0x${string}`],
+        }).catch(() => BigInt(0));
+        const d = tokenDef?.decimals ?? 6;
+        const needed = parseUnits(amount, d);
+        if (currentAllowance < needed) {
+          const approveHash = await writeContractAsync({
+            address: tokenAddr.token as `0x${string}`,
+            abi: erc20Abi,
+            functionName: 'approve',
+            args: [permit2 as `0x${string}`, maxUint256],
+          });
+          await client.waitForTransactionReceipt({ hash: approveHash });
+        }
+      }
+      setStep('signing');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const p = quote.order.payload as any;
+      // Remove EIP712Domain from types — wagmi builds it from the domain param
+      const { EIP712Domain, ...sigTypes } = p.types;
+      // Ensure chainId is a number (aggregator may return string)
+      const domain = { ...p.domain };
+      if (typeof domain.chainId === 'string') domain.chainId = Number(domain.chainId);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const sig = await signTypedDataAsync({
-        domain: p.domain,
-        types: p.types,
+      const rawSig = await signTypedDataAsync({
+        domain,
+        types: sigTypes,
         primaryType: p.primaryType,
         message: p.message,
       } as any);
+      // Add OIF signature prefix: 0x00 for Permit2, 0x01 for others
+      const isPermit2 = p.primaryType?.includes('Permit') ?? false;
+      const sig = (isPermit2 ? '0x00' : '0x01') + rawSig.slice(2);
       setStep('submitted');
       const result = await transferApi.submitOrder(
         quote,
-        '0x00' + sig.slice(2)
+        sig
       );
       setOrderId(result.orderId);
       setStep('polling');
@@ -338,8 +379,15 @@ function CrossChainTransfer({
         } catch {
           /* keep polling */
         }
+        if (count > 15 && s === 'created') {
+          setError('Order timed out — solver may have rejected it');
+          setStep('error');
+          clearInterval(pollRef.current!);
+          return;
+        }
         if (count > 60) {
-          setStep('done');
+          setError('Order timed out');
+          setStep('error');
           clearInterval(pollRef.current!);
         }
       }, 2000);
@@ -705,10 +753,10 @@ function ExchangeDeposit({
   onConnect: () => void;
 }) {
   const [sourceChainId, setSourceChainId] = useState<number>(
-    CHAIN_CONFIG.anvil1.chainId
+    CHAINS[0].chainId
   );
   const [destChainId, setDestChainId] = useState<number>(
-    CHAIN_CONFIG.anvil2.chainId
+    CHAINS[1].chainId
   );
   const [token, setToken] = useState('USDC');
   const [depositInfo, setDepositInfo] = useState<{
@@ -726,7 +774,7 @@ function ExchangeDeposit({
   const sourceChain = CHAINS.find(c => c.chainId === sourceChainId)!;
   const destChain = CHAINS.find(c => c.chainId === destChainId)!;
   const sourceChains = CHAINS.filter(
-    c => c.chainId !== CHAIN_CONFIG.anvil2.chainId
+    c => c.chainId !== CHAINS[1].chainId
   );
   const destChains = CHAINS.filter(c => c.chainId !== sourceChainId);
   const cexTokens = ['USDC', 'ETH', 'LBTC'];

@@ -7,6 +7,7 @@ logs/
 .anvil1.pid
 .anvil2.pid
 .env
+.env.*
 .aggregator/
 config/
 .solver

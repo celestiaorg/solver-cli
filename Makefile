@@ -144,6 +144,7 @@ deploy: build
 ## configure: Generate solver configuration
 configure: build
 	@$(SOLVER_CLI) configure
+	@./scripts/generate-frontend-config.sh
 .PHONY: configure
 
 ## fund: Fund solver with tokens on anvil1 (anvil2 gets tokens via 'make rebalance')
@@ -281,6 +282,7 @@ aggregator-start:
 	@echo "Starting OIF aggregator on port 4000..."
 	@test -x .aggregator/bin/oif-aggregator || \
 		cargo install --git https://github.com/celestiaorg/oif-aggregator --branch jonas/freeze-v0.2.0 oif-aggregator --root .aggregator --force
+	@mkdir -p config && cp -f .config/aggregator.json config/config.json
 	@RUST_LOG=info .aggregator/bin/oif-aggregator
 .PHONY: aggregator-start
 

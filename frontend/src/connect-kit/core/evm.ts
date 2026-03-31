@@ -1,7 +1,10 @@
 import { Config, Connector } from 'wagmi';
 import { ConnectMutateAsync, DisconnectMutateAsync } from 'wagmi/query';
 
+import { CHAIN_CONFIG } from '@/lib/constants/tokens';
 import { tryCatch } from '@/lib/utils';
+
+const firstChain = Object.values(CHAIN_CONFIG)[0];
 
 export async function disconnectEvmWallet(
   wallet: Connector,
@@ -25,15 +28,15 @@ export async function connectEvmWallet(
     await connect({ connector: wallet });
     await wallet.switchChain?.({
       addEthereumChainParameter: {
-        chainName: 'Anvil1',
+        chainName: firstChain.name,
         nativeCurrency: {
           name: 'ETH',
           symbol: 'ETH',
           decimals: 18,
         },
-        rpcUrls: ['http://127.0.0.1:8545'],
+        rpcUrls: [firstChain.rpc],
       },
-      chainId: 31337,
+      chainId: firstChain.chainId,
     });
   };
 
