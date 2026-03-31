@@ -15,7 +15,7 @@ build:
 ## build-all: Build all service binaries (solver-cli, oracle-operator, oif-aggregator)
 build-all: build
 	@cd oracle-operator && cargo build --release
-	@cargo install --git https://github.com/celestiaorg/oif-aggregator --branch jonas/freeze-v0.2.0 --root .aggregator --force 2>&1 | tail -1
+	@cargo install --git https://github.com/celestiaorg/oif-aggregator --branch jonas/freeze-v0.2.0 oif-aggregator --root .aggregator --force 2>&1 | tail -1
 .PHONY: build-all
 
 ## fmt: Format all Rust workspace crates with rustfmt
@@ -93,8 +93,8 @@ stop:
 	@pkill -9 -f "solver-cli solver start" 2>/dev/null || true
 	@pkill -9 -f oracle-operator 2>/dev/null || true
 	@pkill -9 -f "oif-aggregator" 2>/dev/null || true
-	@pkill -9 -f "node server.js" 2>/dev/null || true
-	@pkill -9 -f "vite" 2>/dev/null || true
+	@pkill -9 -f "tsx.*server/index.ts" 2>/dev/null || true
+	@pkill -9 -f "next dev" 2>/dev/null || true
 	@# Clean Hyperlane artifacts (Anvil state is wiped by docker down -v, so these are stale)
 	@rm -f hyperlane/hyperlane-cosmosnative.json hyperlane/hyperlane-addresses.json
 	@rm -f hyperlane/registry/chains/anvil1/addresses.yaml hyperlane/registry/chains/anvil2/addresses.yaml
@@ -280,7 +280,7 @@ rebalancer: rebalancer-start
 aggregator-start:
 	@echo "Starting OIF aggregator on port 4000..."
 	@test -x .aggregator/bin/oif-aggregator || \
-		cargo install --git https://github.com/celestiaorg/oif-aggregator --branch jonas/freeze-v0.2.0 --root .aggregator --force
+		cargo install --git https://github.com/celestiaorg/oif-aggregator --branch jonas/freeze-v0.2.0 oif-aggregator --root .aggregator --force
 	@RUST_LOG=info .aggregator/bin/oif-aggregator
 .PHONY: aggregator-start
 
@@ -335,15 +335,12 @@ reset: clean
 	@$(MAKE) setup FORCE=1
 .PHONY: reset
 
-## frontend: Start the frontend (backend API + Vite dev server)
+## frontend: Start the frontend (backend API + Next.js dev server)
 frontend:
 	@echo "Installing frontend dependencies..."
-	@cd frontend && npm install --silent 2>/dev/null
-	@echo "Starting frontend backend (port 3001)..."
-	@cd frontend && node server.js &
-	@sleep 2
-	@echo "Starting Vite dev server (port 5173)..."
-	@cd frontend && npx vite --host
+	@cd frontend && pnpm install --silent 2>/dev/null
+	@echo "Starting eden-portal (server + Next.js on port 3000)..."
+	@cd frontend && pnpm dev
 .PHONY: frontend
 
 ## mvp: Run the full MVP demo (all services + frontend)

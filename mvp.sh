@@ -89,7 +89,7 @@ echo "  ┌───────────────────────
 echo "  │               MVP Demo Ready!                       │"
 echo "  ├─────────────────────────────────────────────────────┤"
 echo "  │                                                     │"
-echo "  │   Frontend:     http://localhost:5173               │"
+echo "  │   Frontend:     http://localhost:3000               │"
 echo "  │   Backend API:  http://localhost:3001/api           │"
 echo "  │   Aggregator:   http://localhost:4000               │"
 echo "  │   Solver:       http://localhost:3000               │"

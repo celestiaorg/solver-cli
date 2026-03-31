@@ -15,7 +15,7 @@ RUN go build -tags nomsgpack -o hyp ./cmd/hyp
 FROM node:24-slim
 
 # Install the hyperlane CLI (used for EVM deployment)
-RUN npm install -g @hyperlane-xyz/cli
+RUN npm install -g @hyperlane-xyz/cli@25.5.0
 
 # Install system packages
 RUN apt-get update && \

@@ -23,8 +23,15 @@ config/
 
 # Frontend build artifacts
 frontend/node_modules/
+frontend/.next/
 frontend/dist/
+frontend/out/
+frontend/.env.local
+packages/*/node_modules/
+packages/*/dist/
 *.tsbuildinfo
+node_modules/
+pnpm-lock.yaml
 
 # Hyperlane CLI binary
 hyperlane/hyp
