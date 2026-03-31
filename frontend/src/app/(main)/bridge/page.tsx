@@ -4,11 +4,13 @@ import {
   ArrowsDownUp,
   Bank,
   CheckCircle,
+  Info,
   Lightning,
   Path,
   Spinner as SpinnerIcon,
   Wallet,
   Warning,
+  X,
 } from '@phosphor-icons/react';
 import { formatUnits, parseAbi, parseUnits } from 'viem';
 import {
@@ -38,7 +40,8 @@ import {
   TokenSelector,
 } from './components/chain-token-selector';
 
-type Mode = 'fast' | 'slow' | 'exchange';
+type Mode = 'transfer' | 'exchange';
+type Route = 'fast' | 'slow';
 type Step =
   | 'idle'
   | 'quoting'
@@ -146,14 +149,13 @@ function useTokenBalance(
 const BridgePage = () => {
   const { evm } = useWalletConnectStore();
   const { setIsModalOpen } = useConnectKitContext();
-  const [mode, setMode] = useState<Mode>('fast');
+  const [mode, setMode] = useState<Mode>('transfer');
 
   return (
     <div className="grid auto-rows-auto grid-cols-12 gap-5 pb-12 md:pb-0">
       <div className="col-span-full flex flex-wrap items-center gap-2">
         {[
-          { id: 'fast' as Mode, label: 'Fast', icon: Lightning },
-          { id: 'slow' as Mode, label: 'Direct', icon: Path },
+          { id: 'transfer' as Mode, label: 'Bridge', icon: Lightning },
           { id: 'exchange' as Mode, label: 'Exchange Deposit', icon: Bank },
         ].map(({ id, label, icon: Icon }) => (
           <button
@@ -178,7 +180,6 @@ const BridgePage = () => {
         />
       ) : (
         <CrossChainTransfer
-          mode={mode}
           evmAddress={evm}
           onConnect={() => setIsModalOpen(true)}
         />
@@ -188,11 +189,9 @@ const BridgePage = () => {
 };
 
 function CrossChainTransfer({
-  mode,
   evmAddress,
   onConnect,
 }: {
-  mode: 'fast' | 'slow';
   evmAddress: string | null;
   onConnect: () => void;
 }) {
@@ -201,6 +200,8 @@ function CrossChainTransfer({
   const { signTypedDataAsync } = useSignTypedData();
   const { writeContractAsync } = useWriteContract();
 
+  const [route, setRoute] = useState<Route>('fast');
+  const [showRouteInfo, setShowRouteInfo] = useState(false);
   const [fromChainId, setFromChainId] = useState<number>(
     CHAINS[0].chainId
   );
@@ -250,7 +251,7 @@ function CrossChainTransfer({
 
   useEffect(() => {
     resetState();
-  }, [mode]);
+  }, [route]);
   useEffect(
     () => () => {
       if (pollRef.current) clearInterval(pollRef.current);
@@ -484,7 +485,7 @@ function CrossChainTransfer({
     amount &&
     parseFloat(amount) > parseFloat(fromBalance);
   const fastAvailable = token === 'USDC';
-  const effectiveMode = mode === 'fast' && !fastAvailable ? 'slow' : mode;
+  const effectiveRoute = route === 'fast' && !fastAvailable ? 'slow' : route;
 
   return (
     <>
@@ -536,7 +537,58 @@ function CrossChainTransfer({
         </div>
       </div>
 
-      <div className="col-span-full -my-1 flex justify-center">
+      <div className="col-span-full -my-1 flex items-center justify-between px-1">
+        <div className="relative flex items-center gap-1.5">
+          <div className="bg-background border-secondary flex items-center gap-0.5 rounded-full border p-0.5">
+            {([
+              { id: 'fast' as Route, label: 'Fast', icon: Lightning },
+              { id: 'slow' as Route, label: 'Direct', icon: Path },
+            ]).map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => { setRoute(id); resetState(); }}
+                className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-all ${
+                  route === id
+                    ? 'bg-foreground text-black'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Icon size={12} weight={route === id ? 'fill' : 'regular'} />
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setShowRouteInfo(!showRouteInfo)}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Info size={14} />
+          </button>
+          {showRouteInfo && (
+            <div className="bg-[#1a1a1a] border-secondary absolute top-full left-0 z-50 mt-2 w-72 rounded-xl border p-4 shadow-2xl">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-foreground text-xs font-semibold">Route Info</span>
+                <button onClick={() => setShowRouteInfo(false)} className="text-muted-foreground hover:text-foreground">
+                  <X size={12} />
+                </button>
+              </div>
+              <div className="space-y-2.5 text-xs">
+                <div>
+                  <div className="text-foreground mb-0.5 flex items-center gap-1.5 font-medium">
+                    <Lightning size={12} weight="fill" /> Fast
+                  </div>
+                  <p className="text-muted-foreground">Solver fills your order instantly on the destination chain. Settled via OIF escrow + oracle attestation. ~30s.</p>
+                </div>
+                <div>
+                  <div className="text-foreground mb-0.5 flex items-center gap-1.5 font-medium">
+                    <Path size={12} weight="fill" /> Direct
+                  </div>
+                  <p className="text-muted-foreground">Bridged trustlessly via Hyperlane through Celestia. No solver needed, but takes ~2 minutes.</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
         <button
           onClick={swap}
           className="bg-background border-secondary group hover:bg-foreground/10 cursor-pointer rounded-full border p-2.5 transition-all"
@@ -576,7 +628,7 @@ function CrossChainTransfer({
         </div>
       </div>
 
-      {mode === 'fast' && quote && step !== 'idle' && step !== 'error' && (
+      {route === 'fast' && quote && step !== 'idle' && step !== 'error' && (
         <div className="bg-background border-secondary relative col-span-full rounded-lg border p-5">
           <GlowingEffect />
           <div className="relative z-10 flex flex-col gap-2 text-sm">
@@ -586,7 +638,7 @@ function CrossChainTransfer({
         </div>
       )}
 
-      {mode === 'fast' &&
+      {route === 'fast' &&
         ['signing', 'submitted', 'polling', 'done'].includes(step) && (
           <div
             className={`relative col-span-full rounded-lg border p-5 ${step === 'done' ? 'border-accent/30 bg-accent/5' : 'bg-background border-secondary'}`}
@@ -621,7 +673,7 @@ function CrossChainTransfer({
           </div>
         )}
 
-      {mode === 'slow' && ['approving', 'submitted', 'done'].includes(step) && (
+      {route === 'slow' && ['approving', 'submitted', 'done'].includes(step) && (
         <div
           className={`relative col-span-full rounded-lg border p-5 ${step === 'done' ? 'border-accent/30 bg-accent/5' : 'bg-background border-secondary'}`}
         >
@@ -679,7 +731,7 @@ function CrossChainTransfer({
       )}
 
       <div className="col-span-full">
-        {mode === 'fast' ? (
+        {route === 'fast' ? (
           step === 'idle' || step === 'error' ? (
             <Button
               onClick={getQuote}
