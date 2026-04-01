@@ -110,20 +110,16 @@ impl RebalancerService {
         }
 
         let observed_total = sum_balances(&balances);
-        let startup_total = *self.asset_totals.get(&asset.symbol).with_context(|| {
+        let total_balance = *self.asset_totals.get(&asset.symbol).with_context(|| {
             format!(
                 "Missing startup total_balance for asset {}. Restart service to recompute totals",
                 asset.symbol
             )
         })?;
-        // Use the greater of startup and observed totals for planning.
-        // - observed < startup: tokens are in-flight, use startup to avoid re-sending
-        // - observed > startup: new tokens were added, adapt to actual inventory
-        let planning_total = observed_total.max(startup_total);
-        let plan = AssetPlan::new(asset, &balances, planning_total)?;
+        let plan = AssetPlan::new(asset, &balances, total_balance)?;
 
         let (min_transfer_raw, max_transfer_raw) = transfer_size_bounds_raw(
-            planning_total,
+            total_balance,
             self.config.execution.min_transfer_bps,
             self.config.execution.max_transfer_bps,
         );
@@ -152,13 +148,11 @@ impl RebalancerService {
 
         if !plan.active_deficit_chain_ids.is_empty() {
             info!(
-                "Asset {}: transfer-size bounds from planning_total={} {} (observed={} {} startup={} {}) => min={} {} ({} bps), max={} {} ({} bps)",
+                "Asset {}: transfer-size bounds from total_balance={} {} (observed_total={} {}) => min={} {} ({} bps), max={} {} ({} bps)",
                 asset.symbol,
-                format_token_amount(planning_total, asset.decimals),
+                format_token_amount(total_balance, asset.decimals),
                 asset.symbol,
                 format_token_amount(observed_total, asset.decimals),
-                asset.symbol,
-                format_token_amount(startup_total, asset.decimals),
                 asset.symbol,
                 format_raw_u128(min_transfer_raw, asset.decimals),
                 asset.symbol,
@@ -431,12 +425,22 @@ impl RebalancerService {
 
             let domain = destination_chain.domain_id;
             let recipient = evm_address_to_bytes32(destination_chain.account_address);
-            let token_id_bytes = evm_address_to_bytes32(source_collateral_token);
-            let token_id_hex = bytes32_to_hex(token_id_bytes);
+            let token_id_hex = match self.config.forwarding.token_ids.get(&asset.symbol) {
+                Some(id) => id.clone(),
+                None => {
+                    warn!(
+                        "Asset {} has no forwarding.token_ids entry; skipping rebalance",
+                        asset.symbol
+                    );
+                    continue;
+                }
+            };
+            let token_id_bytes = hex::decode(token_id_hex.strip_prefix("0x").unwrap_or(&token_id_hex))
+                .unwrap_or_default();
             let forward_addr = match ForwardAddress::derive(
                 domain,
                 recipient,
-                token_id_bytes.as_slice(),
+                &token_id_bytes,
             ) {
                 Ok(value) => value,
                 Err(err) => {

@@ -377,16 +377,13 @@ app.post('/api/bridge/prepare', async (req, res) => {
     const recipientPadded =
       '0x000000000000000000000000' + address.replace('0x', '');
 
-    // Resolve warp route token address as the token_id for forwarding
-    const fromContracts = CONFIG.contracts[fromChain.chainId.toString()];
-    const warpRouteAddr = fromContracts?.warpRoutes?.[token] || fromContracts?.tokens[token]?.address;
-    if (!warpRouteAddr) throw new Error(`No warp route or token address for ${token} on ${from}`);
-    const tokenIdPadded =
-      '0x000000000000000000000000' + warpRouteAddr.replace('0x', '');
+    // Resolve Celestia warp token ID for forwarding
+    const celestiaTokenId = CONFIG.celestia.syntheticTokens[token];
+    if (!celestiaTokenId) throw new Error(`No Celestia synthetic token ID for ${token}`);
 
     // Get forwarding address from forwarding service
     const addrResp = await fetch(
-      `${FORWARDING_SERVICE}/forwarding-address?dest_domain=${toChain.domainId}&dest_recipient=${recipientPadded}&token_id=${tokenIdPadded}`
+      `${FORWARDING_SERVICE}/forwarding-address?dest_domain=${toChain.domainId}&dest_recipient=${recipientPadded}&token_id=${celestiaTokenId}`
     );
     if (!addrResp.ok)
       throw new Error(
@@ -404,7 +401,7 @@ app.post('/api/bridge/prepare', async (req, res) => {
           forward_addr: forwardAddr,
           dest_domain: toChain.domainId,
           dest_recipient: recipientPadded,
-          token_id: tokenIdPadded,
+          token_id: celestiaTokenId,
         }),
       }
     );

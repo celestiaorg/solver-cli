@@ -91,6 +91,7 @@ stop:
 	@docker compose down -v 2>/dev/null || true
 	@$(SOLVER_CLI) solver stop 2>/dev/null || true
 	@pkill -9 -f "solver-cli solver start" 2>/dev/null || true
+	@pkill -9 -f "solver-cli rebalancer" 2>/dev/null || true
 	@pkill -9 -f oracle-operator 2>/dev/null || true
 	@pkill -9 -f "oif-aggregator" 2>/dev/null || true
 	@pkill -9 -f "tsx.*server/index.ts" 2>/dev/null || true

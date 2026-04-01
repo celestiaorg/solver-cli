@@ -4,6 +4,42 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use tokio::fs;
 
+/// Read forwarding token_ids from hyperlane-addresses.json.
+/// Returns a map of asset symbol → Celestia warp token ID.
+fn load_forwarding_token_ids(config_dir: &Path) -> BTreeMap<String, String> {
+    let path = config_dir.join("hyperlane-addresses.json");
+    let Ok(data) = std::fs::read_to_string(&path) else {
+        return BTreeMap::new();
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&data) else {
+        return BTreeMap::new();
+    };
+    let mut result = BTreeMap::new();
+    if let Some(tokens) = json
+        .get("celestiadev")
+        .and_then(|c| c.get("synthetic_tokens"))
+        .and_then(|t| t.as_object())
+    {
+        for (symbol, id) in tokens {
+            if let Some(id_str) = id.as_str() {
+                result.insert(symbol.to_ascii_uppercase(), id_str.to_string());
+            }
+        }
+    }
+    // Fallback: single synthetic_token → map to all assets
+    if result.is_empty() {
+        if let Some(id) = json
+            .get("celestiadev")
+            .and_then(|c| c.get("synthetic_token"))
+            .and_then(|t| t.as_str())
+        {
+            // Will be applied to all assets below
+            result.insert("*".to_string(), id.to_string());
+        }
+    }
+    result
+}
+
 use crate::state::SolverState;
 
 /// Generates rebalancer configuration files
@@ -14,6 +50,10 @@ impl RebalancerConfigGenerator {
     /// Uses the solver account for all chains, and defaults to dry-run with
     /// equal per-asset weights across chains that support each asset.
     pub fn generate_toml(state: &SolverState) -> Result<String> {
+        Self::generate_toml_with_config_dir(state, Path::new(".config"))
+    }
+
+    pub fn generate_toml_with_config_dir(state: &SolverState, config_dir: &Path) -> Result<String> {
         if state.chains.is_empty() {
             anyhow::bail!("No chains configured");
         }
@@ -40,6 +80,16 @@ impl RebalancerConfigGenerator {
                 .with_context(|| format!("Invalid CELESTIA_DOMAIN value: {}", raw))?,
             Err(_) => 69420u64,
         };
+
+        // Load per-asset Celestia warp token IDs from hyperlane deployment
+        let forwarding_token_ids = load_forwarding_token_ids(config_dir);
+        let mut token_ids_section = String::new();
+        for asset in &assets {
+            let symbol_upper = asset.symbol.to_ascii_uppercase();
+            if let Some(id) = forwarding_token_ids.get(&symbol_upper).or_else(|| forwarding_token_ids.get("*")) {
+                token_ids_section.push_str(&format!("{} = \"{}\"\n", symbol_upper, id));
+            }
+        }
 
         let signer_inline = match crate::utils::RebalancerSignerConfig::from_env()? {
             crate::utils::RebalancerSignerConfig::AwsKms { key_id, region } => {
@@ -124,6 +174,8 @@ dry_run = false
 domain_id = {forwarding_domain_id}
 service_url = "{forwarding_service_url}"
 
+[forwarding.token_ids]
+{token_ids_section}
 [execution]
 min_transfer_bps = 50
 max_transfer_bps = 5000
@@ -134,6 +186,7 @@ max_transfer_bps = 5000
 "#,
             forwarding_domain_id = forwarding_domain_id,
             forwarding_service_url = forwarding_service_url,
+            token_ids_section = token_ids_section.trim(),
             chains_section = chains_section.trim(),
             assets_section = assets_section.trim(),
         );

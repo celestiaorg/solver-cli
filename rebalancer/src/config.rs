@@ -28,6 +28,8 @@ pub struct ExecutionConfig {
 pub struct ForwardingConfig {
     pub domain_id: u32,
     pub service_url: String,
+    /// Maps asset symbol (e.g. "USDC") to the Celestia warp token ID used for forwarding.
+    pub token_ids: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -92,6 +94,8 @@ struct RawRebalancerConfig {
 struct RawForwardingConfig {
     domain_id: u64,
     service_url: String,
+    #[serde(default)]
+    token_ids: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -229,6 +233,7 @@ impl RebalancerConfig {
         let forwarding = ForwardingConfig {
             domain_id: forwarding_domain_id,
             service_url: raw.forwarding.service_url.clone(),
+            token_ids: raw.forwarding.token_ids.clone(),
         };
 
         let mut seen_chain_ids = HashSet::new();

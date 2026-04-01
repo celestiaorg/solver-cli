@@ -203,6 +203,7 @@ const addresses = {
   celestiadev: {
     domain_id: $CELESTIA_DOMAIN,
     synthetic_token: '$CEL_TOKEN',
+    synthetic_tokens: { USDC: '$CEL_TOKEN' },
     mailbox: '$CEL_MAILBOX',
     merkle_tree_hook: '$CEL_MERKLE_HOOK',
     ism: '$CEL_ISM',

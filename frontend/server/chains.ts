@@ -24,7 +24,7 @@ export interface ChainContracts {
 export interface ChainsCfg {
   chains: ChainDef[];
   contracts: Record<string, ChainContracts>;
-  celestia: { domainId: number; restUrl: string; rpcUrl: string };
+  celestia: { domainId: number; restUrl: string; rpcUrl: string; syntheticTokens: Record<string, string> };
   forwardingService: string;
   solverAddress: string | null;
 }
@@ -85,6 +85,7 @@ const TESTNET_CONFIG: ChainsCfg = {
     domainId: 1297040200,
     restUrl: 'https://api-mocha.pops.one',
     rpcUrl: 'https://rpc-mocha.pops.one',
+    syntheticTokens: {},
   },
   forwardingService: 'http://51.15.252.63:8080',
   solverAddress: null,
@@ -129,7 +130,8 @@ function loadFromStateJson(): ChainsCfg | null {
       };
     }
 
-    // Read Hyperlane addresses for domain IDs
+    // Read Hyperlane addresses for domain IDs and Celestia token IDs
+    let celestiaSyntheticTokens: Record<string, string> = {};
     const hypPath = path.resolve(__dirname, '../../.config/hyperlane-addresses.json');
     if (fs.existsSync(hypPath)) {
       try {
@@ -147,6 +149,12 @@ function loadFromStateJson(): ChainsCfg | null {
             };
           }
         }
+        // Read Celestia synthetic token IDs
+        if (hyp.celestiadev?.synthetic_tokens) {
+          celestiaSyntheticTokens = hyp.celestiadev.synthetic_tokens;
+        } else if (hyp.celestiadev?.synthetic_token) {
+          celestiaSyntheticTokens = { USDC: hyp.celestiadev.synthetic_token };
+        }
       } catch { /* ignore hyperlane parse errors */ }
     }
 
@@ -163,6 +171,7 @@ function loadFromStateJson(): ChainsCfg | null {
         domainId: Number(process.env.CELESTIA_DOMAIN || 69420),
         restUrl: process.env.CELESTIA_REST || 'http://127.0.0.1:1317',
         rpcUrl: process.env.CELESTIA_RPC || 'http://127.0.0.1:26657',
+        syntheticTokens: celestiaSyntheticTokens,
       },
       forwardingService: process.env.FORWARDING_BACKEND || 'http://127.0.0.1:8080',
       solverAddress,
