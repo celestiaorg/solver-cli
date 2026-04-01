@@ -15,19 +15,15 @@ mkdir -p logs
 
 step "Installing frontend dependencies..."
 cd frontend
-if [ ! -d "node_modules" ]; then
-  pnpm install --silent 2>&1 | tail -1
-  success "Dependencies installed"
-else
-  success "Dependencies already installed"
-fi
+pnpm install --silent 2>&1 | tail -1
+success "Dependencies installed"
 cd "$PROJECT_ROOT"
 
 # ── Backend API ───────────────────────────────────────────────────────────────
 
 step "Starting frontend API server (port 3001)..."
 cd frontend
-npx tsx server/index.ts > ../logs/frontend-backend.log 2>&1 &
+pnpm exec tsx server/index.ts > ../logs/frontend-backend.log 2>&1 &
 BACKEND_PID=$!
 echo "$BACKEND_PID" > ../logs/frontend-backend.pid
 cd "$PROJECT_ROOT"
@@ -45,7 +41,7 @@ fi
 
 step "Starting frontend (Next.js dev server on port 3000)..."
 cd frontend
-npx next dev > ../logs/frontend-next.log 2>&1 &
+pnpm exec next dev > ../logs/frontend-next.log 2>&1 &
 FRONTEND_PID=$!
 echo "$FRONTEND_PID" > ../logs/frontend-next.pid
 cd "$PROJECT_ROOT"

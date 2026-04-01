@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
     info!("Starting Oracle Operator Service");
     info!("Logs written to {:?}", log_dir);
 
-    // Load config
+    // Load config (slim TOML that references state.json for chain data)
     let config_path =
         std::env::var("ORACLE_CONFIG").unwrap_or_else(|_| ".config/oracle.toml".to_string());
     let config_path = PathBuf::from(&config_path);

@@ -30,7 +30,7 @@ fi
 
 # ── Solver ────────────────────────────────────────────────────────────────────
 
-step "Starting OIF Solver (port 3000)..."
+step "Starting OIF Solver..."
 make solver > logs/solver.log 2>&1 &
 SOLVER_PID=$!
 echo "$SOLVER_PID" > logs/solver.pid

@@ -194,7 +194,7 @@ token-remove: build
 fund-operator:
 	@echo "Funding oracle operator on all chains..."
 	@. ./.env && \
-		OPERATOR_ADDR=$$(grep 'operator_address' .config/oracle.toml | cut -d'"' -f2) && \
+		OPERATOR_ADDR=$$(python3 -c "import json; print(json.load(open('.config/state.json'))['solver']['operator_address'])") && \
 		echo "  Operator address: $$OPERATOR_ADDR" && \
 		echo "  Funding on Anvil1 (10 ETH)..." && \
 		cast send --rpc-url $$ANVIL1_RPC --private-key $$ANVIL1_PK --value 10ether $$OPERATOR_ADDR 2>/dev/null && \

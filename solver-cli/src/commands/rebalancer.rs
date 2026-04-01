@@ -40,7 +40,7 @@ impl RebalancerCommand {
 
         if !config.exists() {
             anyhow::bail!(
-                "Rebalancer config not found at {}. Run 'solver-cli configure' to generate .config/rebalancer.toml.",
+                "Rebalancer config not found at {}. Run 'solver-cli configure' to generate it.",
                 config.display()
             );
         }
