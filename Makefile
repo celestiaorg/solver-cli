@@ -285,7 +285,6 @@ aggregator-start:
 	@echo "Starting OIF aggregator on port 4000..."
 	@test -x .aggregator/bin/oif-aggregator || \
 		cargo install --git https://github.com/celestiaorg/oif-aggregator --branch jonas/freeze-v0.2.0 oif-aggregator --root .aggregator --force
-	@mkdir -p config && cp -f .config/aggregator.json config/config.json
 	@RUST_LOG=info .aggregator/bin/oif-aggregator
 .PHONY: aggregator-start
 

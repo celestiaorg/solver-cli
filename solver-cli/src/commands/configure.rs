@@ -137,8 +137,8 @@ impl ConfigureCommand {
             oracle_config_path
         ));
 
-        // Generate aggregator config directly where the aggregator reads it
-        let aggregator_config_path = project_dir.join(".config/aggregator.json");
+        // Generate aggregator config where the aggregator binary reads it
+        let aggregator_config_path = project_dir.join("config/config.json");
         ConfigGenerator::write_aggregator_config(&state, &aggregator_config_path).await?;
         print_success(&format!(
             "Aggregator config written to {:?}",
