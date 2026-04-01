@@ -34,22 +34,53 @@ for arg in "$@"; do
   esac
 done
 
-# ── Cleanup on exit ──────────────────────────────────────────────────────────
+# ── Service cleanup ──────────────────────────────────────────────────────────
+
+# Ports used by MVP services
+MVP_PORTS=(3000 3001 4000 5001)
+
+kill_services() {
+  # 1. Kill tracked PID files (direct children)
+  for pidfile in logs/*.pid; do
+    if [ -f "$pidfile" ]; then
+      pid=$(cat "$pidfile")
+      # Kill the process group to catch child processes
+      kill -- -"$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+    fi
+  done
+  rm -f logs/*.pid
+
+  # 2. Kill known service processes by name (catches orphans)
+  pkill -9 -f "solver-cli solver start" 2>/dev/null || true
+  pkill -9 -f "solver-cli rebalancer" 2>/dev/null || true
+  pkill -9 -f oracle-operator 2>/dev/null || true
+  pkill -9 -f "oif-aggregator" 2>/dev/null || true
+  pkill -9 -f "tsx.*server/index.ts" 2>/dev/null || true
+  pkill -9 -f "next dev" 2>/dev/null || true
+
+  # 3. Kill anything still holding our ports
+  for port in "${MVP_PORTS[@]}"; do
+    pid=$(lsof -ti :"$port" 2>/dev/null || true)
+    if [ -n "$pid" ]; then
+      kill $pid 2>/dev/null || true
+    fi
+  done
+}
 
 cleanup() {
   echo ""
   step "Shutting down services..."
-  # Kill all tracked PIDs
-  for pidfile in logs/*.pid; do
-    [ -f "$pidfile" ] && kill "$(cat "$pidfile")" 2>/dev/null || true
-  done
-  rm -f logs/*.pid
+  kill_services
   make stop 2>/dev/null || true
   success "All services stopped"
   exit 0
 }
 
 trap cleanup SIGINT SIGTERM
+
+# ── Pre-start: kill stale services from previous runs ────────────────────────
+
+kill_services
 
 # ── Banner ───────────────────────────────────────────────────────────────────
 

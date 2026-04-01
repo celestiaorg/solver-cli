@@ -11,6 +11,16 @@ cd "$PROJECT_ROOT"
 
 mkdir -p logs
 
+# ── Kill stale processes on our ports ────────────────────────────────────────
+
+for port in 3000 3001; do
+  pid=$(lsof -ti :"$port" 2>/dev/null || true)
+  if [ -n "$pid" ]; then
+    kill $pid 2>/dev/null || true
+    sleep 0.5
+  fi
+done
+
 # ── Install dependencies ──────────────────────────────────────────────────────
 
 step "Installing frontend dependencies..."
@@ -41,7 +51,7 @@ fi
 
 step "Starting frontend (Next.js dev server on port 3000)..."
 cd frontend
-pnpm exec next dev > ../logs/frontend-next.log 2>&1 &
+pnpm exec next dev --port 3000 > ../logs/frontend-next.log 2>&1 &
 FRONTEND_PID=$!
 echo "$FRONTEND_PID" > ../logs/frontend-next.pid
 cd "$PROJECT_ROOT"
