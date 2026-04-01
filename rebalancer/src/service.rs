@@ -110,10 +110,20 @@ impl RebalancerService {
         }
 
         let observed_total = sum_balances(&balances);
-        let plan = AssetPlan::new(asset, &balances, observed_total)?;
+        let startup_total = *self.asset_totals.get(&asset.symbol).with_context(|| {
+            format!(
+                "Missing startup total_balance for asset {}. Restart service to recompute totals",
+                asset.symbol
+            )
+        })?;
+        // Use the greater of startup and observed totals for planning.
+        // - observed < startup: tokens are in-flight, use startup to avoid re-sending
+        // - observed > startup: new tokens were added, adapt to actual inventory
+        let planning_total = observed_total.max(startup_total);
+        let plan = AssetPlan::new(asset, &balances, planning_total)?;
 
         let (min_transfer_raw, max_transfer_raw) = transfer_size_bounds_raw(
-            observed_total,
+            planning_total,
             self.config.execution.min_transfer_bps,
             self.config.execution.max_transfer_bps,
         );
@@ -142,9 +152,13 @@ impl RebalancerService {
 
         if !plan.active_deficit_chain_ids.is_empty() {
             info!(
-                "Asset {}: transfer-size bounds from total={} {} => min={} {} ({} bps), max={} {} ({} bps)",
+                "Asset {}: transfer-size bounds from planning_total={} {} (observed={} {} startup={} {}) => min={} {} ({} bps), max={} {} ({} bps)",
+                asset.symbol,
+                format_token_amount(planning_total, asset.decimals),
                 asset.symbol,
                 format_token_amount(observed_total, asset.decimals),
+                asset.symbol,
+                format_token_amount(startup_total, asset.decimals),
                 asset.symbol,
                 format_raw_u128(min_transfer_raw, asset.decimals),
                 asset.symbol,
