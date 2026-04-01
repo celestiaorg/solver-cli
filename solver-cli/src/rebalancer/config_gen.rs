@@ -1,4 +1,3 @@
-use alloy::primitives::Address;
 use anyhow::{Context, Result};
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -6,29 +5,73 @@ use tokio::fs;
 
 use crate::state::SolverState;
 
-/// Generates rebalancer configuration files
+/// Read forwarding token_ids from hyperlane-addresses.json.
+/// Returns a map of asset symbol → Celestia warp token ID.
+fn load_forwarding_token_ids(config_dir: &Path) -> BTreeMap<String, String> {
+    let path = config_dir.join("hyperlane-addresses.json");
+    let Ok(data) = std::fs::read_to_string(&path) else {
+        return BTreeMap::new();
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&data) else {
+        return BTreeMap::new();
+    };
+    let mut result = BTreeMap::new();
+    if let Some(tokens) = json
+        .get("celestiadev")
+        .and_then(|c| c.get("synthetic_tokens"))
+        .and_then(|t| t.as_object())
+    {
+        for (symbol, id) in tokens {
+            if let Some(id_str) = id.as_str() {
+                result.insert(symbol.to_ascii_uppercase(), id_str.to_string());
+            }
+        }
+    }
+    // Fallback: single synthetic_token → map to all assets
+    if result.is_empty() {
+        if let Some(id) = json
+            .get("celestiadev")
+            .and_then(|c| c.get("synthetic_token"))
+            .and_then(|t| t.as_str())
+        {
+            result.insert("*".to_string(), id.to_string());
+        }
+    }
+    result
+}
+
+/// Generates slim rebalancer configuration (service settings only).
+/// Chain/token/contract data is read from state.json at runtime by the rebalancer.
 pub struct RebalancerConfigGenerator;
 
 impl RebalancerConfigGenerator {
-    /// Generate rebalancer TOML configuration from state.
-    /// Uses the solver account for all chains, and defaults to dry-run with
-    /// equal per-asset weights across chains that support each asset.
     pub fn generate_toml(state: &SolverState) -> Result<String> {
+        Self::generate_toml_with_config_dir(state, Path::new(".config"))
+    }
+
+    pub fn generate_toml_with_config_dir(state: &SolverState, config_dir: &Path) -> Result<String> {
         if state.chains.is_empty() {
             anyhow::bail!("No chains configured");
         }
 
-        let mut chains: Vec<_> = state.chains.values().collect();
-        chains.sort_by_key(|c| c.chain_id);
-
-        let assets = collect_assets(state)?;
-        if assets.is_empty() {
+        // Verify at least one token exists on 2+ chains (so rebalancer has something to do)
+        let has_multi_chain_token = {
+            let mut by_symbol: BTreeMap<String, usize> = BTreeMap::new();
+            for chain in state.chains.values() {
+                for token in chain.tokens.values() {
+                    *by_symbol
+                        .entry(token.symbol.to_ascii_uppercase())
+                        .or_default() += 1;
+                }
+            }
+            by_symbol.values().any(|&count| count >= 2)
+        };
+        if !has_multi_chain_token {
             anyhow::bail!(
                 "No asset found on at least two chains; cannot generate rebalancer config"
             );
         }
 
-        let account = derive_rebalancer_account(state)?;
         let forwarding_service_url = std::env::var("FORWARDING_BACKEND")
             .unwrap_or_else(|_| "http://127.0.0.1:8080".to_string());
         let _: reqwest::Url = forwarding_service_url
@@ -41,81 +84,40 @@ impl RebalancerConfigGenerator {
             Err(_) => 69420u64,
         };
 
-        let signer_inline = match crate::utils::RebalancerSignerConfig::from_env()? {
+        // Load per-asset Celestia warp token IDs from hyperlane deployment
+        let forwarding_token_ids = load_forwarding_token_ids(config_dir);
+        let mut token_ids_section = String::new();
+        for (symbol, id) in &forwarding_token_ids {
+            if symbol == "*" {
+                // Wildcard: the rebalancer's asset collection will use this for all assets.
+                // We write it as a known symbol if there's only one asset.
+                for chain in state.chains.values() {
+                    for token in chain.tokens.values() {
+                        let sym = token.symbol.to_ascii_uppercase();
+                        if !token_ids_section.contains(&sym) {
+                            token_ids_section.push_str(&format!("{} = \"{}\"\n", sym, id));
+                        }
+                    }
+                }
+            } else {
+                token_ids_section.push_str(&format!("{} = \"{}\"\n", symbol, id));
+            }
+        }
+
+        let signer_section = match crate::utils::RebalancerSignerConfig::from_env()? {
             crate::utils::RebalancerSignerConfig::AwsKms { key_id, region } => {
-                format!("type = \"aws_kms\"\n  key_id = \"{key_id}\"\n  region = \"{region}\"")
+                format!(
+                    "[signer]\ntype = \"aws_kms\"\nkey_id = \"{key_id}\"\nregion = \"{region}\""
+                )
             }
-            crate::utils::RebalancerSignerConfig::Env => "type = \"env\"".to_string(),
+            crate::utils::RebalancerSignerConfig::Env => "[signer]\ntype = \"env\"".to_string(),
         };
-
-        let mut chains_section = String::new();
-        for chain in &chains {
-            chains_section.push_str(&format!(
-                r#"
-[[chains]]
-name = "{name}"
-chain_id = {chain_id}
-domain_id = {domain_id}
-rpc_url = "{rpc_url}"
-account = "{account}"
-  [chains.signer]
-  {signer_inline}
-"#,
-                name = chain.name,
-                chain_id = chain.chain_id,
-                domain_id = chain
-                    .contracts
-                    .hyperlane
-                    .as_ref()
-                    .and_then(|h| h.domain_id)
-                    .unwrap_or_else(|| hyperlane_domain_id(chain.chain_id)),
-                rpc_url = chain.rpc,
-                account = account,
-                signer_inline = signer_inline,
-            ));
-        }
-
-        let mut assets_section = String::new();
-        for asset in &assets {
-            assets_section.push_str(&format!(
-                r#"
-[[assets]]
-symbol = "{symbol}"
-decimals = {decimals}
-"#,
-                symbol = asset.symbol,
-                decimals = asset.decimals,
-            ));
-
-            for token in &asset.tokens {
-                assets_section.push_str(&format!(
-                    r#"
-  [[assets.tokens]]
-  chain_id = {chain_id}
-  type = "erc20"
-  address = "{address}"
-  collateral_token = "{collateral_token}"
-"#,
-                    chain_id = token.chain_id,
-                    address = token.address,
-                    collateral_token = token.collateral_token,
-                ));
-            }
-
-            assets_section.push_str("\n  [assets.weights]\n");
-            for (chain_id, weight) in &asset.weights {
-                assets_section.push_str(&format!("  \"{}\" = {:.6}\n", chain_id, weight));
-            }
-
-            assets_section.push_str("\n  [assets.min_weights]\n");
-            for (chain_id, min_weight) in &asset.min_weights {
-                assets_section.push_str(&format!("  \"{}\" = {:.6}\n", chain_id, min_weight));
-            }
-        }
 
         let config = format!(
             r#"# Auto-generated rebalancer configuration
+# Chain/token data is read from state.json at startup.
 
+state_file = "state.json"
 poll_interval_seconds = 30
 max_parallel_transfers = 2
 dry_run = false
@@ -124,18 +126,18 @@ dry_run = false
 domain_id = {forwarding_domain_id}
 service_url = "{forwarding_service_url}"
 
+[forwarding.token_ids]
+{token_ids_section}
 [execution]
 min_transfer_bps = 50
 max_transfer_bps = 5000
 
-{chains_section}
-
-{assets_section}
+{signer_section}
 "#,
             forwarding_domain_id = forwarding_domain_id,
             forwarding_service_url = forwarding_service_url,
-            chains_section = chains_section.trim(),
-            assets_section = assets_section.trim(),
+            token_ids_section = token_ids_section.trim(),
+            signer_section = signer_section,
         );
 
         Ok(config)
@@ -157,144 +159,6 @@ max_transfer_bps = 5000
 
         Ok(())
     }
-}
-
-#[derive(Debug, Clone)]
-struct RebalancerTokenEntry {
-    chain_id: u64,
-    address: String,
-    /// Hyperlane warp token router address for `transferRemote` / `quoteTransferRemote`.
-    /// Falls back to `address` if no warp token is deployed.
-    collateral_token: String,
-}
-
-#[derive(Debug, Clone)]
-struct RebalancerAsset {
-    symbol: String,
-    decimals: u8,
-    tokens: Vec<RebalancerTokenEntry>,
-    weights: Vec<(u64, f64)>,
-    min_weights: Vec<(u64, f64)>,
-}
-
-fn collect_assets(state: &SolverState) -> Result<Vec<RebalancerAsset>> {
-    let mut by_symbol: BTreeMap<String, Vec<(u64, String, u8, String)>> = BTreeMap::new();
-
-    for (chain_id, chain) in &state.chains {
-        let warp_token = chain
-            .contracts
-            .hyperlane
-            .as_ref()
-            .and_then(|h| h.warp_token.clone());
-        for token in chain.tokens.values() {
-            let normalized = token.symbol.to_ascii_uppercase();
-            // Use warp token address as collateral_token if available; otherwise fall back to ERC20
-            let collateral = warp_token.clone().unwrap_or_else(|| token.address.clone());
-            by_symbol.entry(normalized).or_default().push((
-                *chain_id,
-                token.address.clone(),
-                token.decimals,
-                collateral,
-            ));
-        }
-    }
-
-    let mut assets = Vec::new();
-    for (symbol, mut entries) in by_symbol {
-        if entries.len() < 2 {
-            continue;
-        }
-
-        entries.sort_by_key(|(chain_id, _, _, _)| *chain_id);
-        let expected_decimals = entries[0].2;
-        if entries
-            .iter()
-            .any(|(_, _, decimals, _)| *decimals != expected_decimals)
-        {
-            anyhow::bail!(
-                "Token {} has inconsistent decimals across chains, cannot generate rebalancer config",
-                symbol
-            );
-        }
-
-        let chain_ids: Vec<u64> = entries
-            .iter()
-            .map(|(chain_id, _, _, _)| *chain_id)
-            .collect();
-        let weights = equal_weight_distribution(&chain_ids, 1_000_000);
-        let min_weights: Vec<(u64, f64)> = weights
-            .iter()
-            .map(|(chain_id, weight)| {
-                (
-                    *chain_id,
-                    (weight * 0.8 * 1_000_000.0).floor() / 1_000_000.0,
-                )
-            })
-            .collect();
-
-        assets.push(RebalancerAsset {
-            symbol,
-            decimals: expected_decimals,
-            tokens: entries
-                .into_iter()
-                .map(
-                    |(chain_id, address, _, collateral_token)| RebalancerTokenEntry {
-                        chain_id,
-                        address,
-                        collateral_token,
-                    },
-                )
-                .collect(),
-            weights,
-            min_weights,
-        });
-    }
-
-    Ok(assets)
-}
-
-fn equal_weight_distribution(chain_ids: &[u64], precision: u64) -> Vec<(u64, f64)> {
-    let count = chain_ids.len() as u64;
-    let base = precision / count;
-    let remainder = precision % count;
-
-    chain_ids
-        .iter()
-        .enumerate()
-        .map(|(idx, chain_id)| {
-            let units = if (idx as u64) < remainder {
-                base + 1
-            } else {
-                base
-            };
-            (*chain_id, units as f64 / precision as f64)
-        })
-        .collect()
-}
-
-fn derive_rebalancer_account(state: &SolverState) -> Result<String> {
-    if let Some(address) = state.solver.address.as_deref() {
-        return normalize_address(address).context("Invalid solver.address in state");
-    }
-
-    anyhow::bail!(
-        "Missing solver address in state. Run 'solver-cli configure' first to populate the solver address."
-    )
-}
-
-/// Map EVM chain ID to Hyperlane domain ID.
-/// Domain IDs can differ from chain IDs to avoid conflicts with Hyperlane's
-/// hardcoded KnownHyperlaneDomain enum (e.g. 31337 is hardcoded as "test4").
-fn hyperlane_domain_id(chain_id: u64) -> u64 {
-    match chain_id {
-        31337 => 131337,
-        _ => chain_id,
-    }
-}
-
-fn normalize_address(value: &str) -> Result<String> {
-    let address: Address = value.parse()?;
-    Ok(format!("{:?}", address))
 }
 
 #[cfg(test)]
@@ -396,9 +260,14 @@ mod tests {
 
         let toml = RebalancerConfigGenerator::generate_toml(&sample_state()).unwrap();
 
+        assert!(toml.contains("state_file = \"state.json\""));
         assert!(toml.contains("[forwarding]"));
         assert!(toml.contains("domain_id = 69420"));
         assert!(toml.contains("service_url = \"http://127.0.0.1:8080\""));
+        assert!(toml.contains("[signer]"));
+        // Should NOT contain chain/token data (that comes from state.json now)
+        assert!(!toml.contains("[[chains]]"));
+        assert!(!toml.contains("[[assets]]"));
     }
 
     #[test]

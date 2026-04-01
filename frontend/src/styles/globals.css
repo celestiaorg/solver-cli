@@ -1,0 +1,277 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme {
+  --text-4.5xl: 2.75rem; /* 44px */
+  --breakpoint-xs: 480px;
+}
+
+@layer base {
+  :root {
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+  }
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-5xl: calc(var(--radius) * 10);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-chart-axis: var(--color-primary);
+  --color-chart-grid: var(--border);
+  --color-chart-tooltip-bg: var(--card);
+  --color-chart-tooltip-text: var(--card-primary-foreground);
+
+  --color-muted-100: var(--muted-100);
+}
+
+:root {
+  --background: oklch(0 0 0 / 15%);
+  --foreground: oklch(1 0 0);
+
+  --card: oklch(0.3867 0 0 / 37%);
+  --card-foreground: oklch(1 0 0 / 16%);
+
+  --primary: oklch(0.5898 0.1196 291.49);
+  --primary-foreground: oklch(1 0 0);
+
+  --secondary: oklch(1 0 0 / 16%);
+  --secondary-foreground: oklch(1 0 0);
+
+  --muted: oklch(0.7956 0.0598 148.71);
+  --muted-foreground: oklch(0.6993 0 0);
+
+  --accent: oklch(0.7931 0.1124 145.48);
+  --accent-foreground: oklch(0.52 0.1353 150.56);
+
+  --destructive: oklch(0.7223 0.1741 16.45);
+
+  --border: oklch(0.4949 0.111284 297.5609);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+
+  /* Popover (light) aligned with card */
+  --popover: var(--card);
+  --popover-foreground: var(--card-foreground);
+
+  --radius: 0.625rem;
+  --muted-100: oklch(0.3904 0 0);
+  --sidebar: oklch(0.985 0 0);
+}
+
+.dark {
+  /* Eden Portal Dark Theme Variables - OKLCH */
+  --primary: oklch(0.705 0.095 285.8); /* Keep purple in dark mode */
+  --primary-foreground: oklch(1 0 0); /* White text */
+  --secondary: oklch(0.15 0 0); /* Dark gray */
+  --secondary-foreground: oklch(1 0 0); /* White text */
+  --accent: oklch(0.77 0.06 142); /* Keep green accent */
+  --accent-foreground: oklch(0 0 0); /* Black text */
+  --muted: oklch(0.15 0 0); /* Dark muted background */
+  --muted-foreground: oklch(0.65 0 0); /* Muted text */
+  --background: oklch(0.08 0 0); /* Very dark background */
+  --foreground: oklch(1 0 0); /* White text */
+  --card: oklch(0.12 0 0); /* Dark card background */
+  --card-foreground: oklch(1 0 0); /* White card text */
+  --border: oklch(0.2 0 0); /* Dark border */
+  --input: oklch(0.15 0 0); /* Dark input background */
+  --ring: oklch(0.705 0.095 285.8); /* Purple focus ring */
+  --popover: oklch(0.12 0 0); /* Dark popover background */
+  --popover-foreground: oklch(1 0 0); /* White popover text */
+  --destructive: oklch(0.42 0.194 29.2); /* Dark red for destructive actions */
+  --destructive-foreground: oklch(0.98 0.013 252.4); /* Light text on red */
+  --radius: 0.5rem; /* Border radius */
+  --muted-100: oklch(0.3904 0 0);
+  --sidebar: oklch(0.2393 0 0);
+}
+
+.eden-widget-ui {
+  --font-family: inherit;
+  --background: oklch(0 0 0 / 15%);
+  --card: oklch(0 0 0 / 15%);
+  --card-foreground: oklch(1 0 0 / 16%);
+  --secondary: oklch(1 0 0 / 16%);
+  --secondary-foreground: oklch(1 0 0);
+  --foreground: oklch(1 0 0);
+}
+
+.eden-widget-ui .direction-button-bg {
+  background-color: oklch(0 0 0 / 90%) !important;
+}
+
+@layer base {
+  * {
+    @apply border-border no-scrollbar;
+  }
+  body {
+    @apply bg-secondary text-foreground;
+    font-family: var(--font-family);
+  }
+}
+
+a:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 calc(2px) hsl(var(--ring));
+}
+
+@utility no-scrollbar {
+  /* Hide scrollbar for IE, Edge and Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+* {
+  --scrollbar-color: #4c4c4ccc;
+  scrollbar-width: 0.5em;
+  scrollbar-color: var(--scrollbar-color) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 0.5em;
+  background-color: transparent;
+}
+
+*::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-color);
+  border: 1px solid var(--scrollbar-color);
+  border-radius: 1rem;
+}
+
+@utility button {
+  cursor: pointer;
+}
+
+@utility a {
+  @apply cursor-pointer;
+}
+
+@utility no-appearance-search {
+  &::-webkit-search-decoration,
+  &::-webkit-search-cancel-button,
+  &::-webkit-search-results-button,
+  &::-webkit-search-results-decoration {
+    display: none;
+  }
+}
+
+.panel-sizing {
+  @apply h-auto min-h-[70dvh];
+  @apply md:h-[70dvh] md:max-h-[42rem] md:min-h-[30rem] [@media(max-height:680px)]:md:h-[30rem];
+}
+
+@utility mobile-gradient {
+  background: linear-gradient(209deg, #d0ffe9 22.26%, #3b8b66 91.71%), #fff;
+
+  @media (min-width: 768px) {
+    background: unset;
+  }
+}
+
+@utility bg-white-gradient {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.81) 0.32%,
+    rgba(255, 255, 255, 0.81) 99.89%
+  );
+}
+
+@utility scroll-shadow-top {
+  --shadow-height: 20px;
+  --scrollbar-width: 8px;
+  -webkit-mask-image:
+    linear-gradient(
+      to bottom,
+      transparent,
+      black var(--shadow-height),
+      black 100%
+    ),
+    linear-gradient(
+      to left,
+      white var(--scrollbar-width),
+      transparent var(--scrollbar-width)
+    );
+  mask-image:
+    linear-gradient(
+      to bottom,
+      transparent,
+      black var(--shadow-height),
+      black 100%
+    ),
+    linear-gradient(
+      to left,
+      white var(--scrollbar-width),
+      transparent var(--scrollbar-width)
+    );
+}
+
+@utility scroll-shadow-bottom {
+  --shadow-height: 20px;
+  --scrollbar-width: 0px;
+
+  -webkit-mask-image:
+    linear-gradient(
+      to bottom,
+      black 0%,
+      black calc(100% - var(--shadow-height)),
+      transparent 100%
+    ),
+    linear-gradient(
+      to left,
+      white var(--scrollbar-width),
+      transparent var(--scrollbar-width)
+    );
+  mask-image:
+    linear-gradient(
+      to bottom,
+      black 0%,
+      black calc(100% - var(--shadow-height)),
+      transparent 100%
+    ),
+    linear-gradient(
+      to left,
+      white var(--scrollbar-width),
+      transparent var(--scrollbar-width)
+    );
+}

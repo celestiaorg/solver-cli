@@ -1,0 +1,18 @@
+export const TradeIcon = (props: React.SVGProps<SVGSVGElement>) => (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    {...props}
+  >
+    <path
+      d="M17 2L21 6M21 6L17 10M21 6H7C5.93913 6 4.92172 6.42143 4.17157 7.17157C3.42143 7.92172 3 8.93913 3 10V11M7 22L3 18M3 18L7 14M3 18H17C18.0609 18 19.0783 17.5786 19.8284 16.8284C20.5786 16.0783 21 15.0609 21 14V13"
+      stroke="currentColor"
+      strokeWidth="1.4364"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);

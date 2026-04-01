@@ -11,6 +11,7 @@ pub(crate) struct CreateForwardingRequest {
     pub(crate) forward_addr: String,
     pub(crate) dest_domain: u32,
     pub(crate) dest_recipient: String,
+    pub(crate) token_id: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -24,13 +25,18 @@ pub struct ForwardAddress {
 }
 
 impl ForwardAddress {
-    pub fn derive(dest_domain: u32, dest_recipient: FixedBytes<32>) -> Result<Self> {
+    pub fn derive(
+        dest_domain: u32,
+        dest_recipient: FixedBytes<32>,
+        token_id: &[u8],
+    ) -> Result<Self> {
         let mut domain_bytes = [0u8; 32];
         domain_bytes[28..32].copy_from_slice(&dest_domain.to_be_bytes());
 
         let mut hasher = Sha256::new();
         hasher.update(domain_bytes);
         hasher.update(dest_recipient.as_slice());
+        hasher.update(token_id);
         let call_digest = hasher.finalize();
 
         let mut hasher = Sha256::new();
@@ -75,23 +81,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn derive_forward_address_matches_expected_vector() {
+    fn derive_is_deterministic_and_token_id_sensitive() {
         let dest_domain = 31338u32;
         let dest_recipient: FixedBytes<32> =
             "0x000000000000000000000000d5e85e86fc692cedad6d6992f1f0ccf273e39913"
                 .parse()
                 .unwrap();
+        let token_a =
+            hex::decode("000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")
+                .unwrap();
+        let token_b =
+            hex::decode("000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7")
+                .unwrap();
 
-        let forward = ForwardAddress::derive(dest_domain, dest_recipient).unwrap();
+        let fwd_a1 = ForwardAddress::derive(dest_domain, dest_recipient, &token_a).unwrap();
+        let fwd_a2 = ForwardAddress::derive(dest_domain, dest_recipient, &token_a).unwrap();
+        let fwd_b = ForwardAddress::derive(dest_domain, dest_recipient, &token_b).unwrap();
 
-        assert_eq!(
-            forward.to_bytes32().to_string(),
-            "0x000000000000000000000000dade7778d258d5aaab4e350cc4f631c2e7b5d504"
-        );
-        assert_eq!(
-            forward.to_bech32().unwrap(),
-            "celestia1mt08w7xjtr26426wx5xvfa33ctnmt4gyxfqytj"
-        );
+        // Same inputs → same address
+        assert_eq!(fwd_a1.to_bytes32(), fwd_a2.to_bytes32());
+        // Different token_id → different address
+        assert_ne!(fwd_a1.to_bytes32(), fwd_b.to_bytes32());
+        assert!(fwd_a1.to_bech32().unwrap().starts_with("celestia1"));
     }
 
     #[test]
@@ -100,7 +111,7 @@ mod tests {
             "0x00000000000000000000000000000000000000000000000000000000000000aa"
                 .parse()
                 .unwrap();
-        let forward = ForwardAddress::derive(1u32, dest_recipient).unwrap();
+        let forward = ForwardAddress::derive(1u32, dest_recipient, b"test-token").unwrap();
 
         let bytes32_hex = forward.to_bytes32().to_string();
         assert_eq!(bytes32_hex.len(), 66);
@@ -113,7 +124,7 @@ mod tests {
             "0x00000000000000000000000000000000000000000000000000000000000000bb"
                 .parse()
                 .unwrap();
-        let forward = ForwardAddress::derive(2u32, dest_recipient).unwrap();
+        let forward = ForwardAddress::derive(2u32, dest_recipient, b"test-token").unwrap();
         assert!(forward.to_bech32().unwrap().starts_with("celestia1"));
     }
 
@@ -123,7 +134,7 @@ mod tests {
             "0x00000000000000000000000000000000000000000000000000000000000000cc"
                 .parse()
                 .unwrap();
-        let forward = ForwardAddress::derive(3u32, dest_recipient).unwrap();
+        let forward = ForwardAddress::derive(3u32, dest_recipient, b"test-token").unwrap();
         let expected = format!("{:?}", forward.to_address());
         let bytes32 = forward.to_bytes32();
         assert_eq!(

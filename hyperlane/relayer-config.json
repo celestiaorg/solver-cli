@@ -121,36 +121,8 @@
                     "http": "http://celestia-validator:9090"
                 }
             ]
-        },
-        "sepolia": {
-            "blocks": {
-                "confirmations": 1,
-                "estimateBlockTime": 12,
-                "reorgPeriod": 5
-            },
-            "chainId": 11155111,
-            "displayName": "Sepolia",
-            "domainId": 11155111,
-            "isTestnet": true,
-            "name": "sepolia",
-            "nativeToken": {
-                "decimals": 18,
-                "name": "Ether",
-                "symbol": "ETH"
-            },
-            "protocol": "ethereum",
-            "rpcUrls": [
-                {
-                    "http": "https://ethereum-sepolia-rpc.publicnode.com"
-                }
-            ],
-            "signer": {
-                "type": "hexKey",
-                "key": "0x52d441beb407f47811a09ed9d330320b2d336482512f26e9a5c5d3dacddc7b1e"
-            },
-            "mailbox": "0x409c1D7f3bDC4e30E4502DeD20D8Ad561D60606c"
         }
     },
     "defaultRpcConsensusType": "fallback",
-    "relayChains": "anvil1,anvil2,celestiadev,sepolia"
+    "relayChains": "anvil1,anvil2,celestiadev"
 }

@@ -265,14 +265,33 @@ impl CentralizedSettlement {
 
 pub struct CentralizedSettlementSchema;
 
+fn toml_to_json(value: &toml::Value) -> serde_json::Value {
+    match value {
+        toml::Value::String(s) => serde_json::Value::String(s.clone()),
+        toml::Value::Integer(i) => serde_json::json!(*i),
+        toml::Value::Float(f) => serde_json::json!(*f),
+        toml::Value::Boolean(b) => serde_json::Value::Bool(*b),
+        toml::Value::Datetime(d) => serde_json::Value::String(d.to_string()),
+        toml::Value::Array(a) => serde_json::Value::Array(a.iter().map(toml_to_json).collect()),
+        toml::Value::Table(t) => {
+            let map = t
+                .iter()
+                .map(|(k, v)| (k.clone(), toml_to_json(v)))
+                .collect();
+            serde_json::Value::Object(map)
+        }
+    }
+}
+
 impl CentralizedSettlementSchema {
     pub fn validate_config(config: &toml::Value) -> Result<(), solver_types::ValidationError> {
-        CentralizedSettlementSchema.validate(config)
+        let json = toml_to_json(config);
+        CentralizedSettlementSchema.validate(&json)
     }
 }
 
 impl ConfigSchema for CentralizedSettlementSchema {
-    fn validate(&self, config: &toml::Value) -> Result<(), solver_types::ValidationError> {
+    fn validate(&self, config: &serde_json::Value) -> Result<(), solver_types::ValidationError> {
         let schema = Schema::new(
             vec![
                 Field::new(
@@ -531,11 +550,12 @@ impl SettlementInterface for CentralizedSettlement {
 }
 
 pub fn create_settlement(
-    config: &toml::Value,
+    config: &serde_json::Value,
     networks: &NetworksConfig,
     _storage: Arc<solver_storage::StorageService>,
 ) -> Result<Box<dyn SettlementInterface>, SettlementError> {
-    CentralizedSettlementSchema::validate_config(config)
+    CentralizedSettlementSchema
+        .validate(config)
         .map_err(|e| SettlementError::ValidationFailed(format!("Invalid configuration: {}", e)))?;
 
     let oracle_config = parse_oracle_config(config)?;

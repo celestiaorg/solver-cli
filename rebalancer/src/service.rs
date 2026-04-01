@@ -425,16 +425,30 @@ impl RebalancerService {
 
             let domain = destination_chain.domain_id;
             let recipient = evm_address_to_bytes32(destination_chain.account_address);
-            let forward_addr = match ForwardAddress::derive(domain, recipient) {
+            let token_id_hex = match self.config.forwarding.token_ids.get(&asset.symbol) {
+                Some(id) => id.clone(),
+                None => {
+                    warn!(
+                        "Asset {} has no forwarding.token_ids entry; skipping rebalance",
+                        asset.symbol
+                    );
+                    continue;
+                }
+            };
+            let token_id_bytes =
+                hex::decode(token_id_hex.strip_prefix("0x").unwrap_or(&token_id_hex))
+                    .unwrap_or_default();
+            let forward_addr = match ForwardAddress::derive(domain, recipient, &token_id_bytes) {
                 Ok(value) => value,
                 Err(err) => {
                     warn!(
-                            "Asset {} route {} -> {} forwarding derivation failed (domain={} recipient={}):\n{:#}",
+                            "Asset {} route {} -> {} forwarding derivation failed (domain={} recipient={} token_id={}):\n{:#}",
                             asset.symbol,
                             source_chain.name,
                             destination_chain.name,
                             domain,
                             bytes32_to_hex(recipient),
+                            token_id_hex,
                             err
                         );
                     continue;
@@ -442,7 +456,7 @@ impl RebalancerService {
             };
 
             if let Err(err) = self
-                .register_forwarding_request(&forward_addr, domain, recipient)
+                .register_forwarding_request(&forward_addr, domain, recipient, &token_id_hex)
                 .await
             {
                 warn!(
@@ -583,11 +597,13 @@ impl RebalancerService {
         forward_addr: &ForwardAddress,
         dest_domain: u32,
         dest_recipient: FixedBytes<32>,
+        token_id: &str,
     ) -> Result<()> {
         let create_req = CreateForwardingRequest {
             forward_addr: forward_addr.to_bech32()?,
             dest_domain,
             dest_recipient: bytes32_to_hex(dest_recipient),
+            token_id: token_id.to_string(),
         };
 
         let created_id = send_forwarding_request(
@@ -1185,6 +1201,8 @@ mod tests {
             dest_domain: 31338,
             dest_recipient: "0x000000000000000000000000d5e85e86fc692cedad6d6992f1f0ccf273e39913"
                 .to_string(),
+            token_id: "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+                .to_string(),
         };
 
         assert_eq!(
@@ -1204,6 +1222,8 @@ mod tests {
             forward_addr: "celestia1test".to_string(),
             dest_domain: 31338,
             dest_recipient: "0x0000000000000000000000000000000000000000000000000000000000000001"
+                .to_string(),
+            token_id: "0x0000000000000000000000000000000000000000000000000000000000000001"
                 .to_string(),
         };
 

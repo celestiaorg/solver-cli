@@ -15,7 +15,7 @@ build:
 ## build-all: Build all service binaries (solver-cli, oracle-operator, oif-aggregator)
 build-all: build
 	@cd oracle-operator && cargo build --release
-	@cd oif/oif-aggregator && cargo build --release
+	@cargo install --git https://github.com/celestiaorg/oif-aggregator --branch jonas/freeze-v0.2.0 oif-aggregator --root .aggregator --force 2>&1 | tail -1
 .PHONY: build-all
 
 ## fmt: Format all Rust workspace crates with rustfmt
@@ -91,10 +91,11 @@ stop:
 	@docker compose down -v 2>/dev/null || true
 	@$(SOLVER_CLI) solver stop 2>/dev/null || true
 	@pkill -9 -f "solver-cli solver start" 2>/dev/null || true
+	@pkill -9 -f "solver-cli rebalancer" 2>/dev/null || true
 	@pkill -9 -f oracle-operator 2>/dev/null || true
-	@pkill -9 -f oif-aggregator 2>/dev/null || true
-	@pkill -9 -f "node server.js" 2>/dev/null || true
-	@pkill -9 -f "vite" 2>/dev/null || true
+	@pkill -9 -f "oif-aggregator" 2>/dev/null || true
+	@pkill -9 -f "tsx.*server/index.ts" 2>/dev/null || true
+	@pkill -9 -f "next dev" 2>/dev/null || true
 	@# Clean Hyperlane artifacts (Anvil state is wiped by docker down -v, so these are stale)
 	@rm -f hyperlane/hyperlane-cosmosnative.json hyperlane/hyperlane-addresses.json
 	@rm -f hyperlane/registry/chains/anvil1/addresses.yaml hyperlane/registry/chains/anvil2/addresses.yaml
@@ -144,6 +145,7 @@ deploy: build
 ## configure: Generate solver configuration
 configure: build
 	@$(SOLVER_CLI) configure
+	@./scripts/generate-frontend-config.sh
 .PHONY: configure
 
 ## fund: Fund solver with tokens on anvil1 (anvil2 gets tokens via 'make rebalance')
@@ -192,7 +194,7 @@ token-remove: build
 fund-operator:
 	@echo "Funding oracle operator on all chains..."
 	@. ./.env && \
-		OPERATOR_ADDR=$$(grep 'operator_address' .config/oracle.toml | cut -d'"' -f2) && \
+		OPERATOR_ADDR=$$(python3 -c "import json; print(json.load(open('.config/state.json'))['solver']['operator_address'])") && \
 		echo "  Operator address: $$OPERATOR_ADDR" && \
 		echo "  Funding on Anvil1 (10 ETH)..." && \
 		cast send --rpc-url $$ANVIL1_RPC --private-key $$ANVIL1_PK --value 10ether $$OPERATOR_ADDR 2>/dev/null && \
@@ -229,13 +231,15 @@ mint: build
 
 ## fund-address: Fund any address with ETH and USDC on anvil1
 ## Usage: make fund-address ADDR=0x... ETH=10 USDC=100000000
+## Uses anvil account 1 (not the solver/deployer) to avoid nonce conflicts
+FUNDER_PK := 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
 fund-address:
 	@[ -n "$(ADDR)" ] || (echo "Error: ADDR is required. Usage: make fund-address ADDR=0x..."; exit 1)
 	@. ./.env && \
 		echo "Funding $(ADDR) on anvil1..." && \
-		cast send --rpc-url $$ANVIL1_RPC --private-key $$ANVIL1_PK --value $(or $(ETH),10)ether $(ADDR) && \
+		cast send --rpc-url $$ANVIL1_RPC --private-key $(FUNDER_PK) --value $(or $(ETH),10)ether $(ADDR) && \
 		echo "  Sent $(or $(ETH),10) ETH" && \
-		cast send --rpc-url $$ANVIL1_RPC --private-key $$ANVIL1_PK \
+		cast send --rpc-url $$ANVIL1_RPC --private-key $(FUNDER_PK) \
 			$$(cat .config/state.json | python3 -c "import sys,json; chains=json.load(sys.stdin)['chains']; print(next(c['tokens']['USDC']['address'] for c in chains.values() if c['name']=='anvil1'))") \
 			"mint(address,uint256)" $(ADDR) $(or $(USDC),100000000) && \
 		echo "  Minted $(or $(USDC),100000000) USDC (raw units)" && \
@@ -279,7 +283,9 @@ rebalancer: rebalancer-start
 ## aggregator-start: Start the OIF aggregator service
 aggregator-start:
 	@echo "Starting OIF aggregator on port 4000..."
-	@cd oif/oif-aggregator && RUST_LOG=info cargo run --release
+	@test -x .aggregator/bin/oif-aggregator || \
+		cargo install --git https://github.com/celestiaorg/oif-aggregator --branch jonas/freeze-v0.2.0 oif-aggregator --root .aggregator --force
+	@RUST_LOG=info .aggregator/bin/oif-aggregator
 .PHONY: aggregator-start
 
 # Alias for convenience
@@ -333,15 +339,12 @@ reset: clean
 	@$(MAKE) setup FORCE=1
 .PHONY: reset
 
-## frontend: Start the frontend (backend API + Vite dev server)
+## frontend: Start the frontend (backend API + Next.js dev server)
 frontend:
 	@echo "Installing frontend dependencies..."
-	@cd frontend && npm install --silent 2>/dev/null
-	@echo "Starting frontend backend (port 3001)..."
-	@cd frontend && node server.js &
-	@sleep 2
-	@echo "Starting Vite dev server (port 5173)..."
-	@cd frontend && npx vite --host
+	@cd frontend && pnpm install --silent 2>/dev/null
+	@echo "Starting eden-portal (server + Next.js on port 3000)..."
+	@cd frontend && pnpm dev
 .PHONY: frontend
 
 ## mvp: Run the full MVP demo (all services + frontend)

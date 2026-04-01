@@ -1,0 +1,40 @@
+{
+  "hosting": [
+    {
+      "target": "eden-mainnet",
+      "public": "out",
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "cleanUrls": true,
+      "rewrites": [
+        { "source": "/vaults{,/**}", "destination": "/vaults.html" },
+        { "source": "/portfolio{,/**}", "destination": "/portfolio.html" },
+        { "source": "/bridge{,/**}", "destination": "/bridge.html" },
+        { "source": "/onboarding{,/**}", "destination": "/onboarding.html" },
+        {
+          "source": "/onboarding-steps{,/**}",
+          "destination": "/onboarding-steps.html"
+        },
+        { "source": "/", "destination": "/index.html" },
+        { "source": "**", "destination": "/404.html" }
+      ]
+    },
+    {
+      "target": "eden-testnet",
+      "public": "out",
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "cleanUrls": true,
+      "rewrites": [
+        { "source": "/vaults{,/**}", "destination": "/vaults.html" },
+        { "source": "/portfolio{,/**}", "destination": "/portfolio.html" },
+        { "source": "/bridge{,/**}", "destination": "/bridge.html" },
+        { "source": "/onboarding{,/**}", "destination": "/onboarding.html" },
+        {
+          "source": "/onboarding-steps{,/**}",
+          "destination": "/onboarding-steps.html"
+        },
+        { "source": "/", "destination": "/index.html" },
+        { "source": "**", "destination": "/404.html" }
+      ]
+    }
+  ]
+}
