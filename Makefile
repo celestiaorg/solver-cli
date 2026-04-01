@@ -231,13 +231,15 @@ mint: build
 
 ## fund-address: Fund any address with ETH and USDC on anvil1
 ## Usage: make fund-address ADDR=0x... ETH=10 USDC=100000000
+## Uses anvil account 1 (not the solver/deployer) to avoid nonce conflicts
+FUNDER_PK := 0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d
 fund-address:
 	@[ -n "$(ADDR)" ] || (echo "Error: ADDR is required. Usage: make fund-address ADDR=0x..."; exit 1)
 	@. ./.env && \
 		echo "Funding $(ADDR) on anvil1..." && \
-		cast send --rpc-url $$ANVIL1_RPC --private-key $$ANVIL1_PK --value $(or $(ETH),10)ether $(ADDR) && \
+		cast send --rpc-url $$ANVIL1_RPC --private-key $(FUNDER_PK) --value $(or $(ETH),10)ether $(ADDR) && \
 		echo "  Sent $(or $(ETH),10) ETH" && \
-		cast send --rpc-url $$ANVIL1_RPC --private-key $$ANVIL1_PK \
+		cast send --rpc-url $$ANVIL1_RPC --private-key $(FUNDER_PK) \
 			$$(cat .config/state.json | python3 -c "import sys,json; chains=json.load(sys.stdin)['chains']; print(next(c['tokens']['USDC']['address'] for c in chains.values() if c['name']=='anvil1'))") \
 			"mint(address,uint256)" $(ADDR) $(or $(USDC),100000000) && \
 		echo "  Minted $(or $(USDC),100000000) USDC (raw units)" && \

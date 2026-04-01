@@ -1,0 +1,32 @@
+{
+  "anvil1": {
+    "chain_id": 31337,
+    "domain_id": 131337,
+    "mock_usdc": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "warp_token": "0x4A679253410272dd5232B3Ff7cF5dbB88f295319",
+    "warp_token_type": "collateral",
+    "mailbox": "0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0",
+    "merkle_tree_hook": "0x0B306BF915C4d645ff596e518fAf3F9669b97016",
+    "validator_announce": "0x68B1D87F95878fE05B998F19b66F4baba5De1aed"
+  },
+  "anvil2": {
+    "chain_id": 31338,
+    "domain_id": 31338,
+    "warp_token": "0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44",
+    "warp_token_type": "synthetic",
+    "mailbox": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+    "merkle_tree_hook": "0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82",
+    "validator_announce": "0x959922bE3CAee4b8Cd9a407cc3ac1C251C2007B1"
+  },
+  "celestiadev": {
+    "domain_id": 69420,
+    "synthetic_token": "0x726f757465725f61707000000000000000000000000000020000000000000000",
+    "synthetic_tokens": {
+      "USDC": "0x726f757465725f61707000000000000000000000000000020000000000000000"
+    },
+    "mailbox": "0x68797065726c616e650000000000000000000000000000000000000000000000",
+    "merkle_tree_hook": "0x726f757465725f706f73745f6469737061746368000000030000000000000002",
+    "ism": "0x726f757465725f69736d00000000000000000000000000000000000000000000",
+    "default_hook": "0x726f757465725f706f73745f6469737061746368000000000000000000000001"
+  }
+}

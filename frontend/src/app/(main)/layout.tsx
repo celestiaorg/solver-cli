@@ -1,5 +1,3 @@
-import '@celestia/widget/styles.css';
-
 import React from 'react';
 
 import { OnboardingGuard } from '@/components/onboarding-guard';
