@@ -419,7 +419,11 @@ impl RebalancerService {
             let recipient = evm_address_to_bytes32(destination_chain.account_address);
             let token_id_bytes = evm_address_to_bytes32(source_collateral_token);
             let token_id_hex = bytes32_to_hex(token_id_bytes);
-            let forward_addr = match ForwardAddress::derive(domain, recipient, token_id_bytes.as_slice()) {
+            let forward_addr = match ForwardAddress::derive(
+                domain,
+                recipient,
+                token_id_bytes.as_slice(),
+            ) {
                 Ok(value) => value,
                 Err(err) => {
                     warn!(

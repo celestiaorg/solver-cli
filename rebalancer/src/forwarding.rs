@@ -25,7 +25,11 @@ pub struct ForwardAddress {
 }
 
 impl ForwardAddress {
-    pub fn derive(dest_domain: u32, dest_recipient: FixedBytes<32>, token_id: &[u8]) -> Result<Self> {
+    pub fn derive(
+        dest_domain: u32,
+        dest_recipient: FixedBytes<32>,
+        token_id: &[u8],
+    ) -> Result<Self> {
         let mut domain_bytes = [0u8; 32];
         domain_bytes[28..32].copy_from_slice(&dest_domain.to_be_bytes());
 
@@ -83,8 +87,12 @@ mod tests {
             "0x000000000000000000000000d5e85e86fc692cedad6d6992f1f0ccf273e39913"
                 .parse()
                 .unwrap();
-        let token_a = hex::decode("000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48").unwrap();
-        let token_b = hex::decode("000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7").unwrap();
+        let token_a =
+            hex::decode("000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")
+                .unwrap();
+        let token_b =
+            hex::decode("000000000000000000000000dac17f958d2ee523a2206206994597c13d831ec7")
+                .unwrap();
 
         let fwd_a1 = ForwardAddress::derive(dest_domain, dest_recipient, &token_a).unwrap();
         let fwd_a2 = ForwardAddress::derive(dest_domain, dest_recipient, &token_a).unwrap();
