@@ -110,16 +110,10 @@ impl RebalancerService {
         }
 
         let observed_total = sum_balances(&balances);
-        let total_balance = *self.asset_totals.get(&asset.symbol).with_context(|| {
-            format!(
-                "Missing startup total_balance for asset {}. Restart service to recompute totals",
-                asset.symbol
-            )
-        })?;
-        let plan = AssetPlan::new(asset, &balances, total_balance)?;
+        let plan = AssetPlan::new(asset, &balances, observed_total)?;
 
         let (min_transfer_raw, max_transfer_raw) = transfer_size_bounds_raw(
-            total_balance,
+            observed_total,
             self.config.execution.min_transfer_bps,
             self.config.execution.max_transfer_bps,
         );
@@ -148,9 +142,7 @@ impl RebalancerService {
 
         if !plan.active_deficit_chain_ids.is_empty() {
             info!(
-                "Asset {}: transfer-size bounds from total_balance={} {} (observed_total={} {}) => min={} {} ({} bps), max={} {} ({} bps)",
-                asset.symbol,
-                format_token_amount(total_balance, asset.decimals),
+                "Asset {}: transfer-size bounds from total={} {} => min={} {} ({} bps), max={} {} ({} bps)",
                 asset.symbol,
                 format_token_amount(observed_total, asset.decimals),
                 asset.symbol,
@@ -425,16 +417,19 @@ impl RebalancerService {
 
             let domain = destination_chain.domain_id;
             let recipient = evm_address_to_bytes32(destination_chain.account_address);
-            let forward_addr = match ForwardAddress::derive(domain, recipient) {
+            let token_id_bytes = evm_address_to_bytes32(source_collateral_token);
+            let token_id_hex = bytes32_to_hex(token_id_bytes);
+            let forward_addr = match ForwardAddress::derive(domain, recipient, token_id_bytes.as_slice()) {
                 Ok(value) => value,
                 Err(err) => {
                     warn!(
-                            "Asset {} route {} -> {} forwarding derivation failed (domain={} recipient={}):\n{:#}",
+                            "Asset {} route {} -> {} forwarding derivation failed (domain={} recipient={} token_id={}):\n{:#}",
                             asset.symbol,
                             source_chain.name,
                             destination_chain.name,
                             domain,
                             bytes32_to_hex(recipient),
+                            token_id_hex,
                             err
                         );
                     continue;
@@ -442,7 +437,7 @@ impl RebalancerService {
             };
 
             if let Err(err) = self
-                .register_forwarding_request(&forward_addr, domain, recipient)
+                .register_forwarding_request(&forward_addr, domain, recipient, &token_id_hex)
                 .await
             {
                 warn!(
@@ -583,11 +578,13 @@ impl RebalancerService {
         forward_addr: &ForwardAddress,
         dest_domain: u32,
         dest_recipient: FixedBytes<32>,
+        token_id: &str,
     ) -> Result<()> {
         let create_req = CreateForwardingRequest {
             forward_addr: forward_addr.to_bech32()?,
             dest_domain,
             dest_recipient: bytes32_to_hex(dest_recipient),
+            token_id: token_id.to_string(),
         };
 
         let created_id = send_forwarding_request(
@@ -1185,6 +1182,8 @@ mod tests {
             dest_domain: 31338,
             dest_recipient: "0x000000000000000000000000d5e85e86fc692cedad6d6992f1f0ccf273e39913"
                 .to_string(),
+            token_id: "0x000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+                .to_string(),
         };
 
         assert_eq!(
@@ -1204,6 +1203,8 @@ mod tests {
             forward_addr: "celestia1test".to_string(),
             dest_domain: 31338,
             dest_recipient: "0x0000000000000000000000000000000000000000000000000000000000000001"
+                .to_string(),
+            token_id: "0x0000000000000000000000000000000000000000000000000000000000000001"
                 .to_string(),
         };
 
