@@ -36,3 +36,5 @@ pnpm-lock.yaml
 
 # Hyperlane CLI binary
 hyperlane/hyp
+
+packages/
