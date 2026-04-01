@@ -435,13 +435,10 @@ impl RebalancerService {
                     continue;
                 }
             };
-            let token_id_bytes = hex::decode(token_id_hex.strip_prefix("0x").unwrap_or(&token_id_hex))
-                .unwrap_or_default();
-            let forward_addr = match ForwardAddress::derive(
-                domain,
-                recipient,
-                &token_id_bytes,
-            ) {
+            let token_id_bytes =
+                hex::decode(token_id_hex.strip_prefix("0x").unwrap_or(&token_id_hex))
+                    .unwrap_or_default();
+            let forward_addr = match ForwardAddress::derive(domain, recipient, &token_id_bytes) {
                 Ok(value) => value,
                 Err(err) => {
                     warn!(

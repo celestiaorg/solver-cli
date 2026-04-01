@@ -86,7 +86,10 @@ impl RebalancerConfigGenerator {
         let mut token_ids_section = String::new();
         for asset in &assets {
             let symbol_upper = asset.symbol.to_ascii_uppercase();
-            if let Some(id) = forwarding_token_ids.get(&symbol_upper).or_else(|| forwarding_token_ids.get("*")) {
+            if let Some(id) = forwarding_token_ids
+                .get(&symbol_upper)
+                .or_else(|| forwarding_token_ids.get("*"))
+            {
                 token_ids_section.push_str(&format!("{} = \"{}\"\n", symbol_upper, id));
             }
         }
