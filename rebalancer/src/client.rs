@@ -155,28 +155,18 @@ impl ChainClient {
             .context("Failed to query pending account nonce")
     }
 
-    async fn pending_nonce(&self) -> Result<u64> {
-        self.provider
-            .get_transaction_count(self.account)
-            .block_id(BlockId::Number(BlockNumberOrTag::Pending))
-            .await
-            .context("Failed to fetch pending nonce")
-    }
-
     pub async fn approve_erc20(
         &self,
         token: Address,
         spender: Address,
         amount: U256,
     ) -> Result<TxHash> {
-        let nonce = self.pending_nonce().await?;
         let call = IERC20::approveCall { spender, amount };
         let call_data = Bytes::from(call.abi_encode());
 
         let tx = TransactionRequest::default()
             .to(token)
-            .input(call_data.into())
-            .nonce(nonce);
+            .input(call_data.into());
 
         let pending = self.provider.send_transaction(tx).await.with_context(|| {
             format!(
@@ -286,7 +276,6 @@ impl ChainClient {
         amount: U256,
         msg_value: U256,
     ) -> Result<SubmittedTransfer> {
-        let nonce = self.pending_nonce().await?;
         let recipient = address_to_bytes32(destination_recipient);
         let call = ITokenRouter::transferRemoteCall {
             _destination: destination_domain_id,
@@ -298,8 +287,7 @@ impl ChainClient {
         let tx = TransactionRequest::default()
             .to(source_router)
             .input(call_data.into())
-            .value(msg_value)
-            .nonce(nonce);
+            .value(msg_value);
 
         let (message_id, preview_error) = match self.provider.call(tx.clone()).await {
             Ok(raw) => {

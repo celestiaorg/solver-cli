@@ -121,13 +121,11 @@ struct RawExecutionConfig {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RawSignerConfig {
-    #[serde(rename = "type")]
-    signer_type: String,
-    key: Option<String>,
-    key_id: Option<String>,
-    region: Option<String>,
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+enum RawSignerConfig {
+    Env,
+    File { key: String },
+    AwsKms { key_id: String, region: String },
 }
 
 /// Optional per-asset weight overrides in the TOML.
@@ -577,38 +575,20 @@ fn parse_signer_config(value: Option<RawSignerConfig>) -> Result<SignerConfig> {
         bail!("Missing [signer] section in rebalancer config");
     };
 
-    match value.signer_type.as_str() {
-        "env" => {
-            if value.key.is_some() || value.key_id.is_some() || value.region.is_some() {
-                bail!("signer type = \"env\" only accepts field \"type\"");
-            }
-            Ok(SignerConfig::Env)
-        }
-        "file" => {
-            let key = value
-                .key
-                .ok_or_else(|| anyhow::anyhow!("signer.key is required for type = \"file\""))?;
+    match value {
+        RawSignerConfig::Env => Ok(SignerConfig::Env),
+        RawSignerConfig::File { key } => {
             if key.trim().is_empty() {
                 bail!("signer.key cannot be empty for type = \"file\"");
             }
             Ok(SignerConfig::File { key })
         }
-        "aws_kms" => {
-            let key_id = value.key_id.ok_or_else(|| {
-                anyhow::anyhow!("signer.key_id is required for type = \"aws_kms\"")
-            })?;
-            let region = value.region.ok_or_else(|| {
-                anyhow::anyhow!("signer.region is required for type = \"aws_kms\"")
-            })?;
+        RawSignerConfig::AwsKms { key_id, region } => {
             if key_id.trim().is_empty() || region.trim().is_empty() {
                 bail!("signer.key_id and signer.region cannot be empty");
             }
             Ok(SignerConfig::AwsKms { key_id, region })
         }
-        other => bail!(
-            "Unknown signer type: {} (expected env, file, or aws_kms)",
-            other
-        ),
     }
 }
 

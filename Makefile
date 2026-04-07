@@ -276,6 +276,11 @@ rebalancer-start: build
 	@$(SOLVER_CLI) rebalancer start
 .PHONY: rebalancer-start
 
+## rebalancer-once: Run a single rebalance cycle (used during setup to seed inventory)
+rebalancer-once: build
+	@$(SOLVER_CLI) rebalancer start --once
+.PHONY: rebalancer-once
+
 # Alias for convenience
 rebalancer: rebalancer-start
 .PHONY: rebalancer
