@@ -3903,9 +3903,11 @@ dependencies = [
  "alloy",
  "alloy-primitives",
  "alloy-provider",
+ "alloy-rpc-client",
  "alloy-signer",
  "alloy-signer-local",
  "alloy-sol-types",
+ "alloy-transport",
  "anyhow",
  "aws-config",
  "aws-sdk-kms",
@@ -3922,6 +3924,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
