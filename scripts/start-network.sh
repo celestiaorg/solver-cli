@@ -32,7 +32,7 @@ success "Cleaned"
 
 if [ "$SKIP_DOCKER" = false ]; then
   step "Pulling/building Docker images..."
-  docker pull ghcr.io/celestiaorg/celestia-app-standalone:v7.0.0-rc0 2>/dev/null || true
+  docker pull ghcr.io/celestiaorg/celestia-app-standalone:v8.0.0-rc0 2>/dev/null || true
   make docker-build
   success "Docker images ready"
 else

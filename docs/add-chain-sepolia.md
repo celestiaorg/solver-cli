@@ -29,6 +29,7 @@ The CLI auto-detects chains by scanning for `{CHAIN}_RPC` + `{CHAIN}_PK` pairs â
 ## Step 2: Deploy OIF contracts to Sepolia
 
 ```bash
+source .env
 make deploy CHAINS=sepolia
 ```
 

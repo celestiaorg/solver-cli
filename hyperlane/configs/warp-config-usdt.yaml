@@ -1,0 +1,21 @@
+anvil1:
+  type: collateral
+  token: "0x912C2bFdDfcbD3777dF44eF4c20d7943C521786c"
+  owner: "0x9f2CD91d150236BA9796124F3Dcda305C3a2086C"
+  name: "USDT"
+  symbol: "USDT"
+  decimals: 6
+
+anvil2:
+  type: synthetic
+  owner: "0x9f2CD91d150236BA9796124F3Dcda305C3a2086C"
+  name: "USDT"
+  symbol: "USDT"
+  decimals: 6
+
+sepolia:
+  type: synthetic
+  owner: "0x9f2CD91d150236BA9796124F3Dcda305C3a2086C"
+  name: "USDT"
+  symbol: "USDT"
+  decimals: 6

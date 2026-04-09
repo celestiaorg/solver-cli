@@ -3,7 +3,9 @@ use crate::signer::TxSigner;
 use crate::state::StateManager;
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy_primitives::{Address as AlloyAddress, Bytes, FixedBytes, U256};
+use alloy_rpc_client::ClientBuilder;
 use alloy_sol_types::{sol, SolCall, SolEvent};
+use alloy_transport::layers::RetryBackoffLayer;
 use anyhow::{Context, Result};
 use sha3::{Digest, Keccak256};
 use std::collections::HashMap;
@@ -202,10 +204,21 @@ impl OracleOperator {
         // Create wallet with operator signer
         let wallet = operator_signer.wallet.clone();
 
+        let retry_layer = RetryBackoffLayer::new(
+            10,  // max retries
+            500, // initial backoff ms
+            100, // compute units per second
+        );
+
         for chain_config in &config.chains {
+            let rpc_url: url::Url = chain_config.rpc_url.parse()?;
+            let client = ClientBuilder::default()
+                .layer(retry_layer.clone())
+                .http(rpc_url);
+
             let provider = ProviderBuilder::new()
                 .wallet(wallet.clone())
-                .connect_http(chain_config.rpc_url.parse()?);
+                .connect_client(client);
 
             providers.insert(chain_config.chain_id, Arc::from(provider));
             info!(
@@ -253,13 +266,11 @@ impl OracleOperator {
     }
 
     async fn poll_and_process(&self) -> Result<()> {
-        // Poll each chain for new fills
         for chain_config in &self.config.chains {
-            if let Err(e) = self
-                .process_chain(chain_config.chain_id, chain_config)
-                .await
-            {
-                warn!("Error processing chain {}: {}", chain_config.chain_id, e);
+            let chain_id = chain_config.chain_id;
+
+            if let Err(e) = self.process_chain(chain_id, chain_config).await {
+                warn!("Error processing chain {}: {}", chain_id, e);
             }
         }
 
@@ -656,7 +667,7 @@ impl OracleOperator {
         let tx = alloy::rpc::types::TransactionRequest::default()
             .to(oracle_address)
             .input(call.abi_encode().into())
-            .gas_limit(500_000);
+            .gas_limit(80_000);
 
         // Send transaction (wallet handles signing)
         let receipt = provider.send_transaction(tx).await?.get_receipt().await?;

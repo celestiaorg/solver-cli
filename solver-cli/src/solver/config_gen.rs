@@ -101,6 +101,13 @@ decimals = {}
             output_oracles.push(format!("{} = [\"{}\"]", chain.chain_id, oracle));
         }
 
+        // Include OFAC list path if the file exists
+        let ofac_line = if std::path::Path::new(".config/ofac.json").exists() {
+            "ofac_list = \".config/ofac.json\"\n".to_string()
+        } else {
+            String::new()
+        };
+
         // Build routes (all-to-all)
         let mut routes = Vec::new();
         for &from_id in &chain_ids {
@@ -125,7 +132,7 @@ min_profitability_pct = 0.0
 commission_bps = 20
 rate_buffer_bps = 15
 monitoring_timeout_seconds = 28800
-
+{ofac_line}
 # ============================================================================
 # HTTP API
 # ============================================================================
@@ -235,6 +242,7 @@ fallbacks = ["coingecko"]
 # SETTLEMENT
 # ============================================================================
 [settlement]
+primary = "centralized"
 settlement_poll_interval_seconds = 12
 
 [settlement.implementations.centralized]
@@ -257,6 +265,7 @@ output = {{ {output_oracles} }}
             account_section = account_section,
             networks_section = networks_section.trim(),
             chain_ids_str = chain_ids_str,
+            ofac_line = ofac_line,
             input_oracles = input_oracles.join(", "),
             output_oracles = output_oracles.join(", "),
             routes = routes.join("\n"),
@@ -282,51 +291,8 @@ output = {{ {output_oracles} }}
         Ok(())
     }
 
-    /// Generate oracle operator configuration for all chains
-    pub fn generate_oracle_toml(state: &SolverState) -> Result<String> {
-        if state.chains.is_empty() {
-            anyhow::bail!("No chains configured");
-        }
-
-        let operator_address = state
-            .solver
-            .operator_address
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Operator address not configured"))?;
-
-        let mut chains: Vec<_> = state.chains.values().collect();
-        chains.sort_by_key(|chain| chain.chain_id);
-
-        // Build chain configurations
-        let mut chains_section = String::new();
-        for chain in chains {
-            chains_section.push_str(&format!(
-                r#"
-[[chains]]
-name = "{}"
-chain_id = {}
-rpc_url = "{}"
-oracle_address = "{}"
-output_settler_address = "{}"
-input_settler_address = "{}"
-"#,
-                chain.name,
-                chain.chain_id,
-                chain.rpc,
-                chain.contracts.oracle.as_deref().unwrap_or(""),
-                chain
-                    .contracts
-                    .output_settler_simple
-                    .as_deref()
-                    .unwrap_or(""),
-                chain
-                    .contracts
-                    .input_settler_escrow
-                    .as_deref()
-                    .unwrap_or(""),
-            ));
-        }
-
+    /// Generate slim oracle operator TOML (service settings only; chain data from state.json).
+    pub fn generate_oracle_toml(_state: &SolverState) -> Result<String> {
         let signer_section = match crate::utils::OracleSignerConfig::from_env()? {
             crate::utils::OracleSignerConfig::AwsKms { key_id, region, .. } => {
                 format!(
@@ -338,24 +304,14 @@ input_settler_address = "{}"
 
         let config = format!(
             r#"# Auto-generated oracle operator configuration
-# DO NOT EDIT MANUALLY - regenerate with 'solver-cli configure'
-# Supports {} chain(s)
+# Chain/contract data is read from state.json at startup.
 
-# Operator address (must match CentralizedOracle operator)
-operator_address = "{operator_address}"
-
-# Polling interval in seconds
+state_file = "state.json"
 poll_interval_seconds = 3
 
-# Operator signer configuration (single signer used across all chains)
 {signer_section}
-
-# Chain configurations
-{chains_section}"#,
-            state.chains.len(),
-            operator_address = operator_address,
+"#,
             signer_section = signer_section,
-            chains_section = chains_section.trim(),
         );
 
         Ok(config)
@@ -785,21 +741,17 @@ mod tests {
     }
 
     #[test]
-    fn oracle_config_uses_signer_block() {
+    fn oracle_config_is_slim() {
         let state = sample_state();
         let toml = ConfigGenerator::generate_oracle_toml(&state).expect("oracle config");
 
+        // Slim format: references state.json, has signer, no chain data
+        assert!(toml.contains("state_file = \"state.json\""));
         assert!(toml.contains("[signer]"));
         assert!(toml.contains("type = \"env\""));
-    }
-
-    #[test]
-    fn oracle_config_orders_chains_by_chain_id() {
-        let state = sample_state();
-        let toml = ConfigGenerator::generate_oracle_toml(&state).expect("oracle config");
-
-        let sepolia_idx = toml.find("chain_id = 11155111").expect("sepolia chain");
-        let eden_idx = toml.find("chain_id = 3735928814").expect("eden chain");
-        assert!(sepolia_idx < eden_idx);
+        assert!(toml.contains("poll_interval_seconds = 3"));
+        // Should NOT contain chain data (that comes from state.json now)
+        assert!(!toml.contains("[[chains]]"));
+        assert!(!toml.contains("oracle_address"));
     }
 }

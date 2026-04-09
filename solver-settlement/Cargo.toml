@@ -1,5 +1,5 @@
 [package]
-name = "solver-settlement"
+name = "solver-settlement-impls"
 version = "0.1.0"
 edition = "2024"
 
@@ -14,9 +14,9 @@ alloy-sol-types = { version = "1.0.37" }
 async-trait = "0.1"
 serde_json = "1.0"
 sha3 = "0.10"
-solver-storage = { git = "https://github.com/celestiaorg/oif-solver", rev = "a06231ca236ee9ce156900cd2cc9915fbe847cdc" }
-solver-types = { git = "https://github.com/celestiaorg/oif-solver", rev = "a06231ca236ee9ce156900cd2cc9915fbe847cdc", features = ["oif-interfaces"] }
+solver-storage = { git = "https://github.com/celestiaorg/oif-solver", branch = "jonas/freeze-v0.2.0" }
+solver-types = { git = "https://github.com/celestiaorg/oif-solver", branch = "jonas/freeze-v0.2.0", features = ["oif-interfaces"] }
 tokio = { version = "1", features = ["rt"] }
 toml = "0.9"
 tracing = "0.1"
-upstream-solver-settlement = { package = "solver-settlement", git = "https://github.com/celestiaorg/oif-solver", rev = "a06231ca236ee9ce156900cd2cc9915fbe847cdc" }
+upstream-solver-settlement = { package = "solver-settlement", git = "https://github.com/celestiaorg/oif-solver", branch = "jonas/freeze-v0.2.0" }

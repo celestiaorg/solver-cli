@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "bridge-pages"
+  },
+  "targets": {
+    "bridge-pages": {
+      "hosting": {
+        "eden-mainnet": ["celestia-eden-portal"],
+        "eden-testnet": ["testnet-celestia-eden-portal"]
+      }
+    }
+  },
+  "etags": {}
+}
