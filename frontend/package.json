@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
-    "@celestia/widget": "workspace:*",
     "@morpho-org/morpho-ts": "^2.4.3",
     "@phosphor-icons/react": "2.1.5",
     "@radix-ui/react-avatar": "^1.1.10",
