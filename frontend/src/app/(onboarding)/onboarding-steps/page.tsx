@@ -1,43 +1,28 @@
 'use client';
 
-import { Tabs, Widget, WidgetProvider } from '@celestia/widget';
-
 import { useCallback } from 'react';
 
 import { useRouter } from 'next/navigation';
 
-import { useConnectKitContext } from '@/connect-kit';
+import { Button } from '@/components/ui/button';
 import { edenImages } from '@/lib/constants/eden-images';
-import { isEdenMainnet } from '@/lib/constants/eden-network';
 import { useOnboardingStore } from '@/store/onboarding';
 
 import { OnboardingStepCard } from './components/onboarding-step-card';
 
-/**
- * Onboarding Steps Page
- *
- * Multi-step scrollable onboarding flow
- * TODO: Add your onboarding steps content
- */
 const OnboardingStepsPage = () => {
   const router = useRouter();
-
-  const { setIsModalOpen } = useConnectKitContext();
   const { setCurrentStep } = useOnboardingStore();
 
-  const handleWalletConnect = useCallback(() => {
-    setIsModalOpen(true);
-  }, []);
+  const handleOpenBridge = useCallback(() => {
+    setCurrentStep(1);
+    router.push('/bridge');
+  }, [router, setCurrentStep]);
 
-  const handleStatusChange = useCallback(
-    (status: string) => {
-      if (status === 'success') {
-        router.push('/onboarding-steps/vaults');
-        setCurrentStep(1);
-      }
-    },
-    [router, setCurrentStep]
-  );
+  const handleSkip = useCallback(() => {
+    setCurrentStep(1);
+    router.push('/onboarding-steps/vaults');
+  }, [router, setCurrentStep]);
 
   return (
     <main className="w-full max-w-120">
@@ -54,17 +39,19 @@ const OnboardingStepsPage = () => {
           }
         />
 
-        <WidgetProvider
-          connectWallet={handleWalletConnect}
-          isTestnet={!isEdenMainnet ? true : undefined}
-          defaultTab={Tabs.ADVANCED}
-          showDefaultTabOnly
-        >
-          <Widget
-            onStatusChange={handleStatusChange}
-            className={`eden-widget-ui z-10 w-full bg-[#2A2B2B] backdrop-blur-2xl`}
-          />
-        </WidgetProvider>
+        <div className="z-10 flex w-full flex-col gap-3 rounded-2xl bg-[#2A2B2B] p-6 backdrop-blur-2xl">
+          <Button className="w-full" size="lg" onClick={handleOpenBridge}>
+            Open Bridge
+          </Button>
+          <Button
+            className="w-full"
+            size="lg"
+            variant="ghost"
+            onClick={handleSkip}
+          >
+            Skip for now
+          </Button>
+        </div>
       </section>
     </main>
   );
