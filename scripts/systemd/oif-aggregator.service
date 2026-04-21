@@ -5,11 +5,11 @@ PartOf=oif.target
 
 [Service]
 Type=simple
-WorkingDirectory=/root/solver-cli/oif/oif-aggregator
+WorkingDirectory=/root/solver-cli
 EnvironmentFile=/root/solver-cli/.env
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=RUST_LOG=info
-ExecStart=/root/solver-cli/oif/oif-aggregator/target/release/oif-aggregator
+ExecStart=/root/solver-cli/.aggregator/bin/oif-aggregator
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal

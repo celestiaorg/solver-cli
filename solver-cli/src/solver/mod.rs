@@ -1,4 +1,6 @@
 mod config_gen;
+#[cfg(feature = "solver-runtime")]
+mod delivery;
 mod engine;
 mod runner;
 
