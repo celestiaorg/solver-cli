@@ -148,11 +148,15 @@ discovery = "offchain_eip7683"
 # STORAGE
 # ============================================================================
 [storage]
-primary = "memory"
+# File-backed so in-flight orders survive a solver restart. Memory storage
+# silently drops every pending order on restart, which once left 19 filled
+# orders orphaned in Deposited state (2026-04-17..21) — we had filled on the
+# destination but had no record to claim on source after the restart.
+primary = "file"
 cleanup_interval_seconds = 60
 
-[storage.implementations.memory]
-# Memory storage has no configuration
+[storage.implementations.file]
+storage_path = "./.config/solver-storage"
 
 # ============================================================================
 # ACCOUNT

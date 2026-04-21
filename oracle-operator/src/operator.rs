@@ -17,6 +17,14 @@ use tracing::{debug, error, info, warn};
 
 const LOG_QUERY_BLOCK_WINDOW: u64 = 10_000;
 
+// Hard ceilings on RPC awaits so a stalled provider cannot freeze the poll loop.
+// The retry layer handles transient JSON-RPC errors; these guard against the
+// tokio task being parked forever on a TCP read that never returns (observed
+// against public Sepolia RPCs on 2026-04-20, which left the operator deadlocked
+// mid-`get_receipt` for ~30h).
+const TX_SEND_TIMEOUT: Duration = Duration::from_secs(30);
+const TX_RECEIPT_TIMEOUT: Duration = Duration::from_secs(120);
+
 /// Concrete HTTP provider type from ProviderBuilder::new().wallet(...).connect_http(...).
 /// Stored so we can hold multiple providers in a HashMap without dyn Provider.
 type WalletHttpProvider = alloy::providers::fillers::FillProvider<
@@ -669,8 +677,27 @@ impl OracleOperator {
             .input(call.abi_encode().into())
             .gas_limit(80_000);
 
-        // Send transaction (wallet handles signing)
-        let receipt = provider.send_transaction(tx).await?.get_receipt().await?;
+        // Send transaction (wallet handles signing).
+        // Both awaits are wrapped in timeouts: a hung endpoint here used to freeze
+        // the whole poll loop. On timeout we bubble an Err; the outer handler
+        // logs "Retryable attestation failure", halts the chunk, and retries on
+        // the next poll — safe because submitAttestation is idempotent.
+        let pending = tokio::time::timeout(TX_SEND_TIMEOUT, provider.send_transaction(tx))
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "send_transaction timed out after {}s",
+                    TX_SEND_TIMEOUT.as_secs()
+                )
+            })??;
+        let receipt = tokio::time::timeout(TX_RECEIPT_TIMEOUT, pending.get_receipt())
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!(
+                    "get_receipt timed out after {}s",
+                    TX_RECEIPT_TIMEOUT.as_secs()
+                )
+            })??;
         let tx_hash = receipt.transaction_hash;
         let status = receipt.status();
 
