@@ -54,6 +54,13 @@ async fn run_solver_from_config_impl(config_path: &Path) -> Result<()> {
     for (name, factory) in solver_delivery::get_all_implementations() {
         delivery_factories.insert(name.to_string(), factory);
     }
+    // Replace the upstream evm_alloy factory with our wrapper that stamps
+    // EIP-1559 fees from eth_feeHistory before submission. Config section
+    // [delivery.implementations.evm_alloy] is reused unchanged.
+    delivery_factories.insert(
+        "evm_alloy".to_string(),
+        super::delivery::FEE_HISTORY_DELIVERY,
+    );
 
     let mut discovery_factories = HashMap::new();
     for (name, factory) in solver_discovery::get_all_implementations() {
