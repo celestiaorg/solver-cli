@@ -42,7 +42,11 @@ impl FeeHistoryDelivery {
     async fn estimate(&self, chain_id: u64) -> Option<(u128, u128)> {
         let provider = self.providers.get(&chain_id)?;
         match provider
-            .get_fee_history(FEE_HISTORY_BLOCKS, BlockNumberOrTag::Latest, &[TIP_PERCENTILE])
+            .get_fee_history(
+                FEE_HISTORY_BLOCKS,
+                BlockNumberOrTag::Latest,
+                &[TIP_PERCENTILE],
+            )
             .await
         {
             Ok(history) => {
@@ -69,7 +73,9 @@ impl FeeHistoryDelivery {
                 );
                 let gas_price = provider.get_gas_price().await.ok()?;
                 let tip = MIN_PRIORITY_FEE_WEI;
-                let max_fee = gas_price.saturating_mul(BASE_FEE_MULTIPLIER).saturating_add(tip);
+                let max_fee = gas_price
+                    .saturating_mul(BASE_FEE_MULTIPLIER)
+                    .saturating_add(tip);
                 Some((tip, max_fee))
             }
         }
