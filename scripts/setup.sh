@@ -20,6 +20,4 @@ if grep -q 'min_profitability_pct = 0.0' .config/solver.toml 2>/dev/null; then
   step "Set solver min_profitability_pct = -5.0 for local testing"
 fi
 
-step "Seeding cross-chain inventory (initial rebalance)..."
-make rebalancer-once 2>/dev/null || true
-success "Setup complete — OIF contracts deployed, solver funded, inventory seeded"
+success "Setup complete — OIF contracts deployed, solver funded (continuous rebalancer will seed inventory on startup)"

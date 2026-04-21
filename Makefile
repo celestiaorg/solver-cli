@@ -128,10 +128,26 @@ init: build
 	@$(SOLVER_CLI) init $(FORCE_FLAG)
 .PHONY: init
 
-## deploy-permit2: Deploy Permit2 contract to local Anvil chains (fetches bytecode from mainnet)
+## deploy-permit2: Deploy Permit2 contract to local Anvil chains (fetches bytecode from mainnet, retries on failure)
 deploy-permit2:
 	@echo "Deploying Permit2 to local Anvil chains..."
-	@PERMIT2_CODE=$$(cast code 0x000000000022D473030F116dDEE9F6B43aC78BA3 --rpc-url https://eth.llamarpc.com 2>/dev/null) && \
+	@RPCS="https://eth.llamarpc.com https://ethereum-rpc.publicnode.com https://rpc.ankr.com/eth https://cloudflare-eth.com"; \
+		PERMIT2_CODE=""; \
+		for attempt in 1 2 3; do \
+			for rpc in $$RPCS; do \
+				CODE=$$(cast code 0x000000000022D473030F116dDEE9F6B43aC78BA3 --rpc-url $$rpc 2>/dev/null || true); \
+				if [ -n "$$CODE" ] && [ "$$CODE" != "0x" ]; then \
+					PERMIT2_CODE=$$CODE; \
+					break 2; \
+				fi; \
+			done; \
+			echo "  attempt $$attempt failed, retrying..."; \
+			sleep 2; \
+		done; \
+		if [ -z "$$PERMIT2_CODE" ]; then \
+			echo "  ERROR: failed to fetch Permit2 bytecode from all RPCs" >&2; \
+			exit 1; \
+		fi; \
 		cast rpc anvil_setCode 0x000000000022D473030F116dDEE9F6B43aC78BA3 "$$PERMIT2_CODE" --rpc-url http://127.0.0.1:8545 > /dev/null && \
 		cast rpc anvil_setCode 0x000000000022D473030F116dDEE9F6B43aC78BA3 "$$PERMIT2_CODE" --rpc-url http://127.0.0.1:8546 > /dev/null && \
 		echo "  Permit2 deployed at 0x000000000022D473030F116dDEE9F6B43aC78BA3 on anvil1 + anvil2"
