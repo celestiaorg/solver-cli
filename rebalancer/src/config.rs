@@ -192,6 +192,8 @@ struct StateToken {
     address: String,
     symbol: String,
     decimals: u8,
+    #[serde(default)]
+    token_type: Option<String>,
 }
 
 // ── Config loading ─────────────────────────────────────────────────────────
@@ -425,11 +427,23 @@ fn collect_assets(
                     .with_context(|| format!("Invalid warp_token for chain {}", chain_id))?,
                 None => address,
             };
+            let asset_type = match token.token_type.as_deref() {
+                Some(t) if t.eq_ignore_ascii_case("native") => AssetType::Native,
+                _ => AssetType::Erc20,
+            };
+            // Native warp routes (HypNative) have no separate ERC20 underlying;
+            // the warp router itself is the collateral path and `address` field
+            // is unused for approve.
+            let token_address = if asset_type == AssetType::Native {
+                None
+            } else {
+                Some(address)
+            };
             token_configs.insert(
                 *chain_id,
                 AssetTokenConfig {
-                    asset_type: AssetType::Erc20,
-                    address: Some(address),
+                    asset_type,
+                    address: token_address,
                     collateral_token,
                 },
             );

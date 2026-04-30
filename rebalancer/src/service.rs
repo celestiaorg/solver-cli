@@ -555,13 +555,22 @@ impl RebalancerService {
                 }
             }
 
+            // For HypNative source warp routes, msg.value must cover the
+            // bridged amount in addition to the IGP fee. ERC20 sources only
+            // need the IGP fee.
+            let msg_value = if source_token_config.asset_type == AssetType::Native {
+                quote.native_fee + transfer_amount
+            } else {
+                quote.native_fee
+            };
+
             match source_client
                 .submit_transfer_remote(
                     source_collateral_token,
                     self.config.forwarding.domain_id,
                     forward_addr.to_address(),
                     transfer_amount,
-                    quote.native_fee,
+                    msg_value,
                 )
                 .await
             {
