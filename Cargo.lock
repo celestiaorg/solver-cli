@@ -2528,7 +2528,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3719,7 +3719,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4809,7 +4809,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4878,7 +4878,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5389,7 +5389,7 @@ dependencies = [
 [[package]]
 name = "solver-account"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#ee8706730d26177dd287e7c71ba9843c462dd56e"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#1f92883ea002100a68b750e007b2c6742e036c2f"
 dependencies = [
  "alloy-consensus",
  "alloy-network",
@@ -5465,7 +5465,7 @@ dependencies = [
 [[package]]
 name = "solver-config"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#ee8706730d26177dd287e7c71ba9843c462dd56e"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#1f92883ea002100a68b750e007b2c6742e036c2f"
 dependencies = [
  "dotenvy",
  "regex",
@@ -5480,7 +5480,7 @@ dependencies = [
 [[package]]
 name = "solver-core"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#ee8706730d26177dd287e7c71ba9843c462dd56e"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#1f92883ea002100a68b750e007b2c6742e036c2f"
 dependencies = [
  "alloy-primitives",
  "alloy-provider",
@@ -5509,7 +5509,7 @@ dependencies = [
 [[package]]
 name = "solver-delivery"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#ee8706730d26177dd287e7c71ba9843c462dd56e"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#1f92883ea002100a68b750e007b2c6742e036c2f"
 dependencies = [
  "alloy-consensus",
  "alloy-network",
@@ -5537,7 +5537,7 @@ dependencies = [
 [[package]]
 name = "solver-discovery"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#ee8706730d26177dd287e7c71ba9843c462dd56e"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#1f92883ea002100a68b750e007b2c6742e036c2f"
 dependencies = [
  "alloy-contract",
  "alloy-primitives",
@@ -5566,7 +5566,7 @@ dependencies = [
 [[package]]
 name = "solver-order"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#ee8706730d26177dd287e7c71ba9843c462dd56e"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#1f92883ea002100a68b750e007b2c6742e036c2f"
 dependencies = [
  "alloy-dyn-abi",
  "alloy-primitives",
@@ -5585,7 +5585,7 @@ dependencies = [
 [[package]]
 name = "solver-pricing"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#ee8706730d26177dd287e7c71ba9843c462dd56e"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#1f92883ea002100a68b750e007b2c6742e036c2f"
 dependencies = [
  "alloy-primitives",
  "async-trait",
@@ -5602,7 +5602,7 @@ dependencies = [
 [[package]]
 name = "solver-service"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#ee8706730d26177dd287e7c71ba9843c462dd56e"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#1f92883ea002100a68b750e007b2c6742e036c2f"
 dependencies = [
  "alloy-primitives",
  "alloy-signer",
@@ -5648,7 +5648,7 @@ dependencies = [
 [[package]]
 name = "solver-settlement"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#ee8706730d26177dd287e7c71ba9843c462dd56e"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#1f92883ea002100a68b750e007b2c6742e036c2f"
 dependencies = [
  "alloy-primitives",
  "alloy-provider",
@@ -5692,7 +5692,7 @@ dependencies = [
 [[package]]
 name = "solver-storage"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#ee8706730d26177dd287e7c71ba9843c462dd56e"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#1f92883ea002100a68b750e007b2c6742e036c2f"
 dependencies = [
  "async-trait",
  "chrono",
@@ -5711,7 +5711,7 @@ dependencies = [
 [[package]]
 name = "solver-types"
 version = "0.1.0"
-source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#ee8706730d26177dd287e7c71ba9843c462dd56e"
+source = "git+https://github.com/celestiaorg/oif-solver?branch=jonas%2Ffreeze-v0.2.0#1f92883ea002100a68b750e007b2c6742e036c2f"
 dependencies = [
  "alloy-consensus",
  "alloy-contract",
@@ -5881,7 +5881,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6748,7 +6748,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.48.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
