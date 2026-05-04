@@ -153,7 +153,8 @@ fund: build
 	@$(SOLVER_CLI) fund --amount 100000000 --chain anvil1
 .PHONY: fund
 
-## chain-add: Add a chain with existing contracts (use make chain-add NAME=arbitrum RPC=... INPUT_SETTLER=... OUTPUT_SETTLER=... ORACLE=...)
+## chain-add: Register a chain with existing contracts. Required: NAME, RPC, INPUT_SETTLER, OUTPUT_SETTLER, ORACLE.
+## Optional: CHAIN_ID, DOMAIN_ID, MAILBOX, IGP, WARP_TOKEN, WARP_TOKEN_TYPE, TOKEN_SYMBOL+TOKEN_ADDR.
 chain-add: build
 	@$(SOLVER_CLI) chain add \
 		--name $(NAME) \
@@ -162,6 +163,11 @@ chain-add: build
 		--input-settler $(INPUT_SETTLER) \
 		--output-settler $(OUTPUT_SETTLER) \
 		--oracle $(ORACLE) \
+		$(if $(DOMAIN_ID),--domain-id $(DOMAIN_ID),) \
+		$(if $(MAILBOX),--mailbox $(MAILBOX),) \
+		$(if $(IGP),--igp $(IGP),) \
+		$(if $(WARP_TOKEN),--warp-token $(WARP_TOKEN),) \
+		$(if $(WARP_TOKEN_TYPE),--warp-token-type $(WARP_TOKEN_TYPE),) \
 		$(if $(TOKEN_ADDR),--token $(TOKEN_SYMBOL)=$(TOKEN_ADDR),)
 .PHONY: chain-add
 
@@ -175,9 +181,17 @@ chain-remove: build
 	@$(SOLVER_CLI) chain remove --chain $(CHAIN)
 .PHONY: chain-remove
 
-## token-add: Add a token to a chain (use CHAIN=name SYMBOL=USDC ADDRESS=0x... DECIMALS=6)
+## token-add: Add a token to a chain. Required: CHAIN, SYMBOL, ADDRESS.
+## Optional: DECIMALS, TOKEN_TYPE (erc20|native), WARP_TOKEN, WARP_TOKEN_TYPE (collateral|synthetic|native).
 token-add: build
-	@$(SOLVER_CLI) token add --chain $(CHAIN) --symbol $(SYMBOL) --address $(ADDRESS) $(if $(DECIMALS),--decimals $(DECIMALS),)
+	@$(SOLVER_CLI) token add \
+		--chain $(CHAIN) \
+		--symbol $(SYMBOL) \
+		--address $(ADDRESS) \
+		$(if $(DECIMALS),--decimals $(DECIMALS),) \
+		$(if $(TOKEN_TYPE),--token-type $(TOKEN_TYPE),) \
+		$(if $(WARP_TOKEN),--warp-token $(WARP_TOKEN),) \
+		$(if $(WARP_TOKEN_TYPE),--warp-token-type $(WARP_TOKEN_TYPE),)
 .PHONY: token-add
 
 ## token-list: List all tokens across chains (use CHAIN=name to filter)
