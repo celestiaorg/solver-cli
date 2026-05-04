@@ -72,29 +72,34 @@ impl RebalancerConfigGenerator {
             );
         }
 
-        // Every chain that participates in a multi-chain asset must have a Hyperlane
-        // warp router configured. Catching this here means a misconfig surfaces at
-        // `solver-cli configure` instead of at rebalancer startup, where the same
-        // check runs again as a safety net.
+        // Every token participating in a multi-chain asset must have a Hyperlane
+        // warp router. Per-token warp_token (set via `solver-cli token add
+        // --warp-token`) takes precedence over the chain-level fallback.
+        // Catching this here means a misconfig surfaces at `solver-cli configure`
+        // instead of at rebalancer startup (where the same check is enforced).
         for (symbol, chains) in &by_symbol {
             if chains.len() < 2 {
                 continue;
             }
             for (chain_id, chain_name) in chains {
                 let chain = &state.chains[chain_id];
-                let warp_token = chain
+                let token_warp = chain
+                    .tokens
+                    .values()
+                    .find(|t| t.symbol.eq_ignore_ascii_case(symbol))
+                    .and_then(|t| t.warp_token.as_deref());
+                let chain_warp = chain
                     .contracts
                     .hyperlane
                     .as_ref()
                     .and_then(|h| h.warp_token.as_deref());
-                if warp_token.is_none() {
+                if token_warp.is_none() && chain_warp.is_none() {
                     anyhow::bail!(
                         "Asset {} on chain {} ({}) has no Hyperlane warp router configured. \
-                        Set `chains.{}.contracts.hyperlane.warp_token` in state.json \
-                        (or pass `--warp-token` to `solver-cli chain add`).",
+                        Set it via `solver-cli token add --warp-token <ADDR>` (per-token) \
+                        or `solver-cli chain add --warp-token <ADDR>` (chain default).",
                         symbol,
                         chain_name,
-                        chain_id,
                         chain_id,
                     );
                 }
@@ -237,6 +242,8 @@ mod tests {
                     symbol: "USDC".to_string(),
                     decimals: 6,
                     token_type: "erc20".to_string(),
+                    warp_token: None,
+                    warp_token_type: None,
                 },
             )]),
             deployer: None,
@@ -271,6 +278,8 @@ mod tests {
                     symbol: "USDC".to_string(),
                     decimals: 6,
                     token_type: "erc20".to_string(),
+                    warp_token: None,
+                    warp_token_type: None,
                 },
             )]),
             deployer: None,

@@ -194,6 +194,8 @@ struct StateToken {
     decimals: u8,
     #[serde(default)]
     token_type: Option<String>,
+    #[serde(default)]
+    warp_token: Option<String>,
 }
 
 // ── Config loading ─────────────────────────────────────────────────────────
@@ -376,20 +378,27 @@ fn collect_assets(
 ) -> Result<Vec<AssetConfig>> {
     let chain_id_set: HashSet<u64> = chains.iter().map(|c| c.chain_id).collect();
 
-    // Group tokens by symbol across chains
+    // Group tokens by symbol across chains. Per-token warp_token (set via
+    // `solver-cli token add --warp-token`) takes precedence over the chain-level
+    // `contracts.hyperlane.warp_token` fallback. This lets one chain host
+    // multiple tokens with distinct warp routers.
     let mut by_symbol: TokensBySymbol<'_> = BTreeMap::new();
     for (chain_id, chain) in &state.chains {
-        let warp_token = chain
+        let chain_warp_token = chain
             .contracts
             .hyperlane
             .as_ref()
             .and_then(|h| h.warp_token.clone());
         for token in chain.tokens.values() {
+            let warp_token = token
+                .warp_token
+                .clone()
+                .or_else(|| chain_warp_token.clone());
             let normalized = token.symbol.to_ascii_uppercase();
             by_symbol
                 .entry(normalized)
                 .or_default()
-                .push((*chain_id, token, warp_token.clone()));
+                .push((*chain_id, token, warp_token));
         }
     }
 
@@ -780,6 +789,57 @@ service_url = "http://127.0.0.1:8080"
         let (_dir, path) = setup_config(&sample_state(), toml);
         let err = RebalancerConfig::load(&path).expect_err("should fail");
         assert!(err.to_string().contains("Missing [signer]"));
+    }
+
+    #[test]
+    fn per_token_warp_token_overrides_chain_level() {
+        // Chain has no chain-level warp_token; the per-token warp_token must
+        // be honored so the rebalancer can find the warp router.
+        let state = serde_json::json!({
+            "env": "local",
+            "chains": {
+                "31337": {
+                    "name": "anvil1", "chain_id": 31337,
+                    "rpc": "http://127.0.0.1:8545",
+                    "contracts": {},
+                    "tokens": {
+                        "USDC": {
+                            "address": "0x0000000000000000000000000000000000001111",
+                            "symbol": "USDC", "decimals": 6,
+                            "warp_token": "0x0000000000000000000000000000000000000A01"
+                        }
+                    },
+                    "deployer": null
+                },
+                "31338": {
+                    "name": "anvil2", "chain_id": 31338,
+                    "rpc": "http://127.0.0.1:8546",
+                    "contracts": {},
+                    "tokens": {
+                        "USDC": {
+                            "address": "0x0000000000000000000000000000000000002222",
+                            "symbol": "USDC", "decimals": 6,
+                            "warp_token": "0x0000000000000000000000000000000000000B01"
+                        }
+                    },
+                    "deployer": null
+                }
+            },
+            "solver": {
+                "address": "0x000000000000000000000000000000000000dEaD",
+                "operator_address": null, "private_key_ref": "env", "configured": true
+            },
+            "users": {}, "last_updated": "2025-01-01T00:00:00Z"
+        })
+        .to_string();
+        let (_dir, path) = setup_config(&state, minimal_toml());
+        let config = RebalancerConfig::load(&path).expect("valid config");
+        let usdc = &config.assets[0];
+        let collateral_31337 = usdc.tokens[&31337].collateral_token;
+        assert_eq!(
+            format!("{:?}", collateral_31337).to_lowercase(),
+            "0x0000000000000000000000000000000000000a01"
+        );
     }
 
     #[test]

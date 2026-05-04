@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::Subcommand;
 use std::collections::HashMap;
 use std::env;
@@ -9,6 +9,19 @@ use crate::state::{ChainConfig, ContractAddresses, StateManager, TokenInfo};
 use crate::utils::*;
 use crate::OutputFormat;
 
+fn validate_warp_token_type(t: &str) -> Result<()> {
+    match t.to_ascii_lowercase().as_str() {
+        "collateral" | "synthetic" | "native" => Ok(()),
+        other => bail!(
+            "Invalid --warp-token-type {:?}; expected \"collateral\", \"synthetic\", or \"native\"",
+            other
+        ),
+    }
+}
+
+// `Add` carries a lot of optional Hyperlane fields by design (see `solver-cli
+// chain add --help`); boxing each one would just hurt ergonomics.
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand)]
 pub enum ChainCommand {
     /// Add a chain with existing contract deployments
@@ -45,11 +58,24 @@ pub enum ChainCommand {
         #[arg(long, default_value = "6")]
         decimals: u8,
 
-        /// Hyperlane warp token router address (HypERC20Collateral or HypERC20Synthetic).
-        /// Required for HypCollateral chains where the warp router differs from the ERC20.
-        /// Optional for HypSynthetic chains (the token address is used as fallback).
+        /// Default Hyperlane warp router address for tokens on this chain.
+        /// Tokens with their own `warp_token` (set via `solver-cli token add`)
+        /// override this value.
         #[arg(long)]
         warp_token: Option<String>,
+
+        /// Default Hyperlane warp router type for this chain:
+        /// "collateral" | "synthetic" | "native". Per-token override via token add.
+        #[arg(long)]
+        warp_token_type: Option<String>,
+
+        /// Hyperlane mailbox address on this chain.
+        #[arg(long)]
+        mailbox: Option<String>,
+
+        /// Hyperlane interchain gas paymaster address on this chain.
+        #[arg(long)]
+        igp: Option<String>,
 
         /// Hyperlane domain ID. Defaults to the EVM chain ID; set this when the
         /// chain's domain ID differs (e.g. Eden testnet, or chains that collide
@@ -131,6 +157,9 @@ struct ChainAddParams {
     tokens: Vec<ParsedToken>,
     default_decimals: u8,
     warp_token: Option<String>,
+    warp_token_type: Option<String>,
+    mailbox: Option<String>,
+    igp: Option<String>,
     domain_id: Option<u64>,
     dir: Option<PathBuf>,
 }
@@ -148,6 +177,9 @@ impl ChainCommand {
                 token,
                 decimals,
                 warp_token,
+                warp_token_type,
+                mailbox,
+                igp,
                 domain_id,
                 dir,
             } => {
@@ -162,6 +194,9 @@ impl ChainCommand {
                         tokens: token,
                         default_decimals: decimals,
                         warp_token,
+                        warp_token_type,
+                        mailbox,
+                        igp,
                         domain_id,
                         dir,
                     },
@@ -185,9 +220,15 @@ impl ChainCommand {
             tokens,
             default_decimals,
             warp_token,
+            warp_token_type,
+            mailbox,
+            igp,
             domain_id,
             dir,
         } = params;
+        if let Some(ref t) = warp_token_type {
+            validate_warp_token_type(t)?;
+        }
         let out = OutputFormatter::new(output);
         let project_dir = dir.unwrap_or_else(|| env::current_dir().unwrap());
         let state_mgr = StateManager::new(&project_dir);
@@ -220,18 +261,25 @@ impl ChainCommand {
         }
 
         // Build contracts struct.
-        // Construct HyperlaneAddresses if either a warp_token or domain_id was supplied.
-        let hyperlane = if warp_token.is_some() || domain_id.is_some() {
+        // Construct HyperlaneAddresses if any Hyperlane field was supplied.
+        let any_hyperlane = warp_token.is_some()
+            || warp_token_type.is_some()
+            || domain_id.is_some()
+            || mailbox.is_some()
+            || igp.is_some();
+        let hyperlane = if any_hyperlane {
             Some(crate::state::HyperlaneAddresses {
                 domain_id,
-                mailbox: None,
+                mailbox: mailbox.clone(),
                 merkle_tree_hook: None,
                 validator_announce: None,
-                igp: None,
+                igp: igp.clone(),
                 warp_token: warp_token.clone(),
-                warp_token_type: warp_token
-                    .as_ref()
-                    .map(|_| "collateral".to_string()),
+                // Default chain-level type to "collateral" only when a warp_token
+                // is supplied without an explicit type — preserves prior behaviour.
+                warp_token_type: warp_token_type
+                    .clone()
+                    .or_else(|| warp_token.as_ref().map(|_| "collateral".to_string())),
             })
         } else {
             None
@@ -249,6 +297,15 @@ impl ChainCommand {
         print_address("CentralizedOracle", &oracle);
         if let Some(ref addr) = warp_token {
             print_address("Warp token router", addr);
+        }
+        if let Some(ref t) = warp_token_type {
+            print_kv("Warp router type", t);
+        }
+        if let Some(ref addr) = mailbox {
+            print_address("Mailbox", addr);
+        }
+        if let Some(ref addr) = igp {
+            print_address("IGP", addr);
         }
         if let Some(id) = domain_id {
             print_kv("Hyperlane domain ID", id);
@@ -269,6 +326,8 @@ impl ChainCommand {
                     symbol: parsed.symbol,
                     decimals,
                     token_type: "erc20".to_string(),
+                    warp_token: None,
+                    warp_token_type: None,
                 },
             );
         }

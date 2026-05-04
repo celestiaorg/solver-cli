@@ -136,7 +136,7 @@ impl ContractAddresses {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenInfo {
-    /// Token contract address
+    /// Token contract address (placeholder allowed for native tokens)
     pub address: String,
 
     /// Token symbol
@@ -145,9 +145,19 @@ pub struct TokenInfo {
     /// Token decimals
     pub decimals: u8,
 
-    /// Token type (erc20, native)
+    /// Token type ("erc20" or "native")
     #[serde(default = "default_token_type")]
     pub token_type: String,
+
+    /// Hyperlane warp router address for this token, if any.
+    /// Takes precedence over `chain.contracts.hyperlane.warp_token`.
+    /// Set per-token when a chain hosts multiple assets with distinct routers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warp_token: Option<String>,
+
+    /// Hyperlane warp router type: "collateral" | "synthetic" | "native".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warp_token_type: Option<String>,
 }
 
 fn default_token_type() -> String {

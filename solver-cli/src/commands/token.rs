@@ -1,5 +1,5 @@
 use alloy::primitives::{Address, U256};
-use anyhow::Result;
+use anyhow::{bail, Result};
 use clap::Subcommand;
 use std::env;
 use std::path::PathBuf;
@@ -9,6 +9,37 @@ use crate::chain::{format_token_amount, ChainClient};
 use crate::state::{StateManager, TokenInfo};
 use crate::utils::*;
 use crate::OutputFormat;
+
+struct AddTokenParams {
+    chain_ref: String,
+    symbol: String,
+    address: String,
+    decimals: u8,
+    token_type: String,
+    warp_token: Option<String>,
+    warp_token_type: Option<String>,
+    dir: Option<PathBuf>,
+}
+
+fn validate_token_type(t: &str) -> Result<()> {
+    match t.to_ascii_lowercase().as_str() {
+        "erc20" | "native" => Ok(()),
+        other => bail!(
+            "Invalid --token-type {:?}; expected \"erc20\" or \"native\"",
+            other
+        ),
+    }
+}
+
+fn validate_warp_token_type(t: &str) -> Result<()> {
+    match t.to_ascii_lowercase().as_str() {
+        "collateral" | "synthetic" | "native" => Ok(()),
+        other => bail!(
+            "Invalid --warp-token-type {:?}; expected \"collateral\", \"synthetic\", or \"native\"",
+            other
+        ),
+    }
+}
 
 #[derive(Subcommand)]
 pub enum TokenCommand {
@@ -22,13 +53,27 @@ pub enum TokenCommand {
         #[arg(long)]
         symbol: String,
 
-        /// Token contract address
+        /// Token contract address (use any placeholder for native tokens — value is unused)
         #[arg(long)]
         address: String,
 
         /// Token decimals
         #[arg(long, default_value = "18")]
         decimals: u8,
+
+        /// Token type: "erc20" (default) or "native"
+        #[arg(long, default_value = "erc20")]
+        token_type: String,
+
+        /// Hyperlane warp router address for this token (takes precedence over the
+        /// chain-level warp_token). Required when a chain has multiple tokens with
+        /// distinct routers.
+        #[arg(long)]
+        warp_token: Option<String>,
+
+        /// Hyperlane warp router type: "collateral", "synthetic", or "native".
+        #[arg(long)]
+        warp_token_type: Option<String>,
 
         /// Project directory
         #[arg(long)]
@@ -94,8 +139,26 @@ impl TokenCommand {
                 symbol,
                 address,
                 decimals,
+                token_type,
+                warp_token,
+                warp_token_type,
                 dir,
-            } => Self::add(chain, symbol, address, decimals, dir, output).await,
+            } => {
+                Self::add(
+                    AddTokenParams {
+                        chain_ref: chain,
+                        symbol,
+                        address,
+                        decimals,
+                        token_type,
+                        warp_token,
+                        warp_token_type,
+                        dir,
+                    },
+                    output,
+                )
+                .await
+            }
             TokenCommand::Remove { chain, symbol, dir } => {
                 Self::remove(chain, symbol, dir, output).await
             }
@@ -110,19 +173,27 @@ impl TokenCommand {
         }
     }
 
-    async fn add(
-        chain_ref: String,
-        symbol: String,
-        address: String,
-        decimals: u8,
-        dir: Option<PathBuf>,
-        output: OutputFormat,
-    ) -> Result<()> {
+    async fn add(params: AddTokenParams, output: OutputFormat) -> Result<()> {
+        let AddTokenParams {
+            chain_ref,
+            symbol,
+            address,
+            decimals,
+            token_type,
+            warp_token,
+            warp_token_type,
+            dir,
+        } = params;
         let out = OutputFormatter::new(output);
         let project_dir = dir.unwrap_or_else(|| env::current_dir().unwrap());
         let state_mgr = StateManager::new(&project_dir);
 
         out.header("Adding Token");
+
+        validate_token_type(&token_type)?;
+        if let Some(ref t) = warp_token_type {
+            validate_warp_token_type(t)?;
+        }
 
         // Load state
         let mut state = state_mgr.load_or_error().await?;
@@ -156,6 +227,13 @@ impl TokenCommand {
             print_kv("Symbol", &symbol_upper);
             print_address("Address", &address);
             print_kv("Decimals", decimals);
+            print_kv("Token type", &token_type);
+            if let Some(ref wt) = warp_token {
+                print_address("Warp router", wt);
+            }
+            if let Some(ref wtt) = warp_token_type {
+                print_kv("Warp router type", wtt);
+            }
 
             // Add token
             chain.tokens.insert(
@@ -164,7 +242,9 @@ impl TokenCommand {
                     address: address.clone(),
                     symbol: symbol_upper.clone(),
                     decimals,
-                    token_type: "erc20".to_string(),
+                    token_type: token_type.clone(),
+                    warp_token: warp_token.clone(),
+                    warp_token_type: warp_token_type.clone(),
                 },
             );
         }
@@ -182,6 +262,9 @@ impl TokenCommand {
                 "symbol": symbol_upper,
                 "address": address,
                 "decimals": decimals,
+                "token_type": token_type,
+                "warp_token": warp_token,
+                "warp_token_type": warp_token_type,
             }))?;
         }
 
