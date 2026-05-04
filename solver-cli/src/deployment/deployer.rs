@@ -151,6 +151,10 @@ impl Deployer {
                 );
             }
 
+            // Apply {NAME}_DOMAIN_ID env-var override (takes precedence over the
+            // value pulled from hyperlane-addresses.json).
+            Self::apply_domain_id_override(&mut chain_config);
+
             // Insert into state by chain_id
             state.chains.insert(chain_config.chain_id, chain_config);
         }
@@ -172,6 +176,28 @@ impl Deployer {
         let value: serde_json::Value =
             serde_json::from_str(&content).context("Failed to parse hyperlane-addresses.json")?;
         Ok(value)
+    }
+
+    /// Apply a `{NAME}_DOMAIN_ID` env-var override onto chain_config, if present.
+    /// Creates a HyperlaneAddresses entry if one doesn't yet exist on the chain.
+    fn apply_domain_id_override(chain_config: &mut ChainConfig) {
+        let var = format!("{}_DOMAIN_ID", chain_config.name.to_uppercase());
+        let Ok(raw) = std::env::var(&var) else {
+            return;
+        };
+        let Ok(domain_id) = raw.parse::<u64>() else {
+            info!("Ignoring {} (not a valid u64): {}", var, raw);
+            return;
+        };
+        let hyperlane = chain_config
+            .contracts
+            .hyperlane
+            .get_or_insert_with(HyperlaneAddresses::default);
+        hyperlane.domain_id = Some(domain_id);
+        info!(
+            "  Hyperlane domain ID for {} (from {}): {}",
+            chain_config.name, var, domain_id
+        );
     }
 
     /// Populate token and Hyperlane addresses from the deployment artifacts

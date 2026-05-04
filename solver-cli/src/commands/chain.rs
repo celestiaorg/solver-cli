@@ -51,6 +51,12 @@ pub enum ChainCommand {
         #[arg(long)]
         warp_token: Option<String>,
 
+        /// Hyperlane domain ID. Defaults to the EVM chain ID; set this when the
+        /// chain's domain ID differs (e.g. Eden testnet, or chains that collide
+        /// with Hyperlane's hardcoded KnownHyperlaneDomain enum).
+        #[arg(long)]
+        domain_id: Option<u64>,
+
         /// Project directory
         #[arg(long)]
         dir: Option<PathBuf>,
@@ -125,6 +131,7 @@ struct ChainAddParams {
     tokens: Vec<ParsedToken>,
     default_decimals: u8,
     warp_token: Option<String>,
+    domain_id: Option<u64>,
     dir: Option<PathBuf>,
 }
 
@@ -141,6 +148,7 @@ impl ChainCommand {
                 token,
                 decimals,
                 warp_token,
+                domain_id,
                 dir,
             } => {
                 Self::add(
@@ -154,6 +162,7 @@ impl ChainCommand {
                         tokens: token,
                         default_decimals: decimals,
                         warp_token,
+                        domain_id,
                         dir,
                     },
                     output,
@@ -176,6 +185,7 @@ impl ChainCommand {
             tokens,
             default_decimals,
             warp_token,
+            domain_id,
             dir,
         } = params;
         let out = OutputFormatter::new(output);
@@ -209,18 +219,23 @@ impl ChainCommand {
             ));
         }
 
-        // Build contracts struct
-        let hyperlane = warp_token
-            .as_ref()
-            .map(|addr| crate::state::HyperlaneAddresses {
-                domain_id: None,
+        // Build contracts struct.
+        // Construct HyperlaneAddresses if either a warp_token or domain_id was supplied.
+        let hyperlane = if warp_token.is_some() || domain_id.is_some() {
+            Some(crate::state::HyperlaneAddresses {
+                domain_id,
                 mailbox: None,
                 merkle_tree_hook: None,
                 validator_announce: None,
                 igp: None,
-                warp_token: Some(addr.clone()),
-                warp_token_type: Some("collateral".to_string()),
-            });
+                warp_token: warp_token.clone(),
+                warp_token_type: warp_token
+                    .as_ref()
+                    .map(|_| "collateral".to_string()),
+            })
+        } else {
+            None
+        };
 
         let contracts = ContractAddresses {
             input_settler_escrow: Some(input_settler.clone()),
@@ -234,6 +249,9 @@ impl ChainCommand {
         print_address("CentralizedOracle", &oracle);
         if let Some(ref addr) = warp_token {
             print_address("Warp token router", addr);
+        }
+        if let Some(id) = domain_id {
+            print_kv("Hyperlane domain ID", id);
         }
 
         // Build tokens map
