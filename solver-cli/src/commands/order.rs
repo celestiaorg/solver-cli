@@ -327,14 +327,10 @@ impl OrderCommand {
             .post(format!("{}/api/v1/quotes", aggregator_url))
             .json(&request)
             .send()
-            .await?;
+            .await
+            .map_err(|e| ApiError::from_reqwest("quote", e))?;
 
-        if !response.status().is_success() {
-            let error_text = response.text().await?;
-            anyhow::bail!("Failed to get quote: {}", error_text);
-        }
-
-        let quote_response: QuoteResponse = response.json().await?;
+        let quote_response: QuoteResponse = parse_response(response, "quote").await?;
 
         quote_response
             .quotes
@@ -409,52 +405,74 @@ impl OrderCommand {
             .post(format!("{}/api/v1/orders", aggregator_url))
             .json(&submission)
             .send()
-            .await?;
+            .await
+            .map_err(|e| ApiError::from_reqwest("order/submit", e))?;
 
-        if !response.status().is_success() {
-            let error_text = response.text().await?;
-            anyhow::bail!("Failed to submit order: {}", error_text);
-        }
-
-        let result: serde_json::Value = response.json().await?;
+        let result: serde_json::Value = parse_response(response, "order/submit").await?;
 
         Ok(result["orderId"].as_str().unwrap_or("unknown").to_string())
     }
 
     async fn monitor_order(aggregator_url: &str, order_id: &str, timeout: u64) -> Result<()> {
+        const MAX_CONSECUTIVE_ERRORS: u32 = 5;
+
         let client = reqwest::Client::new();
         let start = std::time::Instant::now();
         let mut iteration = 0;
+        let mut consecutive_errors: u32 = 0;
+        let mut last_poll_error: Option<String> = None;
 
         loop {
             if start.elapsed().as_secs() >= timeout {
+                if let Some(err) = &last_poll_error {
+                    anyhow::bail!("Order status timed out: {err}");
+                }
                 print_warning("Timeout reached");
                 break;
             }
 
             iteration += 1;
-            let response = client
-                .get(format!("{}/api/v1/orders/{}", aggregator_url, order_id))
-                .send()
-                .await?;
+            let url = format!("{}/api/v1/orders/{}", aggregator_url, order_id);
+            let poll_result: std::result::Result<serde_json::Value, ApiError> =
+                match client.get(&url).send().await {
+                    Ok(resp) => parse_response(resp, "order/status").await,
+                    Err(e) => Err(ApiError::from_reqwest("order/status", e)),
+                };
 
-            if response.status().is_success() {
-                let status: serde_json::Value = response.json().await?;
-                println!(
-                    "[{}/{}] Order status: {}",
-                    iteration,
-                    timeout / 2,
-                    serde_json::to_string_pretty(&status)?
-                );
+            match poll_result {
+                Ok(status) => {
+                    consecutive_errors = 0;
+                    last_poll_error = None;
+                    println!(
+                        "[{}/{}] Order status: {}",
+                        iteration,
+                        timeout / 2,
+                        serde_json::to_string_pretty(&status)?
+                    );
 
-                // Check if completed or failed
-                if let Some(status_str) = status.get("status").and_then(|s| s.as_str()) {
-                    if status_str == "completed" {
-                        print_success("✓ Order completed!");
-                        break;
-                    } else if status_str == "failed" {
-                        print_error("✗ Order failed");
-                        break;
+                    if let Some(status_field) = status.get("status") {
+                        let (tag, description) = describe_order_status(status_field);
+                        match tag.as_str() {
+                            "completed" | "executed" | "settled" | "finalized" => {
+                                print_success(&format!("✓ Order {description}"));
+                                break;
+                            }
+                            "failed" | "refunded" => {
+                                anyhow::bail!("Order {description}");
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                Err(err) => {
+                    consecutive_errors += 1;
+                    let msg = err.to_string();
+                    last_poll_error = Some(msg.clone());
+                    print_warning(&format!(
+                        "[{iteration}] Poll error ({consecutive_errors}/{MAX_CONSECUTIVE_ERRORS}): {msg}"
+                    ));
+                    if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                        anyhow::bail!("Order status unavailable: {msg}");
                     }
                 }
             }
