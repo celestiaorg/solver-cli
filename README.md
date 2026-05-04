@@ -47,7 +47,16 @@ cp .env.example .env
 #   SOLVER_PRIVATE_KEY                 (== REBALANCER_PRIVATE_KEY)
 #   ORACLE_OPERATOR_PK                 (must differ from SOLVER_PRIVATE_KEY)
 #   USER_PK                            (test-user wallet)
-#   INTEGRITY_SECRET                   (32+ random chars, for the aggregator)
+#   INTEGRITY_SECRET                   (32+ random chars; signs aggregator
+#                                       quotes/orders end-to-end so a forged
+#                                       quote can't be replayed)
+
+# Pre-funding (real-chain users only):
+#   Each chain's {NAME}_PK needs native gas to deploy contracts (~0.05 ETH on
+#     Sepolia is plenty; per-chain deploys are 4 txs).
+#   SOLVER_PRIVATE_KEY needs gas on every chain (filling + claiming).
+#   ORACLE_OPERATOR_PK needs gas on every chain (attestation submission).
+#   USER_PK needs gas + token inventory on the source chain.
 ```
 
 ### Path A — Local Anvil walkthrough
@@ -104,10 +113,14 @@ echo 'EDEN_PK=0x<deployer-key>'           >> .env
 
 solver-cli init
 
-# 2a. Deploy fresh OIF contracts on each chain
-solver-cli deploy --chains sepolia,eden --token ETH --decimals 18
+# 2a. Deploy fresh OIF contracts on each chain.
+#     Note: --token / --decimals only auto-register tokens when
+#     .config/hyperlane-addresses.json exists (local Anvil only). On real
+#     chains, deploy writes the contract addresses but NOT tokens — you'll
+#     register tokens explicitly in step 3 below.
+solver-cli deploy --chains sepolia,eden
 
-# 2b. ...OR register existing deployments (one chain per invocation):
+# 2b. ...OR if contracts are already deployed, register them per chain:
 solver-cli chain add \
   --name eden --rpc "$EDEN_RPC" \
   --input-settler 0x... --output-settler 0x... --oracle 0x... \
@@ -131,20 +144,29 @@ solver-cli configure
 
 # 5. Fund manually — `make fund` is anvil-only.
 #    Send native gas + token inventory to:
-#      - SOLVER_PRIVATE_KEY's address on every chain (gas + inventory on dest)
-#      - ORACLE_OPERATOR_PK's address on every chain (gas only)
-#      - USER_PK's address on the source chain (gas + tokens for the test intent)
-#    With `cast`:
+#      - SOLVER_PRIVATE_KEY's address on every chain (gas + token inventory
+#        on the destination chain so the solver can fill).
+#      - ORACLE_OPERATOR_PK's address on every chain (gas only).
+#      - USER_PK's address on the source chain (gas + tokens for the test).
+#
+#    Token inventory address: for synthetic warp tokens, deposit the warp
+#    token itself (token.address == warp_token in this case). For collateral,
+#    deposit the underlying ERC20 — the rebalancer/solver will approve the
+#    warp router as needed.
+#
+#    With `cast` (gas only, repeat per chain/recipient):
 cast send --rpc-url "$EDEN_RPC" --private-key "$EDEN_PK" \
   --value 0.05ether $(cast wallet address --private-key "$SOLVER_PRIVATE_KEY")
-# ...or any wallet UI works.
+# ...or use any wallet UI.
 
-# 6. Start services (same as Path A step 6)
-make aggregator
-make solver
-make operator
-make rebalancer
-make frontend       # optional — http://localhost:3000
+# 6. Start services (same as Path A step 6, separate terminals).
+#    Order matters: aggregator first, then solver/operator, then frontend
+#    (frontend talks to the aggregator + solver HTTP APIs).
+make aggregator     # T1 — port 4000
+make solver         # T2 — solver HTTP on 5001
+make operator       # T3
+make rebalancer     # T4 (optional — only useful if Celestia warp legs exist)
+make frontend       # T5 (optional — http://localhost:3000; needs T1+T2 up)
 
 # 7. Submit + verify
 solver-cli intent submit --asset ETH --from sepolia --to eden --amount 100000000000000000   # 0.1 ETH
