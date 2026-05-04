@@ -421,11 +421,23 @@ fn collect_assets(
                 .address
                 .parse()
                 .with_context(|| format!("Invalid address for {} on chain {}", symbol, chain_id))?;
-            let collateral_token = match warp_token {
+            // The rebalancer bridges via Hyperlane's `transferRemote`, which only
+            // exists on the warp router (HypERC20Collateral / HypSynthetic / HypNative).
+            // Refuse to fall back to the underlying ERC20 silently — that combination
+            // produces "Native: amount exceeds msg.value" / missing-selector reverts
+            // at submit time, far away from the misconfiguration.
+            let collateral_token: Address = match warp_token {
                 Some(wt) => wt
                     .parse()
                     .with_context(|| format!("Invalid warp_token for chain {}", chain_id))?,
-                None => address,
+                None => bail!(
+                    "Asset {} on chain {} has no Hyperlane warp router configured. \
+                    Set `chains.{}.contracts.hyperlane.warp_token` in state.json \
+                    (or pass `--warp-token` to `solver-cli chain add`).",
+                    symbol,
+                    chain_id,
+                    chain_id
+                ),
             };
             let asset_type = match token.token_type.as_deref() {
                 Some(t) if t.eq_ignore_ascii_case("native") => AssetType::Native,
@@ -768,6 +780,55 @@ service_url = "http://127.0.0.1:8080"
         let (_dir, path) = setup_config(&sample_state(), toml);
         let err = RebalancerConfig::load(&path).expect_err("should fail");
         assert!(err.to_string().contains("Missing [signer]"));
+    }
+
+    #[test]
+    fn rejects_missing_warp_token() {
+        // State with USDC on both chains but no warp_token on chain 31338 —
+        // historically this silently fell back to using the ERC20 itself as
+        // the warp router, which then reverted at `transferRemote` time.
+        let state = serde_json::json!({
+            "env": "local",
+            "chains": {
+                "31337": {
+                    "name": "anvil1", "chain_id": 31337,
+                    "rpc": "http://127.0.0.1:8545",
+                    "contracts": {
+                        "hyperlane": { "warp_token": "0x0000000000000000000000000000000000000A01" }
+                    },
+                    "tokens": {
+                        "USDC": { "address": "0x0000000000000000000000000000000000001111", "symbol": "USDC", "decimals": 6 }
+                    },
+                    "deployer": null
+                },
+                "31338": {
+                    "name": "anvil2", "chain_id": 31338,
+                    "rpc": "http://127.0.0.1:8546",
+                    "contracts": {},
+                    "tokens": {
+                        "USDC": { "address": "0x0000000000000000000000000000000000002222", "symbol": "USDC", "decimals": 6 }
+                    },
+                    "deployer": null
+                }
+            },
+            "solver": {
+                "address": "0x000000000000000000000000000000000000dEaD",
+                "operator_address": null,
+                "private_key_ref": "env",
+                "configured": true
+            },
+            "users": {},
+            "last_updated": "2025-01-01T00:00:00Z"
+        })
+        .to_string();
+        let (_dir, path) = setup_config(&state, minimal_toml());
+        let err = RebalancerConfig::load(&path).expect_err("should fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("no Hyperlane warp router configured"),
+            "unexpected error: {}",
+            msg
+        );
     }
 
     #[test]

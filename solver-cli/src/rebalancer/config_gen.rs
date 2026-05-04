@@ -54,22 +54,51 @@ impl RebalancerConfigGenerator {
             anyhow::bail!("No chains configured");
         }
 
-        // Verify at least one token exists on 2+ chains (so rebalancer has something to do)
-        let has_multi_chain_token = {
-            let mut by_symbol: BTreeMap<String, usize> = BTreeMap::new();
-            for chain in state.chains.values() {
-                for token in chain.tokens.values() {
-                    *by_symbol
-                        .entry(token.symbol.to_ascii_uppercase())
-                        .or_default() += 1;
-                }
+        // Group tokens by symbol → list of (chain_id, chain_name) so we can detect
+        // both "no asset on 2+ chains" and "asset present without a warp router".
+        let mut by_symbol: BTreeMap<String, Vec<(u64, &str)>> = BTreeMap::new();
+        for chain in state.chains.values() {
+            for token in chain.tokens.values() {
+                by_symbol
+                    .entry(token.symbol.to_ascii_uppercase())
+                    .or_default()
+                    .push((chain.chain_id, chain.name.as_str()));
             }
-            by_symbol.values().any(|&count| count >= 2)
-        };
+        }
+        let has_multi_chain_token = by_symbol.values().any(|chains| chains.len() >= 2);
         if !has_multi_chain_token {
             anyhow::bail!(
                 "No asset found on at least two chains; cannot generate rebalancer config"
             );
+        }
+
+        // Every chain that participates in a multi-chain asset must have a Hyperlane
+        // warp router configured. Catching this here means a misconfig surfaces at
+        // `solver-cli configure` instead of at rebalancer startup, where the same
+        // check runs again as a safety net.
+        for (symbol, chains) in &by_symbol {
+            if chains.len() < 2 {
+                continue;
+            }
+            for (chain_id, chain_name) in chains {
+                let chain = &state.chains[chain_id];
+                let warp_token = chain
+                    .contracts
+                    .hyperlane
+                    .as_ref()
+                    .and_then(|h| h.warp_token.as_deref());
+                if warp_token.is_none() {
+                    anyhow::bail!(
+                        "Asset {} on chain {} ({}) has no Hyperlane warp router configured. \
+                        Set `chains.{}.contracts.hyperlane.warp_token` in state.json \
+                        (or pass `--warp-token` to `solver-cli chain add`).",
+                        symbol,
+                        chain_name,
+                        chain_id,
+                        chain_id,
+                    );
+                }
+            }
         }
 
         let forwarding_service_url = std::env::var("FORWARDING_BACKEND")
@@ -197,8 +226,8 @@ mod tests {
                     merkle_tree_hook: None,
                     validator_announce: None,
                     igp: None,
-                    warp_token: None,
-                    warp_token_type: None,
+                    warp_token: Some("0x0000000000000000000000000000000000009999".to_string()),
+                    warp_token_type: Some("synthetic".to_string()),
                 }),
             },
             tokens: HashMap::from([(
@@ -231,8 +260,8 @@ mod tests {
                     merkle_tree_hook: None,
                     validator_announce: None,
                     igp: None,
-                    warp_token: None,
-                    warp_token_type: None,
+                    warp_token: Some("0x0000000000000000000000000000000000009999".to_string()),
+                    warp_token_type: Some("synthetic".to_string()),
                 }),
             },
             tokens: HashMap::from([(
