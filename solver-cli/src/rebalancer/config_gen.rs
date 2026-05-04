@@ -73,10 +73,9 @@ impl RebalancerConfigGenerator {
         }
 
         // Every token participating in a multi-chain asset must have a Hyperlane
-        // warp router. Per-token warp_token (set via `solver-cli token add
-        // --warp-token`) takes precedence over the chain-level fallback.
-        // Catching this here means a misconfig surfaces at `solver-cli configure`
-        // instead of at rebalancer startup (where the same check is enforced).
+        // warp router. Catching this here means a misconfig surfaces at
+        // `solver-cli configure` instead of at rebalancer startup (where the same
+        // check is enforced).
         for (symbol, chains) in &by_symbol {
             if chains.len() < 2 {
                 continue;
@@ -88,16 +87,10 @@ impl RebalancerConfigGenerator {
                     .values()
                     .find(|t| t.symbol.eq_ignore_ascii_case(symbol))
                     .and_then(|t| t.warp_token.as_deref());
-                let chain_warp = chain
-                    .contracts
-                    .hyperlane
-                    .as_ref()
-                    .and_then(|h| h.warp_token.as_deref());
-                if token_warp.is_none() && chain_warp.is_none() {
+                if token_warp.is_none() {
                     anyhow::bail!(
                         "Asset {} on chain {} ({}) has no Hyperlane warp router configured. \
-                        Set it via `solver-cli token add --warp-token <ADDR>` (per-token) \
-                        or `solver-cli chain add --warp-token <ADDR>` (chain default).",
+                        Set it via `solver-cli token add --warp-token <ADDR>`.",
                         symbol,
                         chain_name,
                         chain_id,
@@ -231,8 +224,6 @@ mod tests {
                     merkle_tree_hook: None,
                     validator_announce: None,
                     igp: None,
-                    warp_token: Some("0x0000000000000000000000000000000000009999".to_string()),
-                    warp_token_type: Some("synthetic".to_string()),
                 }),
             },
             tokens: HashMap::from([(
@@ -242,8 +233,8 @@ mod tests {
                     symbol: "USDC".to_string(),
                     decimals: 6,
                     token_type: "erc20".to_string(),
-                    warp_token: None,
-                    warp_token_type: None,
+                    warp_token: Some("0x0000000000000000000000000000000000009999".to_string()),
+                    warp_token_type: Some("synthetic".to_string()),
                 },
             )]),
             deployer: None,
@@ -267,8 +258,6 @@ mod tests {
                     merkle_tree_hook: None,
                     validator_announce: None,
                     igp: None,
-                    warp_token: Some("0x0000000000000000000000000000000000009999".to_string()),
-                    warp_token_type: Some("synthetic".to_string()),
                 }),
             },
             tokens: HashMap::from([(
@@ -278,8 +267,8 @@ mod tests {
                     symbol: "USDC".to_string(),
                     decimals: 6,
                     token_type: "erc20".to_string(),
-                    warp_token: None,
-                    warp_token_type: None,
+                    warp_token: Some("0x0000000000000000000000000000000000009998".to_string()),
+                    warp_token_type: Some("synthetic".to_string()),
                 },
             )]),
             deployer: None,

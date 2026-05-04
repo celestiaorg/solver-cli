@@ -118,12 +118,6 @@ pub struct HyperlaneAddresses {
 
     /// Interchain gas paymaster address
     pub igp: Option<String>,
-
-    /// Warp token address (HypCollateral or HypSynthetic)
-    pub warp_token: Option<String>,
-
-    /// Warp token type ("collateral" or "synthetic")
-    pub warp_token_type: Option<String>,
 }
 
 impl ContractAddresses {
@@ -149,9 +143,9 @@ pub struct TokenInfo {
     #[serde(default = "default_token_type")]
     pub token_type: String,
 
-    /// Hyperlane warp router address for this token, if any.
-    /// Takes precedence over `chain.contracts.hyperlane.warp_token`.
-    /// Set per-token when a chain hosts multiple assets with distinct routers.
+    /// Hyperlane warp router address for this token (HypERC20Collateral /
+    /// HypSynthetic / HypNative). Required for assets that the rebalancer
+    /// bridges via `transferRemote`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub warp_token: Option<String>,
 

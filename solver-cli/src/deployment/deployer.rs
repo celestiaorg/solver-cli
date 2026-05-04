@@ -225,25 +225,20 @@ impl Deployer {
                     .map(|s| s.to_string())
             };
 
-            // Per-token warp router address from artifact (defaults to chain-level
-            // warp_token; on a collateral chain the underlying ERC20 differs from
-            // the warp router, so we need both).
-            let chain_warp_token = chain_data
+            // Warp router address for this token, read from the artifact.
+            // On a collateral chain (`mock_usdc` exists), `addr` is the
+            // underlying ERC20 and the warp router is a separate contract.
+            // On synthetic/native chains, `addr` is the warp router itself.
+            let warp_token = chain_data
                 .get("warp_token")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
-            let chain_warp_token_type = chain_data
+            let warp_token_type = chain_data
                 .get("warp_token_type")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
 
             if let Some(addr) = token_address {
-                // On a collateral chain (`mock_usdc` exists), `addr` is the
-                // underlying ERC20 and the warp router is a separate contract.
-                // On synthetic/native chains, `addr` is the warp router itself
-                // and equals chain_warp_token.
-                let token_warp = chain_warp_token.clone();
-                let token_warp_type = chain_warp_token_type.clone();
                 chain_config.tokens.insert(
                     token_symbol.to_string(),
                     TokenInfo {
@@ -251,8 +246,8 @@ impl Deployer {
                         symbol: token_symbol.to_string(),
                         decimals: token_decimals,
                         token_type: "erc20".to_string(),
-                        warp_token: token_warp,
-                        warp_token_type: token_warp_type,
+                        warp_token,
+                        warp_token_type,
                     },
                 );
                 info!(
@@ -263,7 +258,8 @@ impl Deployer {
                 );
             }
 
-            // Store Hyperlane contract addresses (chain-level fallback)
+            // Store Hyperlane contract addresses (mailbox / IGP / etc).
+            // Warp router lives per-token, not here.
             let hyperlane = HyperlaneAddresses {
                 domain_id: chain_data.get("domain_id").and_then(|v| v.as_u64()),
                 mailbox: chain_data
@@ -282,8 +278,6 @@ impl Deployer {
                     .get("igp")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                warp_token: chain_warp_token,
-                warp_token_type: chain_warp_token_type,
             };
             chain_config.contracts.hyperlane = Some(hyperlane);
         }
