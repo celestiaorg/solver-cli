@@ -17,6 +17,12 @@ use tracing::{debug, error, info, warn};
 
 const LOG_QUERY_BLOCK_WINDOW: u64 = 10_000;
 
+// Stay this many blocks behind head to avoid races against load-balanced public
+// RPCs (e.g. publicnode.com) where `eth_blockNumber` can return a head that the
+// next `eth_getLogs` call's backend has not yet indexed, surfacing as
+// "block range extends beyond current head block".
+const HEAD_LAG_BLOCKS: u64 = 5;
+
 // Hard ceilings on RPC awaits so a stalled provider cannot freeze the poll loop.
 // The retry layer handles transient JSON-RPC errors; these guard against the
 // tokio task being parked forever on a TCP read that never returns (observed
@@ -291,8 +297,11 @@ impl OracleOperator {
             .get(&chain_id)
             .ok_or_else(|| anyhow::anyhow!("No provider for chain {}", chain_id))?;
 
-        // Get current block
-        let current_block = provider.get_block_number().await?;
+        // Get current block, lagged behind head to dodge load-balancer skew.
+        let current_block = provider
+            .get_block_number()
+            .await?
+            .saturating_sub(HEAD_LAG_BLOCKS);
 
         // Get start block from persistent state
         let start_block = {
