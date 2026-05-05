@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Subcommand;
+use solver_shared::TokenType;
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
@@ -277,7 +278,7 @@ impl ChainCommand {
                     address: parsed.address,
                     symbol: parsed.symbol,
                     decimals,
-                    token_type: "erc20".to_string(),
+                    token_type: TokenType::Erc20,
                     warp_token: None,
                     warp_token_type: None,
                 },

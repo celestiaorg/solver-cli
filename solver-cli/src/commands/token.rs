@@ -1,6 +1,7 @@
 use alloy::primitives::{Address, U256};
-use anyhow::{bail, Result};
-use clap::{Subcommand, ValueEnum};
+use anyhow::Result;
+use clap::Subcommand;
+use solver_shared::{TokenType, WarpTokenType};
 use std::env;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -10,24 +11,6 @@ use crate::state::{StateManager, TokenInfo};
 use crate::utils::*;
 use crate::OutputFormat;
 
-/// Token kind backing a registered asset.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
-#[clap(rename_all = "lowercase")]
-pub enum TokenType {
-    Erc20,
-    Native,
-}
-
-impl TokenType {
-    /// Canonical lowercase string used in state.json and downstream configs.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Erc20 => "erc20",
-            Self::Native => "native",
-        }
-    }
-}
-
 struct AddTokenParams {
     chain_ref: String,
     symbol: String,
@@ -35,18 +18,8 @@ struct AddTokenParams {
     decimals: u8,
     token_type: TokenType,
     warp_token: Option<String>,
-    warp_token_type: Option<String>,
+    warp_token_type: Option<WarpTokenType>,
     dir: Option<PathBuf>,
-}
-
-fn validate_warp_token_type(t: &str) -> Result<()> {
-    match t.to_ascii_lowercase().as_str() {
-        "collateral" | "synthetic" | "native" => Ok(()),
-        other => bail!(
-            "Invalid --warp-token-type {:?}; expected \"collateral\", \"synthetic\", or \"native\"",
-            other
-        ),
-    }
 }
 
 #[derive(Subcommand)]
@@ -79,9 +52,9 @@ pub enum TokenCommand {
         #[arg(long)]
         warp_token: Option<String>,
 
-        /// Hyperlane warp router type: "collateral", "synthetic", or "native".
-        #[arg(long)]
-        warp_token_type: Option<String>,
+        /// Hyperlane warp router type
+        #[arg(long, value_enum)]
+        warp_token_type: Option<WarpTokenType>,
 
         /// Project directory
         #[arg(long)]
@@ -198,10 +171,6 @@ impl TokenCommand {
 
         out.header("Adding Token");
 
-        if let Some(ref t) = warp_token_type {
-            validate_warp_token_type(t)?;
-        }
-
         // Load state
         let mut state = state_mgr.load_or_error().await?;
 
@@ -238,8 +207,8 @@ impl TokenCommand {
             if let Some(ref wt) = warp_token {
                 print_address("Warp router", wt);
             }
-            if let Some(ref wtt) = warp_token_type {
-                print_kv("Warp router type", wtt);
+            if let Some(wtt) = warp_token_type {
+                print_kv("Warp router type", wtt.as_str());
             }
 
             // Add token
@@ -249,9 +218,9 @@ impl TokenCommand {
                     address: address.clone(),
                     symbol: symbol_upper.clone(),
                     decimals,
-                    token_type: token_type.as_str().to_string(),
+                    token_type,
                     warp_token: warp_token.clone(),
-                    warp_token_type: warp_token_type.clone(),
+                    warp_token_type,
                 },
             );
         }
@@ -269,7 +238,7 @@ impl TokenCommand {
                 "symbol": symbol_upper,
                 "address": address,
                 "decimals": decimals,
-                "token_type": token_type.as_str(),
+                "token_type": token_type,
                 "warp_token": warp_token,
                 "warp_token_type": warp_token_type,
             }))?;

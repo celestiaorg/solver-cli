@@ -83,6 +83,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1.6", features = ["v4", "serde"] }
 
+# Shared workspace types
+solver-shared = { path = "../solver-shared" }
+
 # Unix process management
 [target.'cfg(unix)'.dependencies]
 alloy-primitives = { version = "1.0.37", features = ["std", "serde"], optional = true }

@@ -4,5 +4,6 @@ members = [
     "rebalancer",
     "solver-cli",
     "solver-settlement",
+    "solver-shared",
 ]
 resolver = "2"

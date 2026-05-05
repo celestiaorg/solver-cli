@@ -4456,6 +4456,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "solver-shared",
  "tempfile",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
@@ -5451,6 +5452,7 @@ dependencies = [
  "solver-pricing",
  "solver-service",
  "solver-settlement-impls",
+ "solver-shared",
  "solver-storage",
  "solver-types",
  "tempfile",
@@ -5687,6 +5689,16 @@ dependencies = [
  "tokio",
  "toml 0.9.12+spec-1.1.0",
  "tracing",
+]
+
+[[package]]
+name = "solver-shared"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+ "toml 0.8.23",
 ]
 
 [[package]]

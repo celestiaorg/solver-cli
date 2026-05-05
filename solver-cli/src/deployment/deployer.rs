@@ -1,6 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use anyhow::{Context, Result};
+use solver_shared::{TokenType, WarpTokenType};
 use std::path::Path;
 use tracing::info;
 
@@ -148,7 +149,7 @@ impl Deployer {
                     hyp_addrs,
                     token_symbol,
                     token_decimals,
-                );
+                )?;
             }
 
             // Apply {NAME}_DOMAIN_ID env-var override (takes precedence over the
@@ -206,7 +207,7 @@ impl Deployer {
         hyp_addrs: &serde_json::Value,
         token_symbol: &str,
         token_decimals: u8,
-    ) {
+    ) -> Result<()> {
         let chain_name = chain_config.name.to_lowercase();
 
         // Look up this chain in the Hyperlane addresses
@@ -236,7 +237,13 @@ impl Deployer {
             let warp_token_type = chain_data
                 .get("warp_token_type")
                 .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+                .map(|s| {
+                    serde_json::from_value::<WarpTokenType>(serde_json::Value::String(
+                        s.to_string(),
+                    ))
+                    .with_context(|| format!("Invalid warp_token_type in deployment artifact: {s}"))
+                })
+                .transpose()?;
 
             if let Some(addr) = token_address {
                 chain_config.tokens.insert(
@@ -245,7 +252,7 @@ impl Deployer {
                         address: addr,
                         symbol: token_symbol.to_string(),
                         decimals: token_decimals,
-                        token_type: "erc20".to_string(),
+                        token_type: TokenType::Erc20,
                         warp_token,
                         warp_token_type,
                     },
@@ -281,6 +288,7 @@ impl Deployer {
             };
             chain_config.contracts.hyperlane = Some(hyperlane);
         }
+        Ok(())
     }
 }
 

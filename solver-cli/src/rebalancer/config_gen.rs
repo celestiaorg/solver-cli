@@ -194,6 +194,7 @@ mod tests {
     use crate::state::{
         ChainConfig, ContractAddresses, HyperlaneAddresses, SolverState, TokenInfo,
     };
+    use solver_shared::{TokenType, WarpTokenType};
     use std::collections::HashMap;
     use std::sync::{Mutex, OnceLock};
 
@@ -232,9 +233,9 @@ mod tests {
                     address: "0x0000000000000000000000000000000000001111".to_string(),
                     symbol: "USDC".to_string(),
                     decimals: 6,
-                    token_type: "erc20".to_string(),
+                    token_type: TokenType::Erc20,
                     warp_token: Some("0x0000000000000000000000000000000000009999".to_string()),
-                    warp_token_type: Some("synthetic".to_string()),
+                    warp_token_type: Some(WarpTokenType::Synthetic),
                 },
             )]),
             deployer: None,
@@ -266,9 +267,9 @@ mod tests {
                     address: "0x0000000000000000000000000000000000002222".to_string(),
                     symbol: "USDC".to_string(),
                     decimals: 6,
-                    token_type: "erc20".to_string(),
+                    token_type: TokenType::Erc20,
                     warp_token: Some("0x0000000000000000000000000000000000009998".to_string()),
-                    warp_token_type: Some("synthetic".to_string()),
+                    warp_token_type: Some(WarpTokenType::Synthetic),
                 },
             )]),
             deployer: None,

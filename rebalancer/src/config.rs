@@ -1,6 +1,7 @@
 use alloy::primitives::Address;
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
+use solver_shared::TokenType;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
@@ -192,7 +193,7 @@ struct StateToken {
     symbol: String,
     decimals: u8,
     #[serde(default)]
-    token_type: Option<String>,
+    token_type: Option<TokenType>,
     #[serde(default)]
     warp_token: Option<String>,
 }
@@ -435,9 +436,9 @@ fn collect_assets(
                     symbol
                 ),
             };
-            let asset_type = match token.token_type.as_deref() {
-                Some(t) if t.eq_ignore_ascii_case("native") => AssetType::Native,
-                _ => AssetType::Erc20,
+            let asset_type = match token.token_type {
+                Some(TokenType::Native) => AssetType::Native,
+                Some(TokenType::Erc20) | None => AssetType::Erc20,
             };
             // Native warp routes (HypNative) have no separate ERC20 underlying;
             // the warp router itself is the collateral path and `address` field
