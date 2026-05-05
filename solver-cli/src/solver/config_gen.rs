@@ -548,7 +548,9 @@ poll_interval_seconds = 3
                 },
                 "chainId": chain.chain_id,
                 "displayName": display_name,
-                "domainId": Self::hyperlane_domain_id(chain.chain_id),
+                "domainId": hyp
+                    .and_then(|h| h.domain_id)
+                    .unwrap_or_else(|| Self::hyperlane_domain_id(chain.chain_id)),
                 "isTestnet": true,
                 "name": chain.name,
                 "nativeToken": {
@@ -647,10 +649,12 @@ poll_interval_seconds = 3
             .context("Failed to serialize Hyperlane relayer config")
     }
 
-    /// Map EVM chain ID to Hyperlane domain ID.
-    /// Domain IDs can differ from chain IDs to avoid conflicts with the Hyperlane agent's
-    /// hardcoded KnownHyperlaneDomain enum (e.g. 31337 is hardcoded as "test4").
-    /// Using domain 131337 for chain 31337 lets us keep the "anvil1" name.
+    /// Fallback EVM chain ID → Hyperlane domain ID mapping.
+    /// Used only when the chain has no explicit `domain_id` in state. To override
+    /// per chain, pass `--domain-id` to `solver-cli chain add`, or set
+    /// `{NAME}_DOMAIN_ID` in `.env` before `solver-cli deploy`.
+    /// The 31337 → 131337 entry exists because the Hyperlane agent has 31337
+    /// hardcoded in its KnownHyperlaneDomain enum as "test4".
     fn hyperlane_domain_id(chain_id: u64) -> u64 {
         match chain_id {
             31337 => 131337,

@@ -1,6 +1,7 @@
 use alloy::primitives::{Address, U256};
 use anyhow::Result;
 use clap::Subcommand;
+use solver_shared::{TokenType, WarpTokenType};
 use std::env;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -9,6 +10,17 @@ use crate::chain::{format_token_amount, ChainClient};
 use crate::state::{StateManager, TokenInfo};
 use crate::utils::*;
 use crate::OutputFormat;
+
+struct AddTokenParams {
+    chain_ref: String,
+    symbol: String,
+    address: String,
+    decimals: u8,
+    token_type: TokenType,
+    warp_token: Option<String>,
+    warp_token_type: Option<WarpTokenType>,
+    dir: Option<PathBuf>,
+}
 
 #[derive(Subcommand)]
 pub enum TokenCommand {
@@ -22,13 +34,27 @@ pub enum TokenCommand {
         #[arg(long)]
         symbol: String,
 
-        /// Token contract address
+        /// Token contract address (use any placeholder for native tokens — value is unused)
         #[arg(long)]
         address: String,
 
         /// Token decimals
         #[arg(long, default_value = "18")]
         decimals: u8,
+
+        /// Token type
+        #[arg(long, value_enum, default_value_t = TokenType::Erc20)]
+        token_type: TokenType,
+
+        /// Hyperlane warp router address for this token (takes precedence over the
+        /// chain-level warp_token). Required when a chain has multiple tokens with
+        /// distinct routers.
+        #[arg(long)]
+        warp_token: Option<String>,
+
+        /// Hyperlane warp router type
+        #[arg(long, value_enum)]
+        warp_token_type: Option<WarpTokenType>,
 
         /// Project directory
         #[arg(long)]
@@ -94,8 +120,26 @@ impl TokenCommand {
                 symbol,
                 address,
                 decimals,
+                token_type,
+                warp_token,
+                warp_token_type,
                 dir,
-            } => Self::add(chain, symbol, address, decimals, dir, output).await,
+            } => {
+                Self::add(
+                    AddTokenParams {
+                        chain_ref: chain,
+                        symbol,
+                        address,
+                        decimals,
+                        token_type,
+                        warp_token,
+                        warp_token_type,
+                        dir,
+                    },
+                    output,
+                )
+                .await
+            }
             TokenCommand::Remove { chain, symbol, dir } => {
                 Self::remove(chain, symbol, dir, output).await
             }
@@ -110,14 +154,17 @@ impl TokenCommand {
         }
     }
 
-    async fn add(
-        chain_ref: String,
-        symbol: String,
-        address: String,
-        decimals: u8,
-        dir: Option<PathBuf>,
-        output: OutputFormat,
-    ) -> Result<()> {
+    async fn add(params: AddTokenParams, output: OutputFormat) -> Result<()> {
+        let AddTokenParams {
+            chain_ref,
+            symbol,
+            address,
+            decimals,
+            token_type,
+            warp_token,
+            warp_token_type,
+            dir,
+        } = params;
         let out = OutputFormatter::new(output);
         let project_dir = dir.unwrap_or_else(|| env::current_dir().unwrap());
         let state_mgr = StateManager::new(&project_dir);
@@ -156,6 +203,13 @@ impl TokenCommand {
             print_kv("Symbol", &symbol_upper);
             print_address("Address", &address);
             print_kv("Decimals", decimals);
+            print_kv("Token type", token_type.as_str());
+            if let Some(ref wt) = warp_token {
+                print_address("Warp router", wt);
+            }
+            if let Some(wtt) = warp_token_type {
+                print_kv("Warp router type", wtt.as_str());
+            }
 
             // Add token
             chain.tokens.insert(
@@ -164,7 +218,9 @@ impl TokenCommand {
                     address: address.clone(),
                     symbol: symbol_upper.clone(),
                     decimals,
-                    token_type: "erc20".to_string(),
+                    token_type,
+                    warp_token: warp_token.clone(),
+                    warp_token_type,
                 },
             );
         }
@@ -182,6 +238,9 @@ impl TokenCommand {
                 "symbol": symbol_upper,
                 "address": address,
                 "decimals": decimals,
+                "token_type": token_type,
+                "warp_token": warp_token,
+                "warp_token_type": warp_token_type,
             }))?;
         }
 

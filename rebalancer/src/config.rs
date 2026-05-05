@@ -1,11 +1,12 @@
 use alloy::primitives::Address;
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
+use solver_shared::TokenType;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
-/// (chain_id, token, optional warp_token_address) grouped by symbol.
-type TokensBySymbol<'a> = BTreeMap<String, Vec<(u64, &'a StateToken, Option<String>)>>;
+/// (chain_id, token) grouped by symbol.
+type TokensBySymbol<'a> = BTreeMap<String, Vec<(u64, &'a StateToken)>>;
 
 const WEIGHT_TOLERANCE: f64 = 1e-6;
 const MIN_POLL_INTERVAL_SECONDS: u64 = 30;
@@ -184,7 +185,6 @@ struct StateContracts {
 #[derive(Deserialize)]
 struct StateHyperlane {
     domain_id: Option<u64>,
-    warp_token: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -193,7 +193,9 @@ struct StateToken {
     symbol: String,
     decimals: u8,
     #[serde(default)]
-    token_type: Option<String>,
+    token_type: Option<TokenType>,
+    #[serde(default)]
+    warp_token: Option<String>,
 }
 
 // ── Config loading ─────────────────────────────────────────────────────────
@@ -376,20 +378,17 @@ fn collect_assets(
 ) -> Result<Vec<AssetConfig>> {
     let chain_id_set: HashSet<u64> = chains.iter().map(|c| c.chain_id).collect();
 
-    // Group tokens by symbol across chains
+    // Group tokens by symbol across chains. Each token carries its own Hyperlane
+    // warp router (set via `solver-cli token add --warp-token`); a chain may
+    // host multiple tokens with distinct routers.
     let mut by_symbol: TokensBySymbol<'_> = BTreeMap::new();
     for (chain_id, chain) in &state.chains {
-        let warp_token = chain
-            .contracts
-            .hyperlane
-            .as_ref()
-            .and_then(|h| h.warp_token.clone());
         for token in chain.tokens.values() {
             let normalized = token.symbol.to_ascii_uppercase();
             by_symbol
                 .entry(normalized)
                 .or_default()
-                .push((*chain_id, token, warp_token.clone()));
+                .push((*chain_id, token));
         }
     }
 
@@ -400,20 +399,17 @@ fn collect_assets(
             continue;
         }
 
-        entries.sort_by_key(|(chain_id, _, _)| *chain_id);
+        entries.sort_by_key(|(chain_id, _)| *chain_id);
 
         // Validate consistent decimals
         let expected_decimals = entries[0].1.decimals;
-        if entries
-            .iter()
-            .any(|(_, t, _)| t.decimals != expected_decimals)
-        {
+        if entries.iter().any(|(_, t)| t.decimals != expected_decimals) {
             bail!("Token {} has inconsistent decimals across chains", symbol);
         }
 
         // Build token configs
         let mut token_configs: HashMap<u64, AssetTokenConfig> = HashMap::new();
-        for (chain_id, token, warp_token) in &entries {
+        for (chain_id, token) in &entries {
             if !chain_id_set.contains(chain_id) {
                 continue;
             }
@@ -421,15 +417,28 @@ fn collect_assets(
                 .address
                 .parse()
                 .with_context(|| format!("Invalid address for {} on chain {}", symbol, chain_id))?;
-            let collateral_token = match warp_token {
+            // The rebalancer bridges via Hyperlane's `transferRemote`, which only
+            // exists on the warp router (HypERC20Collateral / HypSynthetic / HypNative).
+            // Refuse to fall back to the underlying ERC20 silently — that combination
+            // produces "Native: amount exceeds msg.value" / missing-selector reverts
+            // at submit time, far away from the misconfiguration.
+            let collateral_token: Address = match &token.warp_token {
                 Some(wt) => wt
                     .parse()
                     .with_context(|| format!("Invalid warp_token for chain {}", chain_id))?,
-                None => address,
+                None => bail!(
+                    "Asset {} on chain {} has no Hyperlane warp router configured. \
+                    Set `chains.{}.tokens.{}.warp_token` in state.json \
+                    (or pass `--warp-token` to `solver-cli token add`).",
+                    symbol,
+                    chain_id,
+                    chain_id,
+                    symbol
+                ),
             };
-            let asset_type = match token.token_type.as_deref() {
-                Some(t) if t.eq_ignore_ascii_case("native") => AssetType::Native,
-                _ => AssetType::Erc20,
+            let asset_type = match token.token_type {
+                Some(TokenType::Native) => AssetType::Native,
+                Some(TokenType::Erc20) | None => AssetType::Erc20,
             };
             // Native warp routes (HypNative) have no separate ERC20 underlying;
             // the warp router itself is the collateral path and `address` field
@@ -630,10 +639,14 @@ mod tests {
                     "name": "anvil1", "chain_id": 31337,
                     "rpc": "http://127.0.0.1:8545",
                     "contracts": {
-                        "hyperlane": { "domain_id": 131337, "warp_token": "0x0000000000000000000000000000000000000A01" }
+                        "hyperlane": { "domain_id": 131337 }
                     },
                     "tokens": {
-                        "USDC": { "address": "0x0000000000000000000000000000000000001111", "symbol": "USDC", "decimals": 6 }
+                        "USDC": {
+                            "address": "0x0000000000000000000000000000000000001111",
+                            "symbol": "USDC", "decimals": 6,
+                            "warp_token": "0x0000000000000000000000000000000000000A01"
+                        }
                     },
                     "deployer": null
                 },
@@ -641,10 +654,14 @@ mod tests {
                     "name": "anvil2", "chain_id": 31338,
                     "rpc": "http://127.0.0.1:8546",
                     "contracts": {
-                        "hyperlane": { "domain_id": 31338, "warp_token": "0x0000000000000000000000000000000000000B01" }
+                        "hyperlane": { "domain_id": 31338 }
                     },
                     "tokens": {
-                        "USDC": { "address": "0x0000000000000000000000000000000000002222", "symbol": "USDC", "decimals": 6 }
+                        "USDC": {
+                            "address": "0x0000000000000000000000000000000000002222",
+                            "symbol": "USDC", "decimals": 6,
+                            "warp_token": "0x0000000000000000000000000000000000000B01"
+                        }
                     },
                     "deployer": null
                 }
@@ -768,6 +785,108 @@ service_url = "http://127.0.0.1:8080"
         let (_dir, path) = setup_config(&sample_state(), toml);
         let err = RebalancerConfig::load(&path).expect_err("should fail");
         assert!(err.to_string().contains("Missing [signer]"));
+    }
+
+    #[test]
+    fn per_token_warp_token_resolves_router() {
+        // Each token carries its own Hyperlane warp router; the rebalancer
+        // surfaces it as `collateral_token` on the asset's per-chain config.
+        let state = serde_json::json!({
+            "env": "local",
+            "chains": {
+                "31337": {
+                    "name": "anvil1", "chain_id": 31337,
+                    "rpc": "http://127.0.0.1:8545",
+                    "contracts": {},
+                    "tokens": {
+                        "USDC": {
+                            "address": "0x0000000000000000000000000000000000001111",
+                            "symbol": "USDC", "decimals": 6,
+                            "warp_token": "0x0000000000000000000000000000000000000A01"
+                        }
+                    },
+                    "deployer": null
+                },
+                "31338": {
+                    "name": "anvil2", "chain_id": 31338,
+                    "rpc": "http://127.0.0.1:8546",
+                    "contracts": {},
+                    "tokens": {
+                        "USDC": {
+                            "address": "0x0000000000000000000000000000000000002222",
+                            "symbol": "USDC", "decimals": 6,
+                            "warp_token": "0x0000000000000000000000000000000000000B01"
+                        }
+                    },
+                    "deployer": null
+                }
+            },
+            "solver": {
+                "address": "0x000000000000000000000000000000000000dEaD",
+                "operator_address": null, "private_key_ref": "env", "configured": true
+            },
+            "users": {}, "last_updated": "2025-01-01T00:00:00Z"
+        })
+        .to_string();
+        let (_dir, path) = setup_config(&state, minimal_toml());
+        let config = RebalancerConfig::load(&path).expect("valid config");
+        let usdc = &config.assets[0];
+        let collateral_31337 = usdc.tokens[&31337].collateral_token;
+        assert_eq!(
+            format!("{:?}", collateral_31337).to_lowercase(),
+            "0x0000000000000000000000000000000000000a01"
+        );
+    }
+
+    #[test]
+    fn rejects_missing_warp_token() {
+        // USDC on both chains but chain 31338's token lacks a warp_token —
+        // the rebalancer must reject this rather than fall back to the ERC20
+        // (which would revert at `transferRemote` time).
+        let state = serde_json::json!({
+            "env": "local",
+            "chains": {
+                "31337": {
+                    "name": "anvil1", "chain_id": 31337,
+                    "rpc": "http://127.0.0.1:8545",
+                    "contracts": {},
+                    "tokens": {
+                        "USDC": {
+                            "address": "0x0000000000000000000000000000000000001111",
+                            "symbol": "USDC", "decimals": 6,
+                            "warp_token": "0x0000000000000000000000000000000000000A01"
+                        }
+                    },
+                    "deployer": null
+                },
+                "31338": {
+                    "name": "anvil2", "chain_id": 31338,
+                    "rpc": "http://127.0.0.1:8546",
+                    "contracts": {},
+                    "tokens": {
+                        "USDC": { "address": "0x0000000000000000000000000000000000002222", "symbol": "USDC", "decimals": 6 }
+                    },
+                    "deployer": null
+                }
+            },
+            "solver": {
+                "address": "0x000000000000000000000000000000000000dEaD",
+                "operator_address": null,
+                "private_key_ref": "env",
+                "configured": true
+            },
+            "users": {},
+            "last_updated": "2025-01-01T00:00:00Z"
+        })
+        .to_string();
+        let (_dir, path) = setup_config(&state, minimal_toml());
+        let err = RebalancerConfig::load(&path).expect_err("should fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("no Hyperlane warp router configured"),
+            "unexpected error: {}",
+            msg
+        );
     }
 
     #[test]

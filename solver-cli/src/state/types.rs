@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use solver_shared::{TokenType, WarpTokenType};
 use std::collections::HashMap;
 
 /// The main state file structure
@@ -118,12 +119,6 @@ pub struct HyperlaneAddresses {
 
     /// Interchain gas paymaster address
     pub igp: Option<String>,
-
-    /// Warp token address (HypCollateral or HypSynthetic)
-    pub warp_token: Option<String>,
-
-    /// Warp token type ("collateral" or "synthetic")
-    pub warp_token_type: Option<String>,
 }
 
 impl ContractAddresses {
@@ -136,7 +131,7 @@ impl ContractAddresses {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenInfo {
-    /// Token contract address
+    /// Token contract address (placeholder allowed for native tokens)
     pub address: String,
 
     /// Token symbol
@@ -145,13 +140,20 @@ pub struct TokenInfo {
     /// Token decimals
     pub decimals: u8,
 
-    /// Token type (erc20, native)
-    #[serde(default = "default_token_type")]
-    pub token_type: String,
-}
+    /// Token kind (defaults to ERC20 for backward compatibility with existing state files).
+    #[serde(default)]
+    pub token_type: TokenType,
 
-fn default_token_type() -> String {
-    "erc20".to_string()
+    /// Hyperlane warp router address for this token (HypERC20Collateral /
+    /// HypSynthetic / HypNative). Required for assets that the rebalancer
+    /// bridges via `transferRemote`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warp_token: Option<String>,
+
+    /// Hyperlane warp router variant; mirrors the on-chain HypERC20Collateral /
+    /// HypSynthetic / HypNative contract kind.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warp_token_type: Option<WarpTokenType>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -260,5 +262,58 @@ impl SolverState {
     /// Check if all chains have complete contract deployments
     pub fn all_chains_deployed(&self) -> bool {
         !self.chains.is_empty() && self.chains.values().all(|c| c.contracts.is_complete())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Existing v0.2.x `state.json` files store `token_type` and `warp_token_type`
+    /// as plain lowercase strings. The shared enums use `serde(rename_all = "lowercase")`,
+    /// so loading those old files must keep working without migration.
+    #[test]
+    fn token_info_deserializes_legacy_string_values() {
+        let json = r#"{
+            "address": "0x0000000000000000000000000000000000000001",
+            "symbol": "USDC",
+            "decimals": 6,
+            "token_type": "native",
+            "warp_token": "0x0000000000000000000000000000000000000002",
+            "warp_token_type": "collateral"
+        }"#;
+
+        let info: TokenInfo = serde_json::from_str(json).expect("legacy state.json must parse");
+        assert_eq!(info.token_type, TokenType::Native);
+        assert_eq!(info.warp_token_type, Some(WarpTokenType::Collateral));
+    }
+
+    #[test]
+    fn token_info_defaults_token_type_to_erc20_when_missing() {
+        let json = r#"{
+            "address": "0x0000000000000000000000000000000000000001",
+            "symbol": "USDC",
+            "decimals": 6
+        }"#;
+
+        let info: TokenInfo = serde_json::from_str(json).expect("missing token_type must default");
+        assert_eq!(info.token_type, TokenType::Erc20);
+        assert_eq!(info.warp_token_type, None);
+    }
+
+    #[test]
+    fn token_info_serializes_to_lowercase_strings() {
+        let info = TokenInfo {
+            address: "0x0000000000000000000000000000000000000001".to_string(),
+            symbol: "USDC".to_string(),
+            decimals: 6,
+            token_type: TokenType::Native,
+            warp_token: None,
+            warp_token_type: Some(WarpTokenType::Synthetic),
+        };
+
+        let value = serde_json::to_value(&info).unwrap();
+        assert_eq!(value["token_type"], "native");
+        assert_eq!(value["warp_token_type"], "synthetic");
     }
 }

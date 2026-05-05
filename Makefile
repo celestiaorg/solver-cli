@@ -153,7 +153,8 @@ fund: build
 	@$(SOLVER_CLI) fund --amount 100000000 --chain anvil1
 .PHONY: fund
 
-## chain-add: Add a chain with existing contracts (use make chain-add NAME=arbitrum RPC=... INPUT_SETTLER=... OUTPUT_SETTLER=... ORACLE=...)
+## chain-add: Register a chain with existing contracts. Required: NAME, RPC, INPUT_SETTLER, OUTPUT_SETTLER, ORACLE.
+## Optional: CHAIN_ID, DOMAIN_ID, MAILBOX, IGP, WARP_TOKEN, WARP_TOKEN_TYPE, TOKEN_SYMBOL+TOKEN_ADDR.
 chain-add: build
 	@$(SOLVER_CLI) chain add \
 		--name $(NAME) \
@@ -162,6 +163,11 @@ chain-add: build
 		--input-settler $(INPUT_SETTLER) \
 		--output-settler $(OUTPUT_SETTLER) \
 		--oracle $(ORACLE) \
+		$(if $(DOMAIN_ID),--domain-id $(DOMAIN_ID),) \
+		$(if $(MAILBOX),--mailbox $(MAILBOX),) \
+		$(if $(IGP),--igp $(IGP),) \
+		$(if $(WARP_TOKEN),--warp-token $(WARP_TOKEN),) \
+		$(if $(WARP_TOKEN_TYPE),--warp-token-type $(WARP_TOKEN_TYPE),) \
 		$(if $(TOKEN_ADDR),--token $(TOKEN_SYMBOL)=$(TOKEN_ADDR),)
 .PHONY: chain-add
 
@@ -175,9 +181,17 @@ chain-remove: build
 	@$(SOLVER_CLI) chain remove --chain $(CHAIN)
 .PHONY: chain-remove
 
-## token-add: Add a token to a chain (use CHAIN=name SYMBOL=USDC ADDRESS=0x... DECIMALS=6)
+## token-add: Add a token to a chain. Required: CHAIN, SYMBOL, ADDRESS.
+## Optional: DECIMALS, TOKEN_TYPE (erc20|native), WARP_TOKEN, WARP_TOKEN_TYPE (collateral|synthetic|native).
 token-add: build
-	@$(SOLVER_CLI) token add --chain $(CHAIN) --symbol $(SYMBOL) --address $(ADDRESS) $(if $(DECIMALS),--decimals $(DECIMALS),)
+	@$(SOLVER_CLI) token add \
+		--chain $(CHAIN) \
+		--symbol $(SYMBOL) \
+		--address $(ADDRESS) \
+		$(if $(DECIMALS),--decimals $(DECIMALS),) \
+		$(if $(TOKEN_TYPE),--token-type $(TOKEN_TYPE),) \
+		$(if $(WARP_TOKEN),--warp-token $(WARP_TOKEN),) \
+		$(if $(WARP_TOKEN_TYPE),--warp-token-type $(WARP_TOKEN_TYPE),)
 .PHONY: token-add
 
 ## token-list: List all tokens across chains (use CHAIN=name to filter)
@@ -327,21 +341,32 @@ balances: build
 # Full Setup & Lifecycle
 # ============================================================================
 
-## setup: Full setup (init + deploy + configure + fund)
-setup: init deploy-permit2 deploy configure fund fund-operator fund-user
+## setup: Bring up local chains + deploy contracts ONLY. Does not configure or fund.
+## Configuration and funding are explicit follow-up steps so you can see the wiring.
+setup: init deploy-permit2 deploy
 	@echo ""
-	@echo "Setup complete! Next steps:"
-	@echo "  1. make aggregator - Start OIF aggregator (in separate terminal)"
-	@echo "  2. make solver - Start solver service (in another terminal)"
-	@echo "  3. make operator - Start oracle operator service (in another terminal)"
-	@echo "  4. make rebalancer - Start rebalancer service (in another terminal)"
-	@echo "  5. make intent - Submit a test intent"
-	@echo "  6. make balances - Check balances"
+	@echo "Contracts deployed. State written to .config/state.json."
+	@echo ""
+	@echo "Next steps (run each one yourself — see README for what they do):"
+	@echo "  1. solver-cli chain list           # inspect deployed chains"
+	@echo "  2. solver-cli token list           # inspect tokens populated from Hyperlane artifacts"
+	@echo "  3. solver-cli configure            # generate .config/{solver,oracle,rebalancer,aggregator}.* files"
+	@echo "  4. make fund fund-operator fund-user"
+	@echo "  5. make aggregator | make solver | make operator | make rebalancer  (in separate terminals)"
+	@echo ""
+	@echo "Adding external chains/tokens? See README -> 'Adding external chains' for the CLI walkthrough."
 .PHONY: setup
 
-## reset: Clean and reinitialize everything
+## setup-demo: Convenience wrapper that runs setup + configure + fund. Use this for the
+## one-button local demo flow; for production wiring, run the individual steps.
+setup-demo: setup configure fund fund-operator fund-user
+	@echo ""
+	@echo "Demo setup complete! Start services with: make aggregator solver operator"
+.PHONY: setup-demo
+
+## reset: Clean and reinitialize everything (demo path)
 reset: clean
-	@$(MAKE) setup FORCE=1
+	@$(MAKE) setup-demo FORCE=1
 .PHONY: reset
 
 ## frontend: Start the frontend (backend API + Next.js dev server)

@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::Subcommand;
+use solver_shared::TokenType;
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
@@ -9,6 +10,9 @@ use crate::state::{ChainConfig, ContractAddresses, StateManager, TokenInfo};
 use crate::utils::*;
 use crate::OutputFormat;
 
+// `Add` carries a lot of optional Hyperlane fields by design (see `solver-cli
+// chain add --help`); boxing each one would just hurt ergonomics.
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand)]
 pub enum ChainCommand {
     /// Add a chain with existing contract deployments
@@ -45,11 +49,19 @@ pub enum ChainCommand {
         #[arg(long, default_value = "6")]
         decimals: u8,
 
-        /// Hyperlane warp token router address (HypERC20Collateral or HypERC20Synthetic).
-        /// Required for HypCollateral chains where the warp router differs from the ERC20.
-        /// Optional for HypSynthetic chains (the token address is used as fallback).
+        /// Hyperlane mailbox address on this chain.
         #[arg(long)]
-        warp_token: Option<String>,
+        mailbox: Option<String>,
+
+        /// Hyperlane interchain gas paymaster address on this chain.
+        #[arg(long)]
+        igp: Option<String>,
+
+        /// Hyperlane domain ID. Defaults to the EVM chain ID; set this when the
+        /// chain's domain ID differs (e.g. Eden testnet, or chains that collide
+        /// with Hyperlane's hardcoded KnownHyperlaneDomain enum).
+        #[arg(long)]
+        domain_id: Option<u64>,
 
         /// Project directory
         #[arg(long)]
@@ -124,7 +136,9 @@ struct ChainAddParams {
     oracle: String,
     tokens: Vec<ParsedToken>,
     default_decimals: u8,
-    warp_token: Option<String>,
+    mailbox: Option<String>,
+    igp: Option<String>,
+    domain_id: Option<u64>,
     dir: Option<PathBuf>,
 }
 
@@ -140,7 +154,9 @@ impl ChainCommand {
                 oracle,
                 token,
                 decimals,
-                warp_token,
+                mailbox,
+                igp,
+                domain_id,
                 dir,
             } => {
                 Self::add(
@@ -153,7 +169,9 @@ impl ChainCommand {
                         oracle,
                         tokens: token,
                         default_decimals: decimals,
-                        warp_token,
+                        mailbox,
+                        igp,
+                        domain_id,
                         dir,
                     },
                     output,
@@ -175,7 +193,9 @@ impl ChainCommand {
             oracle,
             tokens,
             default_decimals,
-            warp_token,
+            mailbox,
+            igp,
+            domain_id,
             dir,
         } = params;
         let out = OutputFormatter::new(output);
@@ -209,18 +229,20 @@ impl ChainCommand {
             ));
         }
 
-        // Build contracts struct
-        let hyperlane = warp_token
-            .as_ref()
-            .map(|addr| crate::state::HyperlaneAddresses {
-                domain_id: None,
-                mailbox: None,
+        // Build contracts struct.
+        // Construct HyperlaneAddresses if any Hyperlane field was supplied.
+        let any_hyperlane = domain_id.is_some() || mailbox.is_some() || igp.is_some();
+        let hyperlane = if any_hyperlane {
+            Some(crate::state::HyperlaneAddresses {
+                domain_id,
+                mailbox: mailbox.clone(),
                 merkle_tree_hook: None,
                 validator_announce: None,
-                igp: None,
-                warp_token: Some(addr.clone()),
-                warp_token_type: Some("collateral".to_string()),
-            });
+                igp: igp.clone(),
+            })
+        } else {
+            None
+        };
 
         let contracts = ContractAddresses {
             input_settler_escrow: Some(input_settler.clone()),
@@ -232,8 +254,14 @@ impl ChainCommand {
         print_address("InputSettlerEscrow", &input_settler);
         print_address("OutputSettlerSimple", &output_settler);
         print_address("CentralizedOracle", &oracle);
-        if let Some(ref addr) = warp_token {
-            print_address("Warp token router", addr);
+        if let Some(ref addr) = mailbox {
+            print_address("Mailbox", addr);
+        }
+        if let Some(ref addr) = igp {
+            print_address("IGP", addr);
+        }
+        if let Some(id) = domain_id {
+            print_kv("Hyperlane domain ID", id);
         }
 
         // Build tokens map
@@ -250,7 +278,9 @@ impl ChainCommand {
                     address: parsed.address,
                     symbol: parsed.symbol,
                     decimals,
-                    token_type: "erc20".to_string(),
+                    token_type: TokenType::Erc20,
+                    warp_token: None,
+                    warp_token_type: None,
                 },
             );
         }

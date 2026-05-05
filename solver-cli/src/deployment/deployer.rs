@@ -1,6 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use anyhow::{Context, Result};
+use solver_shared::{TokenType, WarpTokenType};
 use std::path::Path;
 use tracing::info;
 
@@ -148,8 +149,12 @@ impl Deployer {
                     hyp_addrs,
                     token_symbol,
                     token_decimals,
-                );
+                )?;
             }
+
+            // Apply {NAME}_DOMAIN_ID env-var override (takes precedence over the
+            // value pulled from hyperlane-addresses.json).
+            Self::apply_domain_id_override(&mut chain_config);
 
             // Insert into state by chain_id
             state.chains.insert(chain_config.chain_id, chain_config);
@@ -174,13 +179,35 @@ impl Deployer {
         Ok(value)
     }
 
+    /// Apply a `{NAME}_DOMAIN_ID` env-var override onto chain_config, if present.
+    /// Creates a HyperlaneAddresses entry if one doesn't yet exist on the chain.
+    fn apply_domain_id_override(chain_config: &mut ChainConfig) {
+        let var = format!("{}_DOMAIN_ID", chain_config.name.to_uppercase());
+        let Ok(raw) = std::env::var(&var) else {
+            return;
+        };
+        let Ok(domain_id) = raw.parse::<u64>() else {
+            info!("Ignoring {} (not a valid u64): {}", var, raw);
+            return;
+        };
+        let hyperlane = chain_config
+            .contracts
+            .hyperlane
+            .get_or_insert_with(HyperlaneAddresses::default);
+        hyperlane.domain_id = Some(domain_id);
+        info!(
+            "  Hyperlane domain ID for {} (from {}): {}",
+            chain_config.name, var, domain_id
+        );
+    }
+
     /// Populate token and Hyperlane addresses from the deployment artifacts
     fn populate_tokens_from_hyperlane(
         chain_config: &mut ChainConfig,
         hyp_addrs: &serde_json::Value,
         token_symbol: &str,
         token_decimals: u8,
-    ) {
+    ) -> Result<()> {
         let chain_name = chain_config.name.to_lowercase();
 
         // Look up this chain in the Hyperlane addresses
@@ -199,6 +226,25 @@ impl Deployer {
                     .map(|s| s.to_string())
             };
 
+            // Warp router address for this token, read from the artifact.
+            // On a collateral chain (`mock_usdc` exists), `addr` is the
+            // underlying ERC20 and the warp router is a separate contract.
+            // On synthetic/native chains, `addr` is the warp router itself.
+            let warp_token = chain_data
+                .get("warp_token")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let warp_token_type = chain_data
+                .get("warp_token_type")
+                .and_then(|v| v.as_str())
+                .map(|s| {
+                    serde_json::from_value::<WarpTokenType>(serde_json::Value::String(
+                        s.to_string(),
+                    ))
+                    .with_context(|| format!("Invalid warp_token_type in deployment artifact: {s}"))
+                })
+                .transpose()?;
+
             if let Some(addr) = token_address {
                 chain_config.tokens.insert(
                     token_symbol.to_string(),
@@ -206,7 +252,9 @@ impl Deployer {
                         address: addr,
                         symbol: token_symbol.to_string(),
                         decimals: token_decimals,
-                        token_type: "erc20".to_string(),
+                        token_type: TokenType::Erc20,
+                        warp_token,
+                        warp_token_type,
                     },
                 );
                 info!(
@@ -217,7 +265,8 @@ impl Deployer {
                 );
             }
 
-            // Store Hyperlane contract addresses
+            // Store Hyperlane contract addresses (mailbox / IGP / etc).
+            // Warp router lives per-token, not here.
             let hyperlane = HyperlaneAddresses {
                 domain_id: chain_data.get("domain_id").and_then(|v| v.as_u64()),
                 mailbox: chain_data
@@ -232,18 +281,14 @@ impl Deployer {
                     .get("validator_announce")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
-                igp: None,
-                warp_token: chain_data
-                    .get("warp_token")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string()),
-                warp_token_type: chain_data
-                    .get("warp_token_type")
+                igp: chain_data
+                    .get("igp")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string()),
             };
             chain_config.contracts.hyperlane = Some(hyperlane);
         }
+        Ok(())
     }
 }
 

@@ -11,8 +11,8 @@ cd "$PROJECT_ROOT"
 
 # ── Deploy + configure + fund ────────────────────────────────────────────────
 
-step "Running full setup (init + deploy OIF contracts + configure + fund)..."
-make setup FORCE=1
+step "Running full demo setup (init + deploy + configure + fund)..."
+make setup-demo FORCE=1
 
 # Allow small losses on local dev (gas costs exceed spread for tiny orders)
 if grep -q 'min_profitability_pct = 0.0' .config/solver.toml 2>/dev/null; then

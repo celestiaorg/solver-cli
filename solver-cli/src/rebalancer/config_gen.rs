@@ -54,22 +54,49 @@ impl RebalancerConfigGenerator {
             anyhow::bail!("No chains configured");
         }
 
-        // Verify at least one token exists on 2+ chains (so rebalancer has something to do)
-        let has_multi_chain_token = {
-            let mut by_symbol: BTreeMap<String, usize> = BTreeMap::new();
-            for chain in state.chains.values() {
-                for token in chain.tokens.values() {
-                    *by_symbol
-                        .entry(token.symbol.to_ascii_uppercase())
-                        .or_default() += 1;
-                }
+        // Group tokens by symbol → list of (chain_id, chain_name) so we can detect
+        // both "no asset on 2+ chains" and "asset present without a warp router".
+        let mut by_symbol: BTreeMap<String, Vec<(u64, &str)>> = BTreeMap::new();
+        for chain in state.chains.values() {
+            for token in chain.tokens.values() {
+                by_symbol
+                    .entry(token.symbol.to_ascii_uppercase())
+                    .or_default()
+                    .push((chain.chain_id, chain.name.as_str()));
             }
-            by_symbol.values().any(|&count| count >= 2)
-        };
+        }
+        let has_multi_chain_token = by_symbol.values().any(|chains| chains.len() >= 2);
         if !has_multi_chain_token {
             anyhow::bail!(
                 "No asset found on at least two chains; cannot generate rebalancer config"
             );
+        }
+
+        // Every token participating in a multi-chain asset must have a Hyperlane
+        // warp router. Catching this here means a misconfig surfaces at
+        // `solver-cli configure` instead of at rebalancer startup (where the same
+        // check is enforced).
+        for (symbol, chains) in &by_symbol {
+            if chains.len() < 2 {
+                continue;
+            }
+            for (chain_id, chain_name) in chains {
+                let chain = &state.chains[chain_id];
+                let token_warp = chain
+                    .tokens
+                    .values()
+                    .find(|t| t.symbol.eq_ignore_ascii_case(symbol))
+                    .and_then(|t| t.warp_token.as_deref());
+                if token_warp.is_none() {
+                    anyhow::bail!(
+                        "Asset {} on chain {} ({}) has no Hyperlane warp router configured. \
+                        Set it via `solver-cli token add --warp-token <ADDR>`.",
+                        symbol,
+                        chain_name,
+                        chain_id,
+                    );
+                }
+            }
         }
 
         let forwarding_service_url = std::env::var("FORWARDING_BACKEND")
@@ -167,6 +194,7 @@ mod tests {
     use crate::state::{
         ChainConfig, ContractAddresses, HyperlaneAddresses, SolverState, TokenInfo,
     };
+    use solver_shared::{TokenType, WarpTokenType};
     use std::collections::HashMap;
     use std::sync::{Mutex, OnceLock};
 
@@ -197,8 +225,6 @@ mod tests {
                     merkle_tree_hook: None,
                     validator_announce: None,
                     igp: None,
-                    warp_token: None,
-                    warp_token_type: None,
                 }),
             },
             tokens: HashMap::from([(
@@ -207,7 +233,9 @@ mod tests {
                     address: "0x0000000000000000000000000000000000001111".to_string(),
                     symbol: "USDC".to_string(),
                     decimals: 6,
-                    token_type: "erc20".to_string(),
+                    token_type: TokenType::Erc20,
+                    warp_token: Some("0x0000000000000000000000000000000000009999".to_string()),
+                    warp_token_type: Some(WarpTokenType::Synthetic),
                 },
             )]),
             deployer: None,
@@ -231,8 +259,6 @@ mod tests {
                     merkle_tree_hook: None,
                     validator_announce: None,
                     igp: None,
-                    warp_token: None,
-                    warp_token_type: None,
                 }),
             },
             tokens: HashMap::from([(
@@ -241,7 +267,9 @@ mod tests {
                     address: "0x0000000000000000000000000000000000002222".to_string(),
                     symbol: "USDC".to_string(),
                     decimals: 6,
-                    token_type: "erc20".to_string(),
+                    token_type: TokenType::Erc20,
+                    warp_token: Some("0x0000000000000000000000000000000000009998".to_string()),
+                    warp_token_type: Some(WarpTokenType::Synthetic),
                 },
             )]),
             deployer: None,
