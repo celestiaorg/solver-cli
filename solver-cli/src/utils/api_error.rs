@@ -90,11 +90,8 @@ pub async fn parse_response<T: DeserializeOwned>(
 }
 
 fn upstream_from_body(label: &str, status: u16, body: Value) -> ApiError {
-    let pick_str = |k: &str| -> Option<String> {
-        body.get(k)
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-    };
+    let pick_str =
+        |k: &str| -> Option<String> { body.get(k).and_then(|v| v.as_str()).map(|s| s.to_string()) };
     let message = pick_str("message")
         .or_else(|| pick_str("error"))
         .or_else(|| pick_str("reason"))

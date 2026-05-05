@@ -10,8 +10,6 @@
 //! transaction; the inner delivery then skips its own fee logic because
 //! alloy sees a fully-configured 1559 request.
 
-#![cfg(feature = "solver-runtime")]
-
 use std::collections::HashMap;
 use std::sync::Arc;
 
