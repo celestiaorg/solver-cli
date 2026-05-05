@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::signal;
 use tracing::info;
@@ -66,19 +66,27 @@ async fn main() -> Result<()> {
     info!("Loaded config for {} chains", config.chains.len());
     info!("Operator address: {}", config.operator_address);
 
-    // State is stored alongside the config file
-    let state_dir = config_path
-        .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| PathBuf::from("."));
+    // Runtime state dir: explicit `runtime_state_dir` from config wins, otherwise
+    // we fall back to the directory containing oracle.toml (legacy behavior).
+    let state_dir = config.runtime_state_dir.clone().unwrap_or_else(|| {
+        config_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."))
+    });
+
+    // Fail loudly at startup if the runtime state directory isn't writable —
+    // otherwise `StateManager::save` only logs an error once per save tick
+    // (~30s) and the operator keeps running while losing fill history.
+    ensure_state_dir_writable(&state_dir)?;
 
     // Create operator
     let operator = Arc::new(OracleOperator::new(config, &state_dir).await?);
 
     info!("Oracle Operator initialized, watching for fills...");
     info!(
-        "State persisted to {:?}",
-        state_dir.join("oracle-state.json")
+        "State persisted to {}",
+        state_dir.join("oracle-state.json").display()
     );
 
     // Run with graceful shutdown
@@ -98,6 +106,29 @@ async fn main() -> Result<()> {
     operator.save_state().await?;
     info!("State saved, shutting down.");
 
+    Ok(())
+}
+
+/// Verify the runtime state directory exists and is writable before starting the
+/// run loop. Without this, `StateManager::save` fails silently every save tick.
+fn ensure_state_dir_writable(state_dir: &Path) -> Result<()> {
+    std::fs::create_dir_all(state_dir).with_context(|| {
+        format!(
+            "Failed to create runtime state directory: {}",
+            state_dir.display()
+        )
+    })?;
+
+    let probe = state_dir.join(".oracle-write-probe");
+    std::fs::write(&probe, b"ok").with_context(|| {
+        format!(
+            "Runtime state directory is not writable: {}. \
+             Set `runtime_state_dir` in oracle.toml to a path the operator user can write, \
+             or fix permissions on the current directory.",
+            state_dir.display()
+        )
+    })?;
+    let _ = std::fs::remove_file(&probe);
     Ok(())
 }
 

@@ -2,7 +2,7 @@ use alloy::primitives::Address;
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // ── Public config types (consumed by operator & signer modules) ────────────
 
@@ -19,6 +19,11 @@ pub struct OracleConfig {
 
     /// Polling interval in seconds
     pub poll_interval_seconds: u64,
+
+    /// Optional override for the directory where `oracle-state.json` is read/written.
+    /// Relative paths resolve against the directory containing `oracle.toml`.
+    /// When `None`, runtime state lives next to the config file.
+    pub runtime_state_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone)]
@@ -50,6 +55,11 @@ struct RawConfig {
 
     #[serde(default = "default_poll_interval")]
     poll_interval_seconds: u64,
+
+    /// Optional directory for runtime state (`oracle-state.json`). Relative paths
+    /// resolve against the directory containing `oracle.toml`.
+    #[serde(default)]
+    runtime_state_dir: Option<String>,
 
     signer: Option<RawSignerConfig>,
 }
@@ -112,6 +122,7 @@ impl OracleConfig {
     /// ```toml
     /// state_file = ".config/state.json"
     /// poll_interval_seconds = 3
+    /// runtime_state_dir = "/var/lib/oracle-operator"   # optional
     ///
     /// [signer]
     /// type = "env"
@@ -125,6 +136,17 @@ impl OracleConfig {
         // Resolve state_file relative to the TOML file's directory
         let config_dir = path.parent().unwrap_or(Path::new("."));
         let state_path = config_dir.join(&raw.state_file);
+
+        // Resolve optional runtime_state_dir (absolute paths used as-is, relative paths
+        // resolved against the TOML's directory).
+        let runtime_state_dir = raw.runtime_state_dir.as_deref().map(|p| {
+            let candidate = PathBuf::from(p);
+            if candidate.is_absolute() {
+                candidate
+            } else {
+                config_dir.join(candidate)
+            }
+        });
 
         let state_content = std::fs::read_to_string(&state_path).with_context(|| {
             format!(
@@ -225,6 +247,7 @@ impl OracleConfig {
             signer,
             chains,
             poll_interval_seconds: raw.poll_interval_seconds,
+            runtime_state_dir,
         })
     }
 }
@@ -346,6 +369,41 @@ type = "env"
         let (_dir, path) = setup_config(&sample_state(), toml);
         let config = OracleConfig::load(&path).expect("valid config");
         assert_eq!(config.poll_interval_seconds, 3);
+        assert!(config.runtime_state_dir.is_none());
+    }
+
+    #[test]
+    fn resolves_relative_runtime_state_dir() {
+        let toml = r#"
+state_file = "state.json"
+runtime_state_dir = "runtime"
+
+[signer]
+type = "env"
+"#;
+        let (dir, path) = setup_config(&sample_state(), toml);
+        let config = OracleConfig::load(&path).expect("valid config");
+        assert_eq!(
+            config.runtime_state_dir.as_deref(),
+            Some(dir.path().join("runtime").as_path())
+        );
+    }
+
+    #[test]
+    fn keeps_absolute_runtime_state_dir() {
+        let toml = r#"
+state_file = "state.json"
+runtime_state_dir = "/var/lib/oracle-operator"
+
+[signer]
+type = "env"
+"#;
+        let (_dir, path) = setup_config(&sample_state(), toml);
+        let config = OracleConfig::load(&path).expect("valid config");
+        assert_eq!(
+            config.runtime_state_dir.as_deref(),
+            Some(Path::new("/var/lib/oracle-operator"))
+        );
     }
 
     #[test]
